@@ -1,0 +1,163 @@
+"""생성된 셀렉터를 방금 가져온 그 HTML 에 즉시 적용해 본다.
+
+`.claude/rules/llm.md`: 0개 매칭 필드는 성공으로 내놓지 않는다. 실패한 필드 이름을 그대로
+결과에 넣어 운영자가 어디를 고쳐야 하는지 바로 알게 한다.
+
+여기서 하는 것은 "그 셀렉터가 노드를 잡는가"까지다. 잡은 값이 깨끗한지는 정규화의 몫이고,
+공백이나 광고 문구가 섞였다고 셀렉터를 바꾸지 않는다.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from bs4 import BeautifulSoup
+from soupsieve import SelectorSyntaxError
+
+from app.selector.schema import DETAIL_FIELDS, LIST_FIELDS, OPTIONAL_DETAIL_FIELDS, SelectorSet
+
+# 필드 하나의 판정.
+OK = "ok"
+FAILED = "failed"
+SKIPPED = "skipped"
+
+
+@dataclass(frozen=True)
+class FieldMatch:
+    """`list.title` 처럼 구역까지 붙인 이름으로 남긴다."""
+
+    name: str
+    selector: str
+    matches: int
+    status: str
+    message: str = ""
+
+    @property
+    def ok(self) -> bool:
+        return self.status == OK
+
+
+@dataclass(frozen=True)
+class VerificationReport:
+    fields: list[FieldMatch]
+
+    @property
+    def failed(self) -> list[str]:
+        """실패한 필드 이름. 비어 있어야 생성이 성공이다."""
+        return [field.name for field in self.fields if field.status == FAILED]
+
+    @property
+    def ok(self) -> bool:
+        return not self.failed
+
+    def summary(self) -> dict[str, int]:
+        """필드 이름 -> 매칭 개수. 화면과 로그가 그대로 쓴다."""
+        return {field.name: field.matches for field in self.fields}
+
+
+def verify_selectors(
+    selectors: SelectorSet, list_html: str, detail_html: str
+) -> VerificationReport:
+    """목록·상세 셀렉터를 각각의 HTML 에 적용해 매칭 개수를 센다."""
+    return VerificationReport(
+        fields=_verify_list(selectors, list_html) + _verify_detail(selectors, detail_html)
+    )
+
+
+def _verify_list(selectors: SelectorSet, html: str) -> list[FieldMatch]:
+    soup = BeautifulSoup(html, "html.parser")
+    item_selector = selectors.list.item
+
+    try:
+        items = soup.select(item_selector)
+    except SelectorSyntaxError as exc:
+        broken = _syntax_error("list.item", item_selector, exc)
+        return [broken] + [
+            FieldMatch(
+                name=f"list.{name}",
+                selector=getattr(selectors.list, name),
+                matches=0,
+                status=FAILED,
+                message="list.item 이 깨져 확인할 수 없다",
+            )
+            for name in LIST_FIELDS
+            if name != "item"
+        ]
+
+    results = [
+        FieldMatch(
+            name="list.item",
+            selector=item_selector,
+            matches=len(items),
+            status=OK if items else FAILED,
+            message="" if items else "매칭 0개. 사이트 구조가 다르거나 JS 렌더링이다",
+        )
+    ]
+
+    for name in LIST_FIELDS:
+        if name == "item":
+            continue
+        selector = getattr(selectors.list, name)
+        try:
+            matched = sum(1 for item in items if item.select(selector))
+        except SelectorSyntaxError as exc:
+            results.append(_syntax_error(f"list.{name}", selector, exc))
+            continue
+        results.append(
+            FieldMatch(
+                name=f"list.{name}",
+                selector=selector,
+                matches=matched,
+                status=OK if matched else FAILED,
+                message="" if matched else f"항목 {len(items)}건 중 어디에도 없다",
+            )
+        )
+    return results
+
+
+def _verify_detail(selectors: SelectorSet, html: str) -> list[FieldMatch]:
+    soup = BeautifulSoup(html, "html.parser")
+    results: list[FieldMatch] = []
+
+    for name in DETAIL_FIELDS:
+        selector = getattr(selectors.detail, name)
+        full_name = f"detail.{name}"
+
+        if not selector and name in OPTIONAL_DETAIL_FIELDS:
+            # 사이트에 그 항목이 없다는 응답이다. 셀렉터가 없으니 실패도 성공도 아니다.
+            results.append(
+                FieldMatch(
+                    name=full_name,
+                    selector="",
+                    matches=0,
+                    status=SKIPPED,
+                    message="페이지에 해당 항목이 없다는 응답",
+                )
+            )
+            continue
+
+        try:
+            matched = len(soup.select(selector))
+        except SelectorSyntaxError as exc:
+            results.append(_syntax_error(full_name, selector, exc))
+            continue
+        results.append(
+            FieldMatch(
+                name=full_name,
+                selector=selector,
+                matches=matched,
+                status=OK if matched else FAILED,
+                message="" if matched else "매칭 0개",
+            )
+        )
+    return results
+
+
+def _syntax_error(name: str, selector: str, exc: SelectorSyntaxError) -> FieldMatch:
+    return FieldMatch(
+        name=name,
+        selector=selector,
+        matches=0,
+        status=FAILED,
+        message=f"셀렉터 문법 오류: {exc}",
+    )

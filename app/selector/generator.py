@@ -25,6 +25,7 @@ from app.config import Settings, get_settings
 from app.crawler.fetcher import Fetcher, get_fetcher
 from app.selector.cleaner import CleanedHtml, clean_html
 from app.selector.schema import SelectorSchemaError, SelectorSet, parse_selectors
+from app.selector.verify import VerificationReport, verify_selectors
 
 logger = logging.getLogger(__name__)
 
@@ -85,10 +86,22 @@ class Usage:
 
 @dataclass(frozen=True)
 class GenerationResult:
+    """생성 결과. `verification.failed` 가 비어 있어야 성공이다.
+
+    0개 매칭 필드가 있어도 예외를 던지지 않는다. 셀렉터 전체를 버리는 대신 실패한 필드 이름을
+    운영자에게 보여 주는 편이 낫다 — 손으로 그 필드만 고치는 것이 첫 수단이다
+    (`.claude/rules/llm.md`).
+    """
+
     selectors: SelectorSet
     usage: Usage
     attempts: int
+    verification: VerificationReport
     notes: list[str] = field(default_factory=list)
+
+    @property
+    def ok(self) -> bool:
+        return self.verification.ok
 
 
 async def generate_for_urls(
@@ -150,10 +163,19 @@ async def generate_from_html(
             last_error = exc
             continue
 
+        # 방금 가져온 그 HTML 에 즉시 적용한다. 정제 전 원본이라 샘플링으로 덜어낸 항목도 본다.
+        report = verify_selectors(selectors, list_html, detail_html)
+        logger.info(
+            "셀렉터 자체 검증 model=%s 매칭=%s 실패=%s",
+            model,
+            report.summary(),
+            report.failed or "없음",
+        )
         return GenerationResult(
             selectors=selectors,
             usage=usage,
             attempts=attempt,
+            verification=report,
             notes=_notes(cleaned_list, cleaned_detail),
         )
 
