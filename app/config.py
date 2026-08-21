@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     crawl_delay_seconds: float = 3.0
     crawl_timeout_seconds: float = 20.0
     crawl_max_retries: int = 3
+    # 렌더 1회의 상한. 정적 타임아웃보다 길지만 무한정 기다리지 않는다
+    render_timeout_seconds: float = 60.0
 
     # 실행
     # 동시 실행 상한의 초기값. 한 번 app_settings 에 들어간 뒤로는 DB 값이 이긴다

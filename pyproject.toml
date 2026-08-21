@@ -14,6 +14,8 @@ dependencies = [
     "apscheduler>=3.10,<4",
     "google-genai",
     "pydantic-settings",
+    # JS 로 그려지는 사이트만 쓴다. 기본 경로는 정적이다 — .claude/rules/crawling.md
+    "playwright",
 ]
 
 [project.optional-dependencies]

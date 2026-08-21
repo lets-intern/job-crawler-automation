@@ -17,8 +17,10 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
+from typing import Protocol
 from urllib.parse import urlsplit
 from urllib.robotparser import RobotFileParser
 
@@ -37,7 +39,7 @@ class FetchError(Exception):
     `transport` 뿐이다. `selector_miss` 와 `parse` 는 파서가 판정한다.
     """
 
-    error_class = "transport"
+    error_class: str | None = "transport"
 
 
 class TransportError(FetchError):
@@ -61,6 +63,25 @@ class FetchResult:
     url: str
     status_code: int
     text: str
+
+
+class PageSource(Protocol):
+    """URL 하나를 HTML 로 바꿔 주는 것. `Fetcher` 와 렌더러가 둘 다 이 모양이다.
+
+    실행 경로가 정적인지 렌더인지는 `crawlers.render_mode` 가 정하고, 그 뒤로는 같은 코드가
+    돈다. 파서와 러너는 어느 쪽이 왔는지 알 필요가 없다.
+    """
+
+    async def fetch(self, url: str) -> FetchResult: ...
+
+
+class FetchPolicy(PageSource, Protocol):
+    """정책을 들고 있는 쪽. 렌더 경로가 이것을 받아 같은 robots·딜레이·이름 아래에서 돈다."""
+
+    @property
+    def user_agent(self) -> str: ...
+
+    def guard(self, url: str) -> AbstractAsyncContextManager[None]: ...
 
 
 class Fetcher:
@@ -98,6 +119,30 @@ class Fetcher:
         """robots 확인을 통과한 URL 만 가져온다. 실패는 `FetchError` 로 올라온다."""
         await self._ensure_allowed(url)
         return await self._send(url)
+
+    @property
+    def user_agent(self) -> str:
+        """렌더 경로가 같은 이름으로 나가기 위해 읽는다. 브라우저 위장은 하지 않는다."""
+        return self._user_agent
+
+    @asynccontextmanager
+    async def guard(self, url: str) -> AsyncIterator[None]:
+        """httpx 로 가져오지 않는 요청에 같은 정책을 씌운다. 렌더 경로가 쓴다.
+
+        `fetch()` 와 순서가 같다 — robots 확인, 호스트 잠금, 딜레이. 잠금은 렌더가 끝날 때까지
+        잡고 있는다. 렌더 중에 같은 호스트로 정적 요청이 나가면 딜레이가 사실이 아니게 된다.
+
+        브라우저는 페이지 하나를 그리며 같은 호스트로 여러 요청을 낸다. 그래서 다음 요청까지의
+        간격은 렌더가 시작한 시점이 아니라 끝난 시점부터 센다.
+        """
+        await self._ensure_allowed(url)
+        host = urlsplit(url).netloc
+        async with self._lock_for(host):
+            await self._respect_delay(host)
+            try:
+                yield
+            finally:
+                self._last_request_at[host] = self._clock()
 
     async def aclose(self) -> None:
         await self._client.aclose()
