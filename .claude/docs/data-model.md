@@ -69,6 +69,9 @@ SQLite 파일 하나. 경로는 `DATABASE_PATH` 가 정하고 Docker named volum
 | content_hash | 중복 감지용. 아래 참조 |
 | crawled_at | |
 
+워크플로우가 없는 테스트 실행은 이 테이블에 적재하지 않는다. 적재할 워크플로우가 없고, 테스트가
+원하는 것은 미리보기이지 수집 데이터가 아니다. 그 실행의 `crawl_runs.new_count` 는 0 이다.
+
 원본 HTML 은 저장하지 않는다. 실패 디버깅용 스냅샷만 `debug_snapshots/` 에 보존 기한을 두고
 남긴다 (`.claude/rules/data-safety.md`).
 
