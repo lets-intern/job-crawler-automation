@@ -24,7 +24,12 @@ from google.genai import errors as genai_errors
 from app.config import Settings, get_settings
 from app.crawler.fetcher import PageSource, get_fetcher
 from app.selector.cleaner import CleanedHtml, clean_html
-from app.selector.schema import SelectorSchemaError, SelectorSet, parse_selectors
+from app.selector.schema import (
+    SelectorSchemaError,
+    SelectorSet,
+    parse_selectors,
+    parse_selectors_allowing_empty,
+)
 from app.selector.verify import VerificationReport, verify_selectors
 
 logger = logging.getLogger(__name__)
@@ -160,8 +165,10 @@ async def generate_from_html(
     prompt = build_prompt(cleaned_list, cleaned_detail, list_url, detail_url)
 
     last_error: SelectorSchemaError | None = None
+    last_text: str | None = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
         text, usage = await _call(resolved_client, model, prompt, attempt)
+        last_text = text
         try:
             selectors = parse_selectors(text)
         except SelectorSchemaError as exc:
@@ -172,9 +179,11 @@ async def generate_from_html(
                 exc.reason,
                 exc,
             )
-            if exc.reason != "unparsable":
-                # 모양이 아니라 내용의 문제다. 다시 물어도 같은 답이 온다.
+            if exc.reason == "unknown_field":
+                # 스키마에 없는 필드를 지어냈다. 무엇이었을지 추측하지 않는다.
                 raise SelectorGenerationError(exc.reason, str(exc)) from exc
+            # `unparsable` 은 모양이 깨진 것, `missing_field` 는 내용이 모자란 것이다.
+            # 둘 다 한 번 더 물어본다 (`.claude/rules/llm.md` 의 "깨진 응답만 1회").
             last_error = exc
             continue
 
@@ -195,6 +204,29 @@ async def generate_from_html(
         )
 
     assert last_error is not None  # 루프는 최소 한 번 돈다
+
+    if last_error.reason == "missing_field" and last_text is not None:
+        # 모양은 맞는데 필드가 비어 있다. 통째로 버리면 운영자가 손으로 고칠 대상조차 없다.
+        # 빈 채로 draft 에 저장하고 어느 자리가 비었는지 알린다 (`.claude/rules/llm.md`).
+        selectors, empty_fields = parse_selectors_allowing_empty(last_text)
+        report = verify_selectors(selectors, list_html, detail_html)
+        logger.warning(
+            "셀렉터 생성 필드 누락 model=%s attempts=%d 빈 필드=%s",
+            model,
+            MAX_ATTEMPTS,
+            ", ".join(empty_fields),
+        )
+        return GenerationResult(
+            selectors=selectors,
+            usage=usage,
+            attempts=MAX_ATTEMPTS,
+            verification=report,
+            notes=[
+                *_notes(cleaned_list, cleaned_detail),
+                f"모델이 채우지 못한 필드: {', '.join(empty_fields)}. 손으로 채운다",
+            ],
+        )
+
     raise SelectorGenerationError(
         "unparsable", f"{MAX_ATTEMPTS}회 모두 스키마에 맞지 않았다: {last_error}"
     ) from last_error

@@ -109,6 +109,20 @@ class SelectorSchemaError(ValueError):
 
 def validate_selectors(data: Any) -> SelectorSet:
     """파싱된 응답을 검증한다. 통과하면 `SelectorSet`, 아니면 `SelectorSchemaError`."""
+    return _build(data, allow_empty=False)[0]
+
+
+def validate_selectors_allowing_empty(data: Any) -> tuple[SelectorSet, list[str]]:
+    """필수 필드가 비어도 통과시키고, 비어 있던 필드 이름을 함께 돌려준다.
+
+    재시도까지 해도 모델이 채우지 못한 응답을 위한 경로다. 통째로 버리면 운영자가 손으로
+    고칠 대상조차 없다. 빈 채로 두고 이름을 알린다 — 무엇이었을지 추측해서 채우지 않는다
+    (`.claude/rules/llm.md`).
+    """
+    return _build(data, allow_empty=True)
+
+
+def _build(data: Any, *, allow_empty: bool) -> tuple[SelectorSet, list[str]]:
     if not isinstance(data, Mapping):
         raise SelectorSchemaError("unparsable", f"응답이 객체가 아니다: {type(data).__name__}")
 
@@ -116,25 +130,42 @@ def validate_selectors(data: Any) -> SelectorSet:
     _require(data, SECTIONS, "최상위")
 
     sections: dict[str, dict[str, str]] = {}
+    empty: list[str] = []
     for section, fields in (("list", LIST_FIELDS), ("detail", DETAIL_FIELDS)):
-        sections[section] = _validate_section(data[section], section, fields)
+        sections[section], missing = _validate_section(
+            data[section], section, fields, allow_empty=allow_empty
+        )
+        empty.extend(missing)
 
-    return SelectorSet(
-        list=ListSelectors(**sections["list"]),
-        detail=DetailSelectors(**sections["detail"]),
+    return (
+        SelectorSet(
+            list=ListSelectors(**sections["list"]),
+            detail=DetailSelectors(**sections["detail"]),
+        ),
+        empty,
     )
 
 
 def parse_selectors(text: str) -> SelectorSet:
     """모델 응답 문자열을 파싱하고 검증한다."""
+    return validate_selectors(_load(text))
+
+
+def parse_selectors_allowing_empty(text: str) -> tuple[SelectorSet, list[str]]:
+    """`validate_selectors_allowing_empty` 의 문자열 입력판."""
+    return validate_selectors_allowing_empty(_load(text))
+
+
+def _load(text: str) -> Any:
     try:
-        data = json.loads(text)
+        return json.loads(text)
     except json.JSONDecodeError as exc:
         raise SelectorSchemaError("unparsable", f"JSON 으로 읽을 수 없다: {exc}") from exc
-    return validate_selectors(data)
 
 
-def _validate_section(value: Any, section: str, fields: tuple[str, ...]) -> dict[str, str]:
+def _validate_section(
+    value: Any, section: str, fields: tuple[str, ...], *, allow_empty: bool = False
+) -> tuple[dict[str, str], list[str]]:
     if not isinstance(value, Mapping):
         raise SelectorSchemaError(
             "unparsable", f"`{section}` 이 객체가 아니다: {type(value).__name__}"
@@ -145,6 +176,7 @@ def _validate_section(value: Any, section: str, fields: tuple[str, ...]) -> dict
     _require(value, tuple(name for name in fields if name not in OMITTABLE_FIELDS), section)
 
     result: dict[str, str] = {}
+    empty: list[str] = []
     for name in fields:
         # 나중에 더해진 필드는 키가 없어도 된다. 그 전에 저장된 셀렉터가 그렇다
         raw = value.get(name, "") if name in OMITTABLE_FIELDS else value[name]
@@ -154,9 +186,11 @@ def _validate_section(value: Any, section: str, fields: tuple[str, ...]) -> dict
             )
         selector = raw.strip()
         if not selector and name not in optional:
-            raise SelectorSchemaError("missing_field", f"`{section}.{name}` 이 비어 있다")
+            if not allow_empty:
+                raise SelectorSchemaError("missing_field", f"`{section}.{name}` 이 비어 있다")
+            empty.append(f"{section}.{name}")
         result[name] = selector
-    return result
+    return result, empty
 
 
 def _reject_unknown(data: Mapping[str, Any], allowed: tuple[str, ...], where: str) -> None:
