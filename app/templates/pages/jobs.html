@@ -2,5 +2,23 @@
 {% block title %}데이터 조회{% endblock %}
 {% block heading %}수집 공고 조회{% endblock %}
 {% block content %}
-<p>이 화면은 아직 붙지 않았다 (6.6).</p>
+<section>
+  <div id="job-filters" hx-get="/ui/jobs/filters" hx-trigger="load" hx-swap="innerHTML">
+    <p>조회 조건을 불러오는 중</p>
+  </div>
+</section>
+
+<section>
+  <h3>목록</h3>
+  <div id="job-table" hx-get="/ui/jobs" hx-trigger="load" hx-swap="innerHTML">
+    <p>목록을 불러오는 중</p>
+  </div>
+</section>
+
+<section>
+  <h3>상세</h3>
+  <div id="job-detail">
+    <p>표에서 상세를 누르면 여기에 들어온다.</p>
+  </div>
+</section>
 {% endblock %}

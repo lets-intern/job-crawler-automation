@@ -12,6 +12,7 @@ from app.api import (
     settings,
     ui,
     ui_crawlers,
+    ui_jobs,
     ui_rules,
     ui_tests,
     ui_workflows,
@@ -47,6 +48,7 @@ app.include_router(ui_crawlers.router)
 app.include_router(ui_tests.router)
 app.include_router(ui_workflows.router)
 app.include_router(ui_rules.router)
+app.include_router(ui_jobs.router)
 
 
 @app.get("/health")

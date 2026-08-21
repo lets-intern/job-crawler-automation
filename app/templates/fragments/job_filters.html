@@ -1,0 +1,40 @@
+{# 필터·검색·정렬 폼. 어떤 조작이든 표 영역(#job-table)만 갈아 끼운다 #}
+<form hx-get="/ui/jobs" hx-target="#job-table" hx-swap="innerHTML" hx-trigger="submit, change">
+  <fieldset>
+    <legend>조회 조건</legend>
+    <p>
+      <label for="filter-workflow">워크플로우</label>
+      <select id="filter-workflow" name="workflow_id">
+        <option value="">전체</option>
+        {% for workflow in workflows %}
+        <option value="{{ workflow.id }}">{{ workflow.id }} - {{ workflow.name }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="filter-company">회사</label>
+      <select id="filter-company" name="company">
+        <option value="">전체</option>
+        {% for name in companies %}
+        <option value="{{ name }}">{{ name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+    <p>
+      <label for="filter-q">검색 (제목·회사·부서)</label>
+      <input id="filter-q" name="q" type="search" size="40">
+
+      <label for="filter-sort">정렬</label>
+      <select id="filter-sort" name="sort">
+        {% for key in sorts %}<option value="{{ key }}">{{ key }}</option>{% endfor %}
+      </select>
+
+      <label for="filter-order">방향</label>
+      <select id="filter-order" name="order">
+        <option value="desc">내림차순</option>
+        <option value="asc">오름차순</option>
+      </select>
+
+      <button type="submit">조회</button>
+    </p>
+  </fieldset>
+</form>

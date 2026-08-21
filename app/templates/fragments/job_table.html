@@ -1,0 +1,40 @@
+{# 수집 공고 표. 필터·검색·정렬이 이 조각만 갈아 끼운다 #}
+<p>{{ total }}건 중 {{ shown }}건을 보여준다 (한 번에 최대 {{ row_limit }}건).</p>
+<table>
+  <caption>수집된 공고</caption>
+  <thead>
+    <tr>
+      <th scope="col">번호</th>
+      <th scope="col">회사</th>
+      <th scope="col">제목</th>
+      <th scope="col">부서</th>
+      <th scope="col">마감</th>
+      <th scope="col">워크플로우</th>
+      <th scope="col">정규화 시각</th>
+      <th scope="col">전달</th>
+      <th scope="col">원문</th>
+      <th scope="col">상세</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for job in jobs %}
+    <tr>
+      <td>{{ job.id }}</td>
+      <td>{{ job.company or "값 없음" }}</td>
+      <td>{{ job.title or "값 없음" }}</td>
+      <td>{{ job.department or "값 없음" }}</td>
+      <td>{{ job.deadline or "값 없음" }}</td>
+      <td>{{ job.workflow_id }} - {{ job.workflow_name }}</td>
+      <td>{{ job.normalized_at }}</td>
+      <td>{% if job.delivered_at %}전달됨 ({{ job.delivered_at }}){% else %}미전달{% endif %}</td>
+      <td><a href="{{ job.source_url }}" target="_blank" rel="noreferrer">원문 열기</a></td>
+      <td>
+        <button type="button" hx-get="/ui/jobs/{{ job.id }}"
+                hx-target="#job-detail" hx-swap="innerHTML">상세</button>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="10">조건에 맞는 공고가 없다</td></tr>
+    {% endfor %}
+  </tbody>
+</table>

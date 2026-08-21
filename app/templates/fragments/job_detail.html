@@ -1,0 +1,28 @@
+{# 공고 한 건. 원문 링크는 수집한 값 그대로다 #}
+{% if job is none %}
+<p>공고 {{ job_id }} 가 없다.</p>
+{% else %}
+<h4>{{ job.title or "제목 값 없음" }}</h4>
+<table>
+  <tbody>
+    <tr><th scope="row">번호</th><td>{{ job.id }}</td></tr>
+    <tr><th scope="row">회사</th><td>{{ job.company or "값 없음" }}</td></tr>
+    <tr><th scope="row">부서</th><td>{{ job.department or "값 없음" }}</td></tr>
+    <tr><th scope="row">마감</th><td>{{ job.deadline or "값 없음" }}</td></tr>
+    <tr><th scope="row">워크플로우</th><td>{{ job.workflow_id }} - {{ job.workflow_name }}</td></tr>
+    <tr><th scope="row">수집 시각</th><td>{{ raw.crawled_at }}</td></tr>
+    <tr><th scope="row">정규화 시각</th><td>{{ job.normalized_at }}</td></tr>
+    <tr><th scope="row">전달</th>
+        <td>{% if job.delivered_at %}전달됨 ({{ job.delivered_at }}){% else %}미전달{% endif %}</td></tr>
+    <tr><th scope="row">원본 행</th><td>raw_jobs {{ raw.raw_job_id }} ({{ raw.content_hash }})</td></tr>
+    <tr><th scope="row">원문</th>
+        <td><a href="{{ job.source_url }}" target="_blank" rel="noreferrer">{{ job.source_url }}</a></td></tr>
+  </tbody>
+</table>
+
+<h5>본문</h5>
+<pre>{{ raw.body or "값 없음" }}</pre>
+
+<h5>자격 요건</h5>
+<pre>{{ raw.requirements or "값 없음" }}</pre>
+{% endif %}
