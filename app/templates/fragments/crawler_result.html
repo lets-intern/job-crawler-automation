@@ -4,6 +4,7 @@
 <dl>
   <dt>사유</dt><dd>{{ error.reason }}</dd>
   <dt>내용</dt><dd>{{ error.message }}</dd>
+  {% if next_step(error.reason) %}<dt>다음</dt><dd>{{ next_step(error.reason) }}</dd>{% endif %}
 </dl>
 {% endif %}
 

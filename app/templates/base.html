@@ -57,6 +57,10 @@
     </div>
   </header>
 
+  {# 어느 조각으로도 못 들어간 실패가 뜨는 한 자리. 서버는 OOB 로, 브라우저는 아래 스크립트로
+     여기를 채운다. 비어 있으면 아무것도 차지하지 않는다 #}
+  <div id="global-error" role="alert"></div>
+
   <main class="mx-auto max-w-7xl px-6 py-6">
     <h2 class="mb-5 text-xl font-bold tracking-tight text-slate-900">{% block heading %}{% endblock %}</h2>
     {% block content %}{% endblock %}
@@ -67,5 +71,44 @@
     <p id="health" hx-get="/ui/health" hx-trigger="load" hx-swap="innerHTML"
        class="text-sm text-slate-500">연결 상태: 확인 전</p>
   </footer>
+
+  {# 서버까지 못 간 실패(네트워크 끊김, 시간 초과)와 조각으로 못 바뀐 응답을 받는다.
+     조용히 사라지는 경로를 남기지 않는다 #}
+  <script>
+    (function () {
+      var bar = document.getElementById('global-error');
+
+      function show(title, detail) {
+        bar.innerHTML =
+          '<div class="mx-auto max-w-7xl px-6 pt-4"><div class="rounded-md border ' +
+          'border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800"><p>' +
+          '<span class="font-semibold">실패</span> — ' + title + '</p>' +
+          '<p class="mt-1">' + detail + '</p></div></div>';
+      }
+
+      function path(evt) {
+        var info = evt.detail && evt.detail.requestConfig;
+        return info ? info.verb.toUpperCase() + ' ' + info.path : '요청';
+      }
+
+      document.body.addEventListener('htmx:beforeRequest', function () {
+        bar.innerHTML = '';
+      });
+      document.body.addEventListener('htmx:responseError', function (evt) {
+        show(path(evt) + ' 가 ' + evt.detail.xhr.status + ' 로 끝났다',
+             '화면은 갱신되지 않았다. 서버 로그에 자세한 내용이 남는다');
+      });
+      document.body.addEventListener('htmx:sendError', function (evt) {
+        show(path(evt) + ' 를 보내지 못했다',
+             '서버에 닿지 못했다. 서버가 떠 있는지 확인하고 다시 시도한다');
+      });
+      document.body.addEventListener('htmx:timeout', function (evt) {
+        show(path(evt) + ' 가 시간 안에 끝나지 않았다', '잠시 뒤 다시 시도한다');
+      });
+      document.body.addEventListener('htmx:swapError', function (evt) {
+        show(path(evt) + ' 의 응답을 화면에 넣지 못했다', '응답 형식이 조각이 아니다');
+      });
+    })();
+  </script>
 </body>
 </html>

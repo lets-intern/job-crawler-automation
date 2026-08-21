@@ -3,6 +3,7 @@
 {% if error %}
 <p>저장하지 못했다. 사유: {{ error.reason }}</p>
 <p>{{ error.message }}</p>
+{% if next_step(error.reason) %}<p>다음: {{ next_step(error.reason) }}</p>{% endif %}
 {% endif %}
 {% if message %}
 <p>{{ message }}</p>
