@@ -68,6 +68,8 @@ class Verified:
     list_missing = False
     failed_list_fields: list[str] = []
     failed = ["detail.title", "detail.body"]
+    # 셀렉터가 비어 판정을 건너뛴 필드는 없다. 상세가 0개인 것은 볼 HTML 이 없어서다
+    skipped: list[str] = []
 
     def summary(self) -> dict[str, int]:
         return dict(MATCHES)
@@ -183,7 +185,9 @@ def test_화면_결과에_건너뜀_이_단어로_나온다(
     html = client.post("/ui/crawlers", data={"list_url": LIST_URL}).text
 
     assert "건너뜀" in html
-    assert "확인하지 않은 필드" in html
+    # 12.4 에서 문구가 "확인하지 않은 필드" 에서 바뀌었다. 셀렉터가 비어 건너뛴 것까지
+    # 같은 줄에 들어오면서 상세 URL 만 가리키던 이름이 맞지 않게 됐다
+    assert "건너뛴 필드" in html
     assert "손으로 고쳐야 하는 필드" not in html
 
 

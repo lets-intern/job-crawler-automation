@@ -99,8 +99,10 @@ class UsageOut(BaseModel):
 class CrawlerOut(BaseModel):
     """등록 결과. `failed_fields` 가 비어야 테스트 실행으로 넘어갈 만하다.
 
-    `skipped_fields` 는 확인하지 않은 필드다. 상세 URL 없이 등록하면 상세 셀렉터가 여기
-    들어간다 — 볼 페이지가 없어서 판정하지 않은 것이지 실패한 것이 아니다.
+    `skipped_fields` 는 판정하지 않은 필드다. 두 가지가 들어간다 — 상세 URL 없이 등록해서
+    돌려볼 HTML 이 없었던 상세 필드와, 모델이 "사이트에 그 항목이 없다"고 답해 셀렉터가 비어
+    있는 선택 필드다. 어느 쪽도 매칭은 0개지만 실패가 아니다. 0개 매칭을 성공으로 적으면
+    운영자는 못 뽑은 필드와 원래 없는 필드를 구분할 수 없다.
     """
 
     id: int
@@ -276,12 +278,22 @@ async def create_crawler(
     crawler_id = int(cursor.lastrowid or 0)
 
     matches = result.verification.summary()
-    skipped = _skipped_detail_fields(matches, detail_url)
+    unverified = _skipped_detail_fields(matches, detail_url)
+    # 모델이 "사이트에 그 항목이 없다"고 답해 셀렉터가 비어 있는 필드. 매칭 0개지만 고칠
+    # 셀렉터가 없어 실패가 아니다 (`app/selector/verify.py`)
+    absent = [name for name in result.verification.skipped if name not in unverified]
+    # 화면의 표 순서대로 적는다. 어느 줄이 건너뛴 것인지 위에서 아래로 짚을 수 있어야 한다
+    skipped = [name for name in matches if name in unverified or name in absent]
     notes = list(result.notes)
-    if skipped:
+    if unverified:
         notes.append(
             "상세 URL 이 없어 상세 셀렉터를 확인하지 못했다. 볼 페이지가 없어 판정을 건너뛴 "
             "것이라 실패가 아니다. 실제로 맞는지는 테스트 실행이 말해 준다"
+        )
+    if absent:
+        notes.append(
+            f"모델이 사이트에 없다고 답해 셀렉터가 비어 있는 필드가 있다: {', '.join(absent)}. "
+            "매칭 0개지만 고칠 셀렉터가 없으므로 실패가 아니라 건너뜀이다"
         )
 
     return CrawlerOut(

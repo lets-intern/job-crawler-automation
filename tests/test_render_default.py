@@ -61,6 +61,8 @@ class Verified:
     list_missing = False
     failed: list[str] = []
     failed_list_fields: list[str] = []
+    # 셀렉터가 비어 판정을 건너뛴 필드는 없다 (`app/selector/verify.py`)
+    skipped: list[str] = []
 
     def summary(self) -> dict[str, int]:
         return {"list.item": 25}

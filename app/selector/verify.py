@@ -68,6 +68,16 @@ class VerificationReport:
         return not self.failed
 
     @property
+    def skipped(self) -> list[str]:
+        """셀렉터가 비어 판정하지 않은 필드 이름.
+
+        매칭이 0개지만 실패가 아니다 — 모델이 "사이트에 그 항목이 없다"고 답한 것이라 고칠
+        셀렉터가 없다. 이 목록을 화면에 그대로 넘겨야 운영자가 못 뽑은 것과 원래 없는 것을
+        가른다. 성공으로 섞어 적으면 둘이 같은 줄로 보인다.
+        """
+        return [field.name for field in self.fields if field.status == SKIPPED]
+
+    @property
     def failed_list_fields(self) -> list[str]:
         """실패한 목록 필드 이름만."""
         return [
