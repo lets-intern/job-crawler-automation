@@ -35,7 +35,7 @@ Conventional Commits, subject in Korean, 72 characters or less.
 type(scope): what changed
 
 type:  feat | fix | refactor | style | docs | test | chore
-scope: crawler | selector | workflow | scheduler | normalize | api | ui | db
+scope: crawler | selector | workflow | scheduler | normalize | api | ui | db | infra
 
 Co-Authored-By: Claude <noreply@anthropic.com>
 ```
