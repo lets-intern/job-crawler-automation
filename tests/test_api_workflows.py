@@ -1,7 +1,11 @@
-"""워크플로우 승격 API 테스트.
+"""워크플로우 승격·목록·주기 변경·중지·재개 API 테스트.
 
-실사이트에 나가지 않는다. 승격은 DB 상태만 보고 판정하므로 fetch 클라이언트가 필요 없다.
-확인하는 것은 `workflows` 행과 `crawlers.status` 다.
+실사이트에 나가지 않는다. 이 라우터는 DB 상태와 스케줄러 잡만 만지므로 fetch 클라이언트가
+필요 없다.
+
+스케줄러는 시작하지 않은 진짜 `WorkflowScheduler` 를 쓴다. 잡은 pending 으로 쌓이고 조회·갱신·
+제거가 그대로 동작해서, 확인하려는 것("테이블을 바꾼 요청이 잡까지 갔는가")을 가짜로 바꾸지
+않고 볼 수 있다.
 """
 
 from __future__ import annotations
@@ -11,11 +15,13 @@ import sqlite3
 from collections.abc import Iterator
 
 import pytest
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi.testclient import TestClient
 
 from app import db
 from app.api import workflows as workflows_api
 from app.main import app
+from app.scheduler import WorkflowScheduler, job_id
 
 LIST_URL = "https://www.python.org/jobs/"
 
@@ -31,7 +37,21 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
 
 
 @pytest.fixture
-def client(tmp_path: pathlib.Path, conn: sqlite3.Connection) -> Iterator[TestClient]:
+def scheduler() -> Iterator[WorkflowScheduler]:
+    async def do_nothing(workflow_id: int) -> None:
+        return None
+
+    instance = WorkflowScheduler(scheduler=AsyncIOScheduler(timezone="UTC"), runner=do_nothing)
+    try:
+        yield instance
+    finally:
+        instance.shutdown()
+
+
+@pytest.fixture
+def client(
+    tmp_path: pathlib.Path, conn: sqlite3.Connection, scheduler: WorkflowScheduler
+) -> Iterator[TestClient]:
     def request_connection() -> Iterator[sqlite3.Connection]:
         connection = db.connect(tmp_path / "jobs.db")
         try:
@@ -40,6 +60,7 @@ def client(tmp_path: pathlib.Path, conn: sqlite3.Connection) -> Iterator[TestCli
             connection.close()
 
     app.dependency_overrides[workflows_api.get_connection] = request_connection
+    app.dependency_overrides[workflows_api.get_workflow_scheduler] = lambda: scheduler
     try:
         yield TestClient(app)
     finally:
@@ -57,6 +78,10 @@ def add_crawler(conn: sqlite3.Connection, status: str) -> int:
 def crawler_status(conn: sqlite3.Connection, crawler_id: int) -> str:
     row = conn.execute("SELECT status FROM crawlers WHERE id = ?", (crawler_id,)).fetchone()
     return str(row["status"])
+
+
+def workflow(conn: sqlite3.Connection, workflow_id: int) -> sqlite3.Row:
+    return conn.execute("SELECT * FROM workflows WHERE id = ?", (workflow_id,)).fetchone()
 
 
 def test_tested_크롤러는_승격되고_promoted_가_된다(
@@ -135,3 +160,148 @@ def test_주기는_1분_미만을_받지_않는다(client: TestClient, conn: sql
 
     assert response.status_code == 422
     assert crawler_status(conn, crawler_id) == "tested"
+
+
+def promote(client: TestClient, crawler_id: int, minutes: int = 60) -> int:
+    response = client.post(
+        "/api/workflows", json={"crawler_id": crawler_id, "interval_minutes": minutes}
+    )
+    assert response.status_code == 201
+    return int(response.json()["id"])
+
+
+def test_승격하면_바로_잡이_생긴다(
+    client: TestClient, conn: sqlite3.Connection, scheduler: WorkflowScheduler
+) -> None:
+    """다음 기동까지 기다리면 그동안 그 워크플로우는 한 번도 돌지 않는다."""
+    workflow_id = promote(client, add_crawler(conn, "tested"), minutes=30)
+
+    assert scheduler.scheduled() == {workflow_id: 30}
+
+
+def test_목록은_대상과_주기와_누적값을_준다(client: TestClient, conn: sqlite3.Connection) -> None:
+    workflow_id = promote(client, add_crawler(conn, "tested"), minutes=45)
+    conn.execute(
+        """
+        UPDATE workflows
+           SET success_count = 4, fail_count = 1, last_run_at = '2026-08-21 10:00:00'
+         WHERE id = ?
+        """,
+        (workflow_id,),
+    )
+    conn.execute(
+        "INSERT INTO crawl_runs (workflow_id, status) VALUES (?, 'success')", (workflow_id,)
+    )
+    conn.execute(
+        "INSERT INTO crawl_runs (workflow_id, status) VALUES (?, 'failed')", (workflow_id,)
+    )
+
+    body = client.get("/api/workflows").json()
+
+    assert len(body) == 1
+    item = body[0]
+    assert item["id"] == workflow_id
+    assert item["name"] == "python.org"
+    assert item["list_url"] == LIST_URL
+    assert item["interval_minutes"] == 45
+    assert item["status"] == "active"
+    assert item["last_run_at"] == "2026-08-21 10:00:00"
+    # 최근 실행은 마지막으로 끝난 실행이다
+    assert item["last_run_status"] == "failed"
+    assert (item["success_count"], item["fail_count"]) == (4, 1)
+
+
+def test_실행한_적_없는_워크플로우는_최근_실행이_비어_있다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    promote(client, add_crawler(conn, "tested"))
+
+    item = client.get("/api/workflows").json()[0]
+
+    assert item["last_run_at"] is None
+    assert item["last_run_status"] is None
+
+
+def test_주기를_바꾸면_등록된_잡의_주기도_바뀐다(
+    client: TestClient, conn: sqlite3.Connection, scheduler: WorkflowScheduler
+) -> None:
+    workflow_id = promote(client, add_crawler(conn, "tested"), minutes=60)
+    assert scheduler.scheduled() == {workflow_id: 60}
+
+    response = client.patch(f"/api/workflows/{workflow_id}", json={"interval_minutes": 15})
+
+    assert response.status_code == 200
+    assert response.json()["interval_minutes"] == 15
+    assert workflow(conn, workflow_id)["interval_minutes"] == 15
+    assert scheduler.scheduled() == {workflow_id: 15}
+
+
+def test_paused_로_바꾸면_잡이_사라진다(
+    client: TestClient, conn: sqlite3.Connection, scheduler: WorkflowScheduler
+) -> None:
+    workflow_id = promote(client, add_crawler(conn, "tested"))
+    assert scheduler.scheduler.get_job(job_id(workflow_id)) is not None
+
+    response = client.patch(f"/api/workflows/{workflow_id}", json={"status": "paused"})
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "paused"
+    assert workflow(conn, workflow_id)["status"] == "paused"
+    assert scheduler.scheduled() == {}
+    assert scheduler.scheduler.get_job(job_id(workflow_id)) is None
+
+
+def test_다시_active_로_바꾸면_잡이_돌아온다(
+    client: TestClient, conn: sqlite3.Connection, scheduler: WorkflowScheduler
+) -> None:
+    workflow_id = promote(client, add_crawler(conn, "tested"), minutes=20)
+    client.patch(f"/api/workflows/{workflow_id}", json={"status": "paused"})
+    assert scheduler.scheduled() == {}
+
+    client.patch(f"/api/workflows/{workflow_id}", json={"status": "active"})
+
+    assert scheduler.scheduled() == {workflow_id: 20}
+
+
+def test_주기와_상태를_한_번에_바꿀_수_있다(
+    client: TestClient, conn: sqlite3.Connection, scheduler: WorkflowScheduler
+) -> None:
+    workflow_id = promote(client, add_crawler(conn, "tested"), minutes=60)
+    client.patch(f"/api/workflows/{workflow_id}", json={"status": "paused"})
+
+    body = client.patch(
+        f"/api/workflows/{workflow_id}", json={"status": "active", "interval_minutes": 5}
+    ).json()
+
+    assert (body["status"], body["interval_minutes"]) == ("active", 5)
+    assert scheduler.scheduled() == {workflow_id: 5}
+
+
+def test_바꿀_것이_없는_요청은_거절한다(client: TestClient, conn: sqlite3.Connection) -> None:
+    workflow_id = promote(client, add_crawler(conn, "tested"))
+
+    assert client.patch(f"/api/workflows/{workflow_id}", json={}).status_code == 422
+
+
+def test_모르는_상태값은_거절한다(client: TestClient, conn: sqlite3.Connection) -> None:
+    workflow_id = promote(client, add_crawler(conn, "tested"))
+
+    response = client.patch(f"/api/workflows/{workflow_id}", json={"status": "stopped"})
+
+    assert response.status_code == 422
+    assert workflow(conn, workflow_id)["status"] == "active"
+
+
+def test_주기는_1분_미만으로_바꿀_수_없다(
+    client: TestClient, conn: sqlite3.Connection, scheduler: WorkflowScheduler
+) -> None:
+    workflow_id = promote(client, add_crawler(conn, "tested"), minutes=60)
+
+    response = client.patch(f"/api/workflows/{workflow_id}", json={"interval_minutes": 0})
+
+    assert response.status_code == 422
+    assert scheduler.scheduled() == {workflow_id: 60}
+
+
+def test_없는_워크플로우_변경은_404_다(client: TestClient) -> None:
+    assert client.patch("/api/workflows/999", json={"status": "paused"}).status_code == 404
