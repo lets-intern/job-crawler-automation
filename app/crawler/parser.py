@@ -24,6 +24,7 @@ URL 과 합쳐 절대 URL 로 만들 뿐이고, 따라가도 되는 URL 인지�
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from urllib.parse import urljoin
 
@@ -186,12 +187,61 @@ def _select(scope: BeautifulSoup | Tag, selector: str, name: str) -> list[Tag]:
         raise FieldParseError(f"{name} 셀렉터 문법 오류: {exc}") from exc
 
 
+# 줄이 바뀌어야 하는 태그. 이 목록에 없는 것(strong, span, a 같은 인라인)은 앞뒤 글자와
+# 이어져야 한다 — 거기까지 줄을 넣으면 문장 하나가 여러 줄로 쪼개진다.
+BLOCK_TAGS: frozenset[str] = frozenset(
+    {
+        "address",
+        "article",
+        "blockquote",
+        "br",
+        "dd",
+        "div",
+        "dl",
+        "dt",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "hr",
+        "li",
+        "ol",
+        "p",
+        "pre",
+        "section",
+        "table",
+        "td",
+        "th",
+        "tr",
+        "ul",
+    }
+)
+
+
 def _text(scope: BeautifulSoup | Tag, selector: str, name: str) -> str:
-    """첫 매칭 노드의 텍스트를 그대로 돌려준다. 매칭이 없으면 빈 문자열이다."""
+    """첫 매칭 노드의 텍스트. 매칭이 없으면 빈 문자열이다.
+
+    블록 태그 경계에 줄바꿈을 넣고 뽑는다. `get_text()` 를 그냥 부르면 `<h3>조직소개</h3>`
+    와 뒤따르는 `<p>` 가 한 줄로 이어붙어, 본문 전체가 한 문단처럼 보인다. 실제로
+    현대자동차 공고 본문 1,955자가 그렇게 들어왔다.
+
+    이것을 정규화로는 고칠 수 없다. 정규화가 값을 받는 시점에는 어디가 문단 경계였는지가
+    이미 사라진 뒤다. 구조를 아는 것은 여기뿐이다.
+
+    남는 빈 줄은 여기서 정리하지 않는다. `\n{3,}` 를 줄이는 것은 정규화 규칙의 일이다.
+    """
     nodes = _select(scope, selector, name)
     if not nodes:
         return ""
-    return nodes[0].get_text()
+
+    # 원본을 복사해서 손댄다. 같은 트리에서 다른 필드도 뽑으므로 트리를 바꾸면 안 된다.
+    node = copy.copy(nodes[0])
+    for tag in node.find_all(BLOCK_TAGS):
+        tag.insert_before("\n")
+        tag.insert_after("\n")
+    return node.get_text()
 
 
 def _link(node: Tag, selectors: ListSelectors, index: int) -> LinkResult:

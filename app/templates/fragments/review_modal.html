@@ -1,0 +1,98 @@
+{# 검수 편집 모달의 내용. 틀(<dialog>)은 base.html 에 하나 있고 이 조각이 그 안을 채운다.
+
+   저장은 이 조각을 다시 그리고, 응답 뒤에 표의 그 칸·보정 개수·전달 칸을 OOB 로 함께 갈아
+   끼운다. 표 전체는 다시 그리지 않는다 (Push 6 의 부분 갱신).
+
+   닫는 것은 서버가 `HX-Trigger-After-Settle: app-modal-done` 로 알린다. 설정(settle) 뒤라
+   표가 갈린 다음에 닫히고, 그래서 닫힌 순간 뒤에 보이는 값이 방금 저장한 값이다. #}
+{% from "fragments/review_cell_macro.html" import review_cell_inner, review_override_count, review_delivery %}
+{% if cell is none %}
+<div class="modal-body">
+  <header class="modal-head">
+    <h3 id="app-modal-title" class="text-base font-semibold text-slate-900">고칠 수 없다</h3>
+  </header>
+  <div class="modal-scroll" tabindex="-1" autofocus>
+    <p class="text-sm"><span class="state-bad">실패</span> — {{ message }}</p>
+  </div>
+  <footer class="modal-foot">
+    <button type="button" data-modal-close>닫기</button>
+  </footer>
+</div>
+{% else %}
+<form class="modal-body"
+      hx-put="/ui/review/cells/{{ cell.raw_job_id }}/{{ cell.field }}"
+      hx-target="#app-modal-body" hx-swap="innerHTML"
+      hx-disabled-elt="find button[type=submit]">
+  <header class="modal-head">
+    <h3 id="app-modal-title" class="text-base font-semibold text-slate-900">{{ cell.label }} 고치기</h3>
+    <p class="mt-1 text-sm text-slate-600">
+      수집 건 {{ cell.raw_job_id }} · {{ job.company or "회사 값 없음" }} ·
+      {{ job.title or "제목 값 없음" }}
+    </p>
+  </header>
+
+  <div class="modal-scroll">
+    {% if saved %}
+    <p class="mb-3 rounded-md bg-emerald-50 px-3 py-2 text-sm">
+      <span class="state-ok">저장</span> — {{ saved }}
+    </p>
+    {% endif %}
+    {% if error %}
+    <p class="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm">
+      <span class="state-bad">저장 실패</span> — {{ error }}
+    </p>
+    {% endif %}
+    {% if cell.delivered %}
+    <p class="mb-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+      이미 전달된 행이다. 여기서 고쳐도 소비 측이 가진 값은 바뀌지 않는다 —
+      수동 수정은 전달 표시를 되돌리지 않는다.
+    </p>
+    {% endif %}
+
+    <p class="text-sm text-slate-600">
+      지금 값의 출처:
+      {% if cell.overridden %}<span class="badge badge-ok">사람 보정</span>
+      {% else %}<span class="badge badge-idle">규칙값</span>{% endif %}
+    </p>
+
+    <p>
+      <label for="review-modal-value">{{ cell.label }}</label>
+      {% if cell.long %}
+      <textarea id="review-modal-value" name="value" rows="16" autofocus
+                class="block w-full">{{ draft if draft is not none else (cell.value or "") }}</textarea>
+      {% else %}
+      <input id="review-modal-value" name="value" type="text" autofocus class="block w-full"
+             value="{{ draft if draft is not none else (cell.value or "") }}">
+      {% endif %}
+    </p>
+
+    <h5 class="mb-1 mt-5 text-sm font-semibold text-slate-700">규칙이 만든 값</h5>
+    <p class="text-sm text-slate-600">
+      무엇에서 고치는 것인지 함께 본다. 저장해도 이 값은 지워지지 않고, 보정을 지우면 다음
+      정규화에서 이 값으로 돌아간다.
+    </p>
+    <pre>{{ cell.rule_value or "값 없음" }}</pre>
+  </div>
+
+  <footer class="modal-foot">
+    <button type="submit">저장</button>
+    {% if cell.overridden %}
+    {# 폼의 hx-disabled-elt 를 그대로 물려받으면 이 버튼 안에서 submit 버튼을 찾다가 실패한다.
+       자기 자신으로 덮어쓴다 #}
+    <button type="button" hx-delete="/ui/review/cells/{{ cell.raw_job_id }}/{{ cell.field }}"
+            hx-target="#app-modal-body" hx-swap="innerHTML"
+            hx-disabled-elt="this" hx-indicator="closest footer"
+            hx-confirm="{{ cell.label }} 보정을 지운다. 다음 정규화에서 규칙이 만든 값으로 돌아간다. 계속할까"
+            title="사람이 정한 값을 버리고 규칙 값으로 되돌린다">보정 삭제</button>
+    {% endif %}
+    <button type="button" data-modal-close>닫기</button>
+    <span class="wait-note">저장하는 중</span>
+  </footer>
+</form>
+{% endif %}
+{% if swap_row %}
+{# 뒤에 있는 표의 그 행. 닫았더니 옛 값이 남아 있으면 저장이 안 된 줄 안다 #}
+{{ review_cell_inner(cell, oob=True, changed=True) }}
+{{ review_override_count(cell.raw_job_id, override_count, oob=True) }}
+{{ review_delivery(cell.raw_job_id, job.delivered_at, override_count, oob=True) }}
+{% endif %}
