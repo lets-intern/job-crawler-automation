@@ -1,0 +1,41 @@
+{# 재정규화 영역. 규칙 편집(#rule-list)과 갈라져 있고, 규칙 저장이 이 영역을 갱신하지 않는다.
+   실행 중일 때만 자기 자신을 2초마다 다시 부른다. 끝나면 폴링 속성 없이 렌더되어 멈춘다 #}
+<div id="renormalize-panel"
+     {% if progress.running %}hx-get="/ui/renormalize" hx-trigger="every 2s" hx-target="this" hx-swap="outerHTML"{% endif %}>
+  {% if error %}
+  <p>시작하지 못했다: {{ error }}</p>
+  {% endif %}
+
+  <p>대상: <code>raw_jobs</code> {{ target_count }}건. 지금 규칙으로 다시 정규화한다.</p>
+
+  {% if progress.running %}
+  <p>상태: 실행 중 (시작 {{ progress.started_at }})</p>
+  <p>진행: 처리 {{ progress.processed }}건, 실패 {{ progress.failed }}건 / 대상 {{ progress.total }}건</p>
+  <progress value="{{ progress.processed + progress.failed }}" max="{{ progress.total or 1 }}"></progress>
+  {% elif progress.started_at %}
+  <p>상태: 종료 (시작 {{ progress.started_at }}, 종료 {{ progress.finished_at }})</p>
+  <p>결과: 대상 {{ progress.total }}건 중 처리 {{ progress.processed }}건, 실패 {{ progress.failed }}건</p>
+  {% else %}
+  <p>상태: 실행한 적 없음</p>
+  {% endif %}
+
+  {% if progress.errors %}
+  <details open>
+    <summary>실패 사유 {{ progress.errors | length }}건</summary>
+    <ul>{% for line in progress.errors %}<li>{{ line }}</li>{% endfor %}</ul>
+  </details>
+  {% endif %}
+
+  {% if not progress.running %}
+    {% if confirming %}
+    <p>{{ target_count }}건을 다시 정규화한다. 계속할까.</p>
+    <button type="button" hx-post="/ui/renormalize"
+            hx-target="#renormalize-panel" hx-swap="outerHTML">재정규화 실행</button>
+    <button type="button" hx-get="/ui/renormalize"
+            hx-target="#renormalize-panel" hx-swap="outerHTML">취소</button>
+    {% else %}
+    <button type="button" hx-get="/ui/renormalize?confirm=true"
+            hx-target="#renormalize-panel" hx-swap="outerHTML">기존 데이터 재정규화</button>
+    {% endif %}
+  {% endif %}
+</div>

@@ -2,5 +2,26 @@
 {% block title %}정규화 규칙{% endblock %}
 {% block heading %}정규화 규칙{% endblock %}
 {% block content %}
-<p>이 화면은 아직 붙지 않았다 (6.5).</p>
+<section>
+  <h3>규칙</h3>
+  <p>규칙 변경은 이후 정규화되는 건부터 적용된다. 이미 정규화된 데이터는 그대로다.</p>
+  <div id="rule-list" hx-get="/ui/rules" hx-trigger="load" hx-swap="innerHTML">
+    <p>규칙을 불러오는 중</p>
+  </div>
+</section>
+
+<hr>
+
+<section>
+  <h3>기존 데이터 재정규화</h3>
+  <p>
+    규칙 저장과는 별개의 동작이다. 여기서 누를 때만 <code>raw_jobs</code> 를 다시 읽어
+    <code>normalized_jobs</code> 를 갱신한다. 원본과 전달 표시(<code>delivered_at</code>)는
+    건드리지 않는다.
+  </p>
+  <div id="renormalize-panel" hx-get="/ui/renormalize" hx-trigger="load"
+       hx-target="this" hx-swap="outerHTML">
+    <p>상태를 불러오는 중</p>
+  </div>
+</section>
 {% endblock %}

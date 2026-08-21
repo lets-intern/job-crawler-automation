@@ -6,7 +6,17 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app import db
-from app.api import crawlers, rules, settings, ui, ui_crawlers, ui_tests, ui_workflows, workflows
+from app.api import (
+    crawlers,
+    rules,
+    settings,
+    ui,
+    ui_crawlers,
+    ui_rules,
+    ui_tests,
+    ui_workflows,
+    workflows,
+)
 from app.crawler.fetcher import close_fetcher
 from app.scheduler import get_scheduler, shutdown_scheduler
 
@@ -36,6 +46,7 @@ app.include_router(ui.router)
 app.include_router(ui_crawlers.router)
 app.include_router(ui_tests.router)
 app.include_router(ui_workflows.router)
+app.include_router(ui_rules.router)
 
 
 @app.get("/health")
