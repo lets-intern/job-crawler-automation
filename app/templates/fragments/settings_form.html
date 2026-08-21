@@ -1,0 +1,21 @@
+{# 운영 설정. 이 화면에 나오는 값은 동시 실행 상한 하나다 #}
+{% if error %}
+<p>저장하지 못했다: {{ error }}</p>
+{% endif %}
+{% if message %}
+<p>{{ message }}</p>
+{% endif %}
+
+<form hx-put="/ui/settings/{{ key }}" hx-target="#settings-form" hx-swap="innerHTML">
+  <fieldset>
+    <legend>동시 실행 상한 ({{ key }})</legend>
+    <p>
+      <label for="max-concurrent-runs">한 번에 돌 수 있는 워크플로우 수 (1 이상의 정수)</label>
+      <br>
+      <input id="max-concurrent-runs" name="value" type="number" step="1"
+             value="{{ values[key] }}" size="6">
+      <button type="submit">저장</button>
+    </p>
+    <p>저장된 값: {{ values[key] }}</p>
+  </fieldset>
+</form>
