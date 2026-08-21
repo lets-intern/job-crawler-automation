@@ -10,16 +10,19 @@
         hx-disabled-elt="find button"
         hx-indicator="#generate-wait, #crawler-result-wait">
     <fieldset>
-      <legend>리스트 URL 과 상세 URL 로 셀렉터를 생성한다</legend>
+      <legend>리스트 URL 로 셀렉터를 생성한다. 상세 URL 은 있으면 같이 본다</legend>
       <p>
         <label for="list-url">리스트 URL</label>
         <br>
         <input id="list-url" name="list_url" type="url" size="80" required class="w-full">
       </p>
       <p>
-        <label for="detail-url">상세 URL</label>
+        <label for="detail-url">상세 URL (선택)</label>
         <br>
-        <input id="detail-url" name="detail_url" type="url" size="80" required class="w-full">
+        <input id="detail-url" name="detail_url" type="url" size="80" class="w-full">
+        <br>
+        <span class="text-sm text-slate-500">상세를 JS 로 그려서 공고마다 주소가 따로 없는 사이트는 비워 둔다.
+        비우면 목록 페이지만 보고 만들고, 상세 셀렉터는 확인하지 않은 채로 남는다.</span>
       </p>
       <p>
         <label for="crawler-name">이름 (비우면 도메인)</label>

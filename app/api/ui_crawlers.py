@@ -86,7 +86,9 @@ def _result(
 def _created_notice(created: crawlers.CrawlerOut) -> str:
     notice = f"크롤러 {created.id}({created.name}) 를 등록했다."
     if created.default_company:
-        return f"{notice} 회사명 {created.default_company} 를 함께 저장했다."
+        notice = f"{notice} 회사명 {created.default_company} 를 함께 저장했다."
+    if not created.detail_url:
+        notice = f"{notice} 상세 URL 없이 목록만 보고 만들었다."
     return notice
 
 
@@ -103,14 +105,17 @@ def crawler_list_fragment(
 async def create_crawler_fragment(
     request: Request,
     list_url: Annotated[str, Form()],
-    detail_url: Annotated[str, Form()],
     conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
     generate: Annotated[crawlers.GenerateFn, Depends(crawlers.get_generator)],
+    detail_url: Annotated[str, Form()] = "",
     name: Annotated[str, Form()] = "",
     default_company: Annotated[str, Form()] = "",
     render_mode: Annotated[str, Form()] = crawlers.DEFAULT_RENDER_MODE,
 ) -> HTMLResponse:
     """생성 요청. 성공하면 결과 요약과 편집기가, 실패하면 사유가 결과 영역에 들어간다.
+
+    `detail_url` 은 선택이다. 상세를 JS 로 그려 주소가 따로 없는 사이트가 있고, 비우면 목록
+    페이지만 보고 만든다. 그때 상세 셀렉터는 실패가 아니라 건너뜀으로 표시된다.
 
     `default_company` 는 선택이다. 비워 두면 회사명은 공고에서 뽑은 값만 쓰인다.
 
@@ -140,6 +145,7 @@ async def create_crawler_fragment(
         generation={
             "matches": created.matches,
             "failed_fields": created.failed_fields,
+            "skipped_fields": created.skipped_fields,
             "notes": created.notes,
             "usage": created.usage,
         },

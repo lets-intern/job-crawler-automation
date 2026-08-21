@@ -20,6 +20,10 @@
 데이터(`raw_jobs`, `normalized_jobs`)는 크롤러 정의와 수명이 다르므로 함께 지우지 않는다
 (`.claude/rules/data-safety.md`).
 
+상세 URL 은 선택이다. 상세를 JS 로 그려서 공고마다 주소가 따로 없는 사이트가 있고, 그런
+사이트에 없는 주소를 지어내 가져오지 않는다. 비우면 목록 페이지만 보고 생성하며, 상세
+셀렉터는 확인하지 않은 가설로 남는다 — 실패가 아니라 건너뛴 것이라 응답에서 갈라 적는다.
+
 `default_company` 는 회사명이 페이지에 없는 사이트를 위한 운영자 입력이고 선택이다. 운영자가
 타이핑한 값이라 추출 결과가 아니고, 그래서 `crawlers` 에만 있고 `raw_jobs` 에는 가지 않는다
 (`.claude/rules/data-safety.md`). 어느 회사명이 쓰일지는 정규화 단계가 정한다.
@@ -41,7 +45,12 @@ from app.crawler.failures import SUCCESS
 from app.crawler.fetcher import FetchError, FetchPolicy, RobotsDisallowedError, get_fetcher
 from app.crawler.playwright import RENDER_MODES, STATIC, open_source
 from app.crawler.runner import RunTarget, run_once
-from app.selector.generator import GenerationResult, SelectorGenerationError, generate_for_urls
+from app.selector.generator import (
+    GenerationResult,
+    SelectorGenerationError,
+    generate_for_urls,
+    generate_from_html,
+)
 from app.selector.schema import SelectorSchemaError, SelectorSet, validate_selectors
 
 router = APIRouter(prefix="/api/crawlers", tags=["crawlers"])
@@ -58,7 +67,8 @@ GenerateFn = Callable[[str, str, str], Awaitable[GenerationResult]]
 
 class CrawlerCreate(BaseModel):
     list_url: str
-    detail_url: str
+    # 선택이다. 상세를 JS 로 그려 주소가 따로 없는 사이트가 있다
+    detail_url: str = ""
     name: str = ""
     # 회사명이 페이지에 없는 사이트를 위한 운영자 입력. 없으면 비운다
     default_company: str = ""
@@ -87,16 +97,22 @@ class UsageOut(BaseModel):
 
 
 class CrawlerOut(BaseModel):
-    """등록 결과. `failed_fields` 가 비어야 테스트 실행으로 넘어갈 만하다."""
+    """등록 결과. `failed_fields` 가 비어야 테스트 실행으로 넘어갈 만하다.
+
+    `skipped_fields` 는 확인하지 않은 필드다. 상세 URL 없이 등록하면 상세 셀렉터가 여기
+    들어간다 — 볼 페이지가 없어서 판정하지 않은 것이지 실패한 것이 아니다.
+    """
 
     id: int
     name: str
     status: str
     default_company: str | None
     render_mode: str
+    detail_url: str | None
     selectors: SelectorSet
     matches: dict[str, int]
     failed_fields: list[str]
+    skipped_fields: list[str]
     notes: list[str]
     usage: UsageOut
 
@@ -187,6 +203,11 @@ def get_generator() -> GenerateFn:
     async def generate(list_url: str, detail_url: str, render_mode: str) -> GenerationResult:
         # 렌더 모드면 브라우저가 이 블록 안에서만 산다. 생성이 끝나면 닫힌다
         async with open_source(render_mode, get_fetcher()) as source:
+            if not detail_url.strip():
+                # 상세 페이지 주소가 없는 사이트다. 없는 주소를 지어내 가져오지 않는다.
+                # 목록만 보고 만들고, 상세 셀렉터는 볼 HTML 이 없어 판정되지 않는다
+                list_html = (await source.fetch(list_url)).text
+                return await generate_from_html(list_html, "", list_url=list_url)
             return await generate_for_urls(list_url, detail_url, source=source)
 
     return generate
@@ -236,6 +257,7 @@ async def create_crawler(
     name = payload.name.strip() or urlsplit(payload.list_url).netloc
     # 안 적었으면 NULL 이다. 빈 문자열로 넣으면 "회사명이 있다" 와 구분되지 않는다
     default_company = payload.default_company.strip() or None
+    detail_url = payload.detail_url.strip() or None
     cursor = conn.execute(
         """
         INSERT INTO crawlers
@@ -245,7 +267,7 @@ async def create_crawler(
         (
             name,
             payload.list_url,
-            payload.detail_url,
+            detail_url,
             result.selectors.to_json(),
             default_company,
             render_mode,
@@ -253,18 +275,41 @@ async def create_crawler(
     )
     crawler_id = int(cursor.lastrowid or 0)
 
+    matches = result.verification.summary()
+    skipped = _skipped_detail_fields(matches, detail_url)
+    notes = list(result.notes)
+    if skipped:
+        notes.append(
+            "상세 URL 이 없어 상세 셀렉터를 확인하지 못했다. 볼 페이지가 없어 판정을 건너뛴 "
+            "것이라 실패가 아니다. 실제로 맞는지는 테스트 실행이 말해 준다"
+        )
+
     return CrawlerOut(
         id=crawler_id,
         name=name,
         status="draft",
         default_company=default_company,
         render_mode=render_mode,
+        detail_url=detail_url,
         selectors=result.selectors,
-        matches=result.verification.summary(),
-        failed_fields=result.verification.failed,
-        notes=result.notes,
+        matches=matches,
+        # 건너뛴 필드는 실패에서 뺀다. 고칠 곳을 알려 주는 목록에 확인 못 한 것을 섞지 않는다
+        failed_fields=[name for name in result.verification.failed if name not in skipped],
+        skipped_fields=skipped,
+        notes=notes,
         usage=UsageOut(**vars(result.usage)),
     )
+
+
+def _skipped_detail_fields(matches: dict[str, int], detail_url: str | None) -> list[str]:
+    """상세 URL 없이 생성했을 때 판정하지 않은 필드.
+
+    상세 셀렉터는 모델이 낸 그대로 저장되지만 어느 HTML 에도 돌려보지 않았다. 0개 매칭을
+    실패로 적으면 운영자는 고칠 곳으로 읽는데, 여기서는 볼 페이지가 없었을 뿐이다.
+    """
+    if detail_url:
+        return []
+    return [name for name in matches if name.startswith("detail.")]
 
 
 def _validated_render_mode(value: str) -> str:
