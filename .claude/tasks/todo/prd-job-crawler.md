@@ -127,3 +127,9 @@ normalization_rules
 - 정규화 규칙 변경 시 기존 데이터 일괄 재처리 여부/방식
 - 인증/권한 필요 여부 (1차는 없음 가정)
 - LLM 셀렉터 생성 실패(또는 저품질) 시 재시도/수동 개입 정책
+
+## 10. 개발 환경 메모
+
+- LLM API 키는 프로젝트 루트 `.env` 에 넣어 두었다. 현재 들어 있는 것은 **`GEMINI_API_KEY`** (Gemini) 하나다.
+- `.env` 는 `.gitignore` 에 걸려 있어 커밋되지 않는다. 변수 이름은 `.env.example` 이 문서화한다.
+- 6장의 셀렉터 생성 모듈은 Anthropic API 기준으로 적혀 있다. 실제 키가 Gemini 이므로 **어느 쪽으로 갈지 결정이 필요하다.** 결정되면 `.claude/rules/llm.md`, `.claude/docs/tech-stack.md`, `.env.example` 을 같이 고친다. (9장 미결정 사항에 추가)
