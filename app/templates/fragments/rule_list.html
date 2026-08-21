@@ -40,9 +40,11 @@
         </select>
       </td>
       <td>
-        <input name="note" form="rule-form-{{ rule.id }}" type="text"
-               value="{{ rule.note }}" placeholder="이 규칙이 하는 일"
-               class="w-56 rounded border border-slate-300 px-2 py-1 text-sm">
+        {# 한 줄 입력이면 긴 메모가 잘려 읽을 수 없다. 설정 JSON 과 같은 높이로 둔다 #}
+        <textarea name="note" form="rule-form-{{ rule.id }}" rows="4"
+                  placeholder="이 규칙이 하는 일"
+                  class="w-52 rounded border border-slate-300 px-2 py-1 text-sm"
+                  >{{ rule.note }}</textarea>
       </td>
       <td>
         <select name="rule_type" form="rule-form-{{ rule.id }}">
@@ -52,8 +54,10 @@
         </select>
       </td>
       <td>
-        <textarea name="rule_config" form="rule-form-{{ rule.id }}" rows="4" cols="46"
-                  spellcheck="false">{{ rule.rule_config | tojson }}</textarea>
+        <textarea name="rule_config" form="rule-form-{{ rule.id }}" rows="4"
+                  spellcheck="false"
+                  class="w-72 rounded border border-slate-300 px-2 py-1 font-mono text-xs"
+                  >{{ rule.rule_config | tojson }}</textarea>
       </td>
       <td>
         <input name="priority" form="rule-form-{{ rule.id }}" type="number"
@@ -120,8 +124,8 @@
     </label>
     <label for="new-note" class="grow">
       <span class="block text-slate-600">메모</span>
-      <input id="new-note" name="note" type="text" placeholder="이 규칙이 하는 일"
-             class="mt-1 w-full rounded border border-slate-300 px-2 py-1">
+      <textarea id="new-note" name="note" rows="2" placeholder="이 규칙이 하는 일"
+                class="mt-1 w-full rounded border border-slate-300 px-2 py-1"></textarea>
       <label for="new-enabled">활성</label>
       <input id="new-enabled" name="enabled" type="checkbox" checked>
     </p>
