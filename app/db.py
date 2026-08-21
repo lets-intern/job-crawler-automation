@@ -43,7 +43,9 @@ def connect(database_path: str | Path | None = None) -> sqlite3.Connection:
         parent = Path(path).expanduser().resolve().parent
         parent.mkdir(parents=True, exist_ok=True)
     # isolation_level=None: 암묵적 트랜잭션을 끄고 BEGIN/COMMIT 을 명시한다
-    conn = sqlite3.connect(path, isolation_level=None)
+    # check_same_thread=False: FastAPI 가 의존성과 동기 엔드포인트를 스레드풀에서 돌려 연결을 만든
+    # 스레드와 쓰는 스레드가 갈린다. 연결은 요청 1건이 열고 닫으므로 동시에 공유되지는 않는다
+    conn = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
