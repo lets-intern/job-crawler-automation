@@ -102,6 +102,34 @@ SQLite 파일 하나. 경로는 `DATABASE_PATH` 가 정하고 Docker named volum
 `company_source` 가 모두 NULL 이다 — 빈 문자열로 채우지 않는다. 합치는 것은 정규화 단계
 하나뿐이다.
 
+### job_field_overrides
+
+사람이 검수하며 고친 값. 공고 하나의 필드 하나가 행 하나다.
+
+| 컬럼 | 설명 |
+|---|---|
+| id | |
+| raw_job_id | 어느 수집 건의 보정인지. `normalized_jobs.id` 가 아니다 |
+| field_name | `company` / `title` / `department` / `deadline` / `body` / `requirements` |
+| value | 사람이 정한 값. 빈 문자열은 "비어 있는 것이 맞다" 는 판단이다 |
+| created_at, updated_at | |
+
+`(raw_job_id, field_name)` 이 유일하다. 같은 필드에 보정이 둘이면 어느 쪽이 사람의 뜻인지
+알 수 없다.
+
+`normalized_jobs` 행은 재정규화로 다시 만들어지므로 거기에 매달면 보정이 떨어져 나간다.
+append-only 인 `raw_jobs` 에 매달아야 몇 번을 다시 정규화해도 보정이 따라붙는다.
+
+고칠 수 있는 필드는 규칙이 만드는 여섯 개뿐이고 CHECK 가 나머지를 막는다. `source_url` 은
+공고의 신원이라 고치지 않고, `normalized_at` 과 `delivered_at` 은 아예 받지 않는다.
+
+정규화는 규칙을 먼저 적용하고 그 위에 보정을 덮는다. 규칙을 개선하면 보정하지 않은 필드는
+같이 좋아지고, 보정한 필드는 사람이 정한 값을 유지한다. 보정 행을 지우면 다음 정규화에서
+규칙이 만든 값으로 돌아간다.
+
+`company_source` 는 규칙 단계가 고른 출처만 말한다. 사람이 고쳤는지는 이 테이블에 행이
+있는지로 안다.
+
 ### normalization_rules
 
 | 컬럼 | 설명 |
