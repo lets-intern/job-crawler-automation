@@ -12,6 +12,19 @@
 <table class="data-table">
   <tbody>
     <tr><th scope="row">실행 번호</th><td>{{ result.run_id }}</td></tr>
+    {# 어느 경로로 돌았는지를 단어로 적는다. 저장값과 다르면 이번 한 번만 시험한 것이고,
+       그 실행은 크롤러 상태를 올리지 않는다 (`app/api/crawlers.py`) #}
+    <tr><th scope="row">실행 모드</th>
+        <td>
+          <span class="font-medium">{{ mode_word(result.render_mode) }}</span>
+          <span class="text-xs text-slate-500">({{ result.render_mode }})</span>
+          {% if result.render_mode != result.saved_render_mode %}
+          <span class="state-warn">이번 실행만</span>
+          <span class="text-sm text-slate-600">저장 모드는 {{ mode_word(result.saved_render_mode) }} 그대로다</span>
+          {% else %}
+          <span class="text-sm text-slate-600">저장 모드 그대로다</span>
+          {% endif %}
+        </td></tr>
     <tr><th scope="row">종료 상태</th>
         <td>
           {% if result.status == "success" %}<span class="badge badge-ok">성공</span>

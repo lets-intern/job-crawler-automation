@@ -146,12 +146,18 @@ class RunFailure(BaseModel):
 
 
 class TestRunOut(BaseModel):
-    """`crawl_runs` 행에 남은 값과 같은 카운트 + 미리보기."""
+    """`crawl_runs` 행에 남은 값과 같은 카운트 + 미리보기.
+
+    `render_mode` 는 이 실행이 실제로 쓴 경로고, `saved_render_mode` 는 크롤러에 저장된
+    값이다. 둘이 다르면 이번 한 번만 다른 모드로 시험한 것이고 저장값은 그대로다.
+    """
 
     crawler_id: int
     run_id: int
     status: str
     crawler_status: str
+    render_mode: str
+    saved_render_mode: str
     matched: int
     success_count: int
     new_count: int
@@ -407,11 +413,17 @@ async def test_run(
     conn: Annotated[sqlite3.Connection, Depends(get_connection)],
     fetcher: Annotated[FetchPolicy, Depends(get_crawl_fetcher)],
     limit: Annotated[int, Query(ge=1, le=20)] = 3,
+    render_mode: Annotated[str, Query()] = "",
 ) -> TestRunOut:
     """저장된 셀렉터로 실제 페이지를 1회 크롤링한다.
 
     `limit` 은 상세를 몇 건까지 따라갈지다. 테스트는 3건이면 충분하고, 전체를 도는 것은
     테스트가 아니라 그냥 크롤링이다 (`.claude/skills/crawl-test/SKILL.md`).
+
+    `render_mode` 는 이번 한 번만 다른 경로로 시험하는 값이다. 비우면 저장된 모드로 돈다.
+    값을 줘도 `crawlers.render_mode` 는 바뀌지 않는다 — 정적으로 되는지 렌더가 필요한지
+    비교하는 것이 이 실행의 일이고, 시험할 때마다 저장값이 따라 바뀌면 비교가 안 된다.
+    저장값을 바꾸는 것은 `PUT /api/crawlers/{id}/render-mode` 하나뿐이다.
 
     워크플로우가 없는 실행이라 `raw_jobs` 에는 적재하지 않는다. 남는 것은 `crawl_runs` 행과
     이 응답의 미리보기뿐이다.
@@ -436,21 +448,26 @@ async def test_run(
             status_code=409, detail={"reason": "invalid_selectors", "message": str(exc)}
         ) from exc
 
-    async with open_source(row["render_mode"], fetcher) as source:
+    saved_mode = str(row["render_mode"])
+    # 값을 줬을 때만 이번 실행의 경로가 갈린다. 저장값은 어느 쪽이든 그대로다
+    used_mode = _validated_render_mode(render_mode) if render_mode.strip() else saved_mode
+    async with open_source(used_mode, fetcher) as source:
         result = await run_once(
             conn,
             RunTarget(
                 list_url=row["list_url"],
                 selectors=selectors,
                 crawler_id=crawler_id,
-                render_mode=row["render_mode"],
+                render_mode=used_mode,
             ),
             fetcher=source,
             limit=limit,
         )
 
     crawler_status = row["status"]
-    if result.status == SUCCESS and crawler_status == "draft":
+    # 다른 모드로 한 번 시험한 실행은 상태를 올리지 않는다. 저장된 모드로 돌 때 어떻게 되는지를
+    # 말해 주지 않기 때문이다 — 그것으로 tested 를 주면 승격된 워크플로우가 첫 주기에 실패한다
+    if result.status == SUCCESS and crawler_status == "draft" and used_mode == saved_mode:
         conn.execute("UPDATE crawlers SET status = 'tested' WHERE id = ?", (crawler_id,))
         crawler_status = "tested"
 
@@ -459,6 +476,8 @@ async def test_run(
         run_id=result.run_id,
         status=result.status,
         crawler_status=crawler_status,
+        render_mode=used_mode,
+        saved_render_mode=saved_mode,
         matched=result.matched,
         success_count=result.success_count,
         new_count=result.new_count,

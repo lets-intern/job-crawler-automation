@@ -18,6 +18,18 @@
 `RunResult.failures` 가 들고 있는 것을 그대로 표로 옮긴다 — 이 값은 `crawl_runs` 에 남지
 않으므로, 실행 직후 이 화면이 유일하게 보여줄 수 있는 자리다.
 
+## 모드를 바꾸는 것과 한 번 시험하는 것
+
+이 화면은 두 가지를 따로 준다.
+
+| 조작 | 하는 일 |
+|---|---|
+| 저장 모드 전환 | `crawlers.render_mode` 를 바꾼다. 워크플로우 실행이 이 값을 읽는다 |
+| 이번 실행만 | 저장값을 그대로 두고 이 실행 한 번만 다른 경로로 돈다 |
+
+정적으로 되는지 렌더가 필요한지 비교하는 것이 이 화면의 일이라, 시험할 때마다 저장값이 따라
+바뀌면 비교가 안 된다. 필드별 매칭 수를 양쪽으로 뽑아 보고, 정할 때 저장 모드를 옮긴다.
+
 상태는 단어로만 적는다. 아이콘·이모지를 쓰지 않는다 (`.claude/rules/writing.md`).
 """
 
@@ -34,6 +46,7 @@ from app.api import crawlers
 from app.api.ui import render
 from app.api.ui_crawlers import crawler_rows, error_detail
 from app.crawler.fetcher import Fetcher
+from app.crawler.playwright import PLAYWRIGHT, STATIC
 from app.crawler.runner import KNOWN
 from app.selector.schema import SelectorSchemaError, validate_selectors
 
@@ -52,6 +65,14 @@ FIELDS: tuple[tuple[str, str], ...] = (
 
 # 값이 길면 표가 읽히지 않는다. 자른 자리는 화면에 표시한다
 PREVIEW_LIMIT = 120
+
+# 사람이 읽는 자리에는 단어로 적는다. 저장값은 그대로 영어다 (`.claude/rules/writing.md`)
+MODE_WORDS: dict[str, str] = {STATIC: "정적", PLAYWRIGHT: "렌더"}
+
+
+def mode_word(mode: str) -> str:
+    """모드 이름 하나. 모르는 값이면 저장된 값을 그대로 보여준다."""
+    return MODE_WORDS.get(mode, mode)
 
 
 def _selector_of(selectors: Any, path: str) -> str:
@@ -113,7 +134,47 @@ def test_targets_fragment(
     conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
 ) -> HTMLResponse:
     """실행할 크롤러 목록. 등록 화면과 같은 목록을 읽는다."""
-    return render(request, "fragments/test_targets.html", crawlers=crawler_rows(conn))
+    return render(
+        request, "fragments/test_targets.html", crawlers=crawler_rows(conn), mode_word=mode_word
+    )
+
+
+@router.put("/ui/test-targets/{crawler_id}/render-mode", response_class=HTMLResponse)
+def switch_render_mode_fragment(
+    request: Request,
+    crawler_id: int,
+    render_mode: Annotated[str, Form()],
+    conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
+) -> HTMLResponse:
+    """저장된 모드를 바꾼다. 등록 화면으로 돌아가지 않아도 되게 이 표에서 부른다.
+
+    셀렉터는 그대로 둔다. 렌더된 DOM 이 정적 HTML 과 다를 수 있어서, 바꾼 뒤에는 그 모드로
+    한 번 실행해 봐야 안다. 한 번만 시험하는 것은 이 경로가 아니라 실행 폼의 모드 선택이다.
+    """
+    try:
+        saved = crawlers.update_render_mode(
+            crawler_id, crawlers.RenderModeUpdate(render_mode=render_mode), conn
+        )
+    except HTTPException as exc:
+        detail = error_detail(exc)
+        return render(
+            request,
+            "fragments/test_targets.html",
+            crawlers=crawler_rows(conn),
+            mode_word=mode_word,
+            notice=f"저장 모드를 바꾸지 못했다: {detail['message']}",
+        )
+
+    return render(
+        request,
+        "fragments/test_targets.html",
+        crawlers=crawler_rows(conn),
+        mode_word=mode_word,
+        notice=(
+            f"크롤러 {saved.id} 의 저장 모드를 {mode_word(saved.render_mode)}로 바꿨다. "
+            "그 모드로 한 번 실행해 확인한다."
+        ),
+    )
 
 
 @router.post("/ui/crawlers/{crawler_id}/test-run", response_class=HTMLResponse)
@@ -123,8 +184,13 @@ async def test_run_fragment(
     conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
     fetcher: Annotated[Fetcher, Depends(crawlers.get_crawl_fetcher)],
     limit: Annotated[int, Form()] = 3,
+    render_mode: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
-    """저장된 셀렉터로 1회 실행하고 결과 영역만 갈아 끼운다."""
+    """저장된 셀렉터로 1회 실행하고 결과 영역만 갈아 끼운다.
+
+    `render_mode` 가 비어 있으면 저장된 모드로 돈다. 값이 있으면 이번 실행만 그 경로로 돌고
+    저장값은 그대로다.
+    """
     if not 1 <= limit <= 20:
         return render(
             request,
@@ -133,7 +199,7 @@ async def test_run_fragment(
         )
 
     try:
-        result = await crawlers.test_run(crawler_id, conn, fetcher, limit)
+        result = await crawlers.test_run(crawler_id, conn, fetcher, limit, render_mode)
     except HTTPException as exc:
         return render(request, "fragments/test_result.html", error=error_detail(exc))
 
@@ -145,4 +211,5 @@ async def test_run_fragment(
         report=_field_report(result.items, _saved_selectors(conn, crawler_id)),
         preview_limit=PREVIEW_LIMIT,
         targets=crawler_rows(conn),
+        mode_word=mode_word,
     )
