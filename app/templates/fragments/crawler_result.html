@@ -23,16 +23,24 @@
     <tr>
       <td>{{ field }}</td>
       <td class="num">{{ count }}</td>
-      <td>{% if field in generation.failed_fields %}실패{% else %}성공{% endif %}</td>
+      <td>
+        {% if field in generation.failed_fields %}
+        <span class="state-bad">실패</span>
+        {% else %}
+        <span class="state-ok">성공</span>
+        {% endif %}
+      </td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
 </div>
 {% if generation.failed_fields %}
-<p>손으로 고쳐야 하는 필드: {{ generation.failed_fields | join(", ") }}</p>
+<p class="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-red-800">
+  <span class="font-semibold">손으로 고쳐야 하는 필드</span>: {{ generation.failed_fields | join(", ") }}
+</p>
 {% else %}
-<p>모든 필드가 생성 시점 HTML 에서 값을 찾았다.</p>
+<p><span class="state-ok">모든 필드가 생성 시점 HTML 에서 값을 찾았다.</span></p>
 {% endif %}
 {% if generation.notes %}
 <ul>{% for note in generation.notes %}<li>{{ note }}</li>{% endfor %}</ul>

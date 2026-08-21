@@ -13,11 +13,17 @@
   <tbody>
     <tr><th scope="row">실행 번호</th><td>{{ result.run_id }}</td></tr>
     <tr><th scope="row">종료 상태</th>
-        <td>{% if result.status == "success" %}성공{% elif result.status == "timeout" %}시간 초과{% else %}실패{% endif %} ({{ result.status }})</td></tr>
+        <td>
+          {% if result.status == "success" %}<span class="badge badge-ok">성공</span>
+          {% elif result.status == "timeout" %}<span class="badge badge-warn">시간 초과</span>
+          {% else %}<span class="badge badge-bad">실패</span>{% endif %}
+          <span class="text-xs text-slate-500">({{ result.status }})</span>
+        </td></tr>
     <tr><th scope="row">크롤러 상태</th><td>{{ result.crawler_status }}</td></tr>
     <tr><th scope="row">목록 매칭</th><td>{{ result.matched }}건</td></tr>
     <tr><th scope="row">정상 처리</th><td>{{ result.success_count }}건</td></tr>
-    <tr><th scope="row">실패</th><td>{{ result.fail_count }}건</td></tr>
+    <tr><th scope="row">실패</th>
+        <td class="{% if result.fail_count %}state-bad{% else %}state-idle{% endif %}">{{ result.fail_count }}건</td></tr>
     <tr><th scope="row">실패 분류</th><td>{{ result.error_class or "없음" }}</td></tr>
     <tr><th scope="row">실패 사유</th><td class="cell-text">{{ result.error_message or "없음" }}</td></tr>
   </tbody>
@@ -43,7 +49,11 @@
       <td>{{ row.path }}</td>
       <td class="cell-text">{{ row.selector or "없음" }}</td>
       <td class="num">{{ row.filled }} / {{ row.total }}</td>
-      <td>{{ row.state }}</td>
+      <td>
+        {% if row.state == "성공" %}<span class="state-ok">{{ row.state }}</span>
+        {% elif row.state == "실패" %}<span class="state-bad">{{ row.state }}</span>
+        {% else %}<span class="state-idle">{{ row.state }}</span>{% endif %}
+      </td>
       <td class="cell-text">{{ row.reason or "없음" }}</td>
     </tr>
     {% endfor %}
@@ -65,7 +75,12 @@
   <tbody>
     {% for item in result.items %}
     <tr>
-      <td>{{ item.state }}</td>
+      <td>
+        {% if item.state == "stored" %}<span class="state-ok">저장됨</span>
+        {% elif item.state == "known" %}<span class="state-idle">이미 있음</span>
+        {% else %}<span class="state-idle">미리보기</span>{% endif %}
+        <span class="text-xs text-slate-500">({{ item.state }})</span>
+      </td>
       <td class="cell-url"><a href="{{ item.source_url }}" target="_blank" rel="noreferrer">{{ item.source_url }}</a></td>
       {% for key, path in fields %}
       {% set value = item.fields.get(key, "") %}
@@ -91,7 +106,7 @@
     {% for failure in result.failures %}
     <tr>
       <td class="cell-url">{{ failure.source_url }}</td>
-      <td>{{ failure.error_class or "분류 없음" }}</td>
+      <td><span class="state-bad">{{ failure.error_class or "분류 없음" }}</span></td>
       <td class="cell-text">{{ failure.message }}</td>
     </tr>
     {% endfor %}

@@ -18,7 +18,14 @@
     <tr><th scope="row">수집 시각</th><td>{{ raw.crawled_at }}</td></tr>
     <tr><th scope="row">정규화 시각</th><td>{{ job.normalized_at }}</td></tr>
     <tr><th scope="row">전달</th>
-        <td>{% if job.delivered_at %}전달됨 ({{ job.delivered_at }}){% else %}미전달{% endif %}</td></tr>
+        <td>
+          {% if job.delivered_at %}
+          <span class="badge badge-idle">전달됨</span>
+          <span class="text-xs text-slate-500">{{ job.delivered_at }}</span>
+          {% else %}
+          <span class="badge badge-warn">미전달</span>
+          {% endif %}
+        </td></tr>
     <tr><th scope="row">원본 행</th><td class="cell-url">raw_jobs {{ raw.raw_job_id }} ({{ raw.content_hash }})</td></tr>
     <tr><th scope="row">원문</th>
         <td class="cell-url"><a href="{{ job.source_url }}" target="_blank" rel="noreferrer">{{ job.source_url }}</a></td></tr>

@@ -31,7 +31,14 @@
       <td>{{ job.deadline or "값 없음" }}</td>
       <td>{{ job.workflow_id }} - {{ job.workflow_name }}</td>
       <td>{{ job.normalized_at }}</td>
-      <td>{% if job.delivered_at %}전달됨 ({{ job.delivered_at }}){% else %}미전달{% endif %}</td>
+      <td>
+        {% if job.delivered_at %}
+        <span class="badge badge-idle">전달됨</span>
+        <span class="text-xs text-slate-500">{{ job.delivered_at }}</span>
+        {% else %}
+        <span class="badge badge-warn">미전달</span>
+        {% endif %}
+      </td>
       <td><a href="{{ job.source_url }}" target="_blank" rel="noreferrer">원문 열기</a></td>
       <td>
         <button type="button" hx-get="/ui/jobs/{{ job.id }}"

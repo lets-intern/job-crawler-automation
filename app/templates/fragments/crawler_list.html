@@ -18,7 +18,12 @@
     <tr>
       <td class="num">{{ crawler.id }}</td>
       <td class="cell-text">{{ crawler.name }}</td>
-      <td>{{ crawler.status }}</td>
+      <td>
+        {% if crawler.status == "promoted" %}<span class="badge badge-ok">승격됨</span>
+        {% elif crawler.status == "tested" %}<span class="badge badge-idle">테스트됨</span>
+        {% else %}<span class="badge badge-idle">초안</span>{% endif %}
+        <span class="text-xs text-slate-500">({{ crawler.status }})</span>
+      </td>
       <td>
         {{ crawler.render_mode }}
         {# 승격은 운영자가 정한다. 자동으로 렌더로 올라가는 경로는 없다 #}

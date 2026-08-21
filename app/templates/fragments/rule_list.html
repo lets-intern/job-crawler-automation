@@ -54,7 +54,7 @@
       <td>
         <input name="enabled" form="rule-form-{{ rule.id }}" type="checkbox"
                {% if rule.enabled %}checked{% endif %}>
-        {% if rule.enabled %}켜짐{% else %}꺼짐{% endif %}
+        {% if rule.enabled %}<span class="state-ok">켜짐</span>{% else %}<span class="state-idle">꺼짐</span>{% endif %}
       </td>
       <td>
         <form id="rule-form-{{ rule.id }}"

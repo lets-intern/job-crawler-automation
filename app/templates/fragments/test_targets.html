@@ -16,7 +16,12 @@
     <tr>
       <td class="num">{{ crawler.id }}</td>
       <td class="cell-text">{{ crawler.name }}</td>
-      <td>{{ crawler.status }}</td>
+      <td>
+        {% if crawler.status == "promoted" %}<span class="badge badge-ok">승격됨</span>
+        {% elif crawler.status == "tested" %}<span class="badge badge-idle">테스트됨</span>
+        {% else %}<span class="badge badge-idle">초안</span>{% endif %}
+        <span class="text-xs text-slate-500">({{ crawler.status }})</span>
+      </td>
       <td class="cell-url">{{ crawler.list_url }}</td>
       <td>
         {# 실행은 사이트를 실제로 가져오므로 오래 걸린다. 버튼을 잠가 같은 실행이 두 번 나가지

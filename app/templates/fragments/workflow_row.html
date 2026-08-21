@@ -16,17 +16,30 @@
       <span class="wait-note">저장하는 중</span>
     </form>
   </td>
-  <td>{% if item.status == "active" %}실행 중{% else %}중지됨{% endif %} ({{ item.status }})</td>
+  <td>
+    {% if item.status == "active" %}
+    <span class="badge badge-ok">실행 중</span>
+    {% else %}
+    <span class="badge badge-idle">중지됨</span>
+    {% endif %}
+    <span class="text-xs text-slate-500">({{ item.status }})</span>
+  </td>
   <td>{{ item.last_run_at or "실행 기록 없음" }}</td>
   <td>
-    {% if item.last_run_status == "success" %}성공
-    {% elif item.last_run_status == "failed" %}실패
-    {% elif item.last_run_status == "timeout" %}시간 초과
-    {% else %}기록 없음{% endif %}
+    {% if item.last_run_status == "success" %}<span class="state-ok">성공</span>
+    {% elif item.last_run_status == "failed" %}<span class="state-bad">실패</span>
+    {% elif item.last_run_status == "timeout" %}<span class="state-warn">시간 초과</span>
+    {% else %}<span class="state-idle">기록 없음</span>{% endif %}
   </td>
   <td class="num">{{ item.success_count }}</td>
   <td class="num">{{ item.fail_count }}</td>
-  <td class="cell-text">{{ threshold_state }}</td>
+  <td class="cell-text">
+    {% if threshold_state.startswith("초과") %}
+    <span class="badge badge-bad">{{ threshold_state }}</span>
+    {% else %}
+    <span class="state-idle">{{ threshold_state }}</span>
+    {% endif %}
+  </td>
   <td>
     {% if item.status == "active" %}
     <button type="button" hx-patch="/ui/workflows/{{ item.id }}"
@@ -41,6 +54,6 @@
     {% endif %}
     <span class="wait-note">상태를 바꾸는 중</span>
   </td>
-  <td>{{ message or "" }}</td>
+  <td class="cell-text text-slate-600">{{ message or "" }}</td>
 </tr>
 {% endif %}

@@ -70,6 +70,20 @@
       /* 숫자 열. 자릿수를 맞춰 위아래로 비교되게 한다 */
       .num { @apply text-right tabular-nums; }
 
+      /* 상태. 색과 굵기로 갈리되 단어는 그대로 둔다 — 색을 못 봐도 단어가 남아야 한다
+         (`.claude/rules/writing.md`). 픽토그램은 쓰지 않는다 */
+      .state-ok { @apply font-semibold text-emerald-700; }
+      .state-bad { @apply font-semibold text-red-700; }
+      .state-warn { @apply font-semibold text-amber-700; }
+      .state-idle { @apply font-medium text-slate-500; }
+      .badge {
+        @apply inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold;
+      }
+      .badge-ok { @apply bg-emerald-100 text-emerald-800; }
+      .badge-bad { @apply bg-red-100 text-red-800; }
+      .badge-warn { @apply bg-amber-100 text-amber-800; }
+      .badge-idle { @apply bg-slate-100 text-slate-700; }
+
       /* 폼. 라벨과 입력 사이, 입력과 다음 줄 사이 간격을 여기서 준다 */
       /* fieldset 은 기본이 min-width: min-content 라, size=80 같은 입력 하나가 페이지 전체를
          가로로 늘린다. 9.2.V 에서 420px 창이 272px 밀린 원인이 이것이다 */
