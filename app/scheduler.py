@@ -9,20 +9,26 @@
 
 무엇을 실행할지도 잡이 아니라 테이블이 정한다. 잡에 실려 있는 것은 워크플로우 id 뿐이고,
 URL 과 셀렉터는 실행 시점에 `app/crawler/runner.py` 가 다시 읽는다.
+
+동시 실행 상한도 여기 있다. 상한은 `app_settings` 에 저장되고 어드민에서 바뀌므로 고정 크기
+세마포어를 쓸 수 없다 — `RunGate` 가 획득할 때마다 현재 값을 다시 읽는다
+(`.claude/docs/architecture.md` 의 "동시 실행 상한").
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import sqlite3
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 
-from apscheduler.events import EVENT_JOB_MAX_INSTANCES, JobExecutionEvent
+from apscheduler.events import EVENT_JOB_MAX_INSTANCES, JobSubmissionEvent
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
-from app import db
+from app import db, settings
 from app.crawler.runner import run_workflow
 
 logger = logging.getLogger(__name__)
@@ -56,13 +62,80 @@ class SyncReport:
         return bool(self.added or self.updated or self.removed)
 
 
-async def _run(workflow_id: int) -> None:
-    """잡 하나의 기본 실행 경로. 연결은 실행마다 열고 닫는다."""
+class RunGate:
+    """동시에 도는 실행 수를 상한 이하로 유지하는 문 하나.
+
+    `asyncio.Semaphore` 가 아닌 이유는 상한이 운영 중에 바뀌기 때문이다. 세마포어는 만들 때
+    크기가 정해지므로 값이 바뀔 때마다 다시 만들어야 하고, 그 순간 이미 획득한 실행의 수를
+    잃는다.
+
+    상한은 획득하는 시점에 읽는다. 그래서 바뀐 값이 다음 획득부터 적용되고, 이미 돌고 있는
+    실행은 상한이 내려가도 끊기지 않는다 — 상한을 줄이는 것은 새 실행을 늦추는 결정이지
+    도중에 있는 실행을 버리는 결정이 아니다.
+    """
+
+    def __init__(self, limit: Callable[[], int]) -> None:
+        self._limit = limit
+        self._active = 0
+        self._condition = asyncio.Condition()
+
+    @property
+    def active(self) -> int:
+        return self._active
+
+    def limit(self) -> int:
+        return self._limit()
+
+    @asynccontextmanager
+    async def slot(self) -> AsyncIterator[None]:
+        async with self._condition:
+            # 상한이 올라갔을 수 있다. 기다리던 쪽에 다시 확인할 기회를 준다
+            self._condition.notify_all()
+            if not self._has_room():
+                logger.info(
+                    "동시 실행 상한(%s)에 걸려 대기한다. 진행 중=%s", self._limit(), self._active
+                )
+            await self._condition.wait_for(self._has_room)
+            self._active += 1
+        try:
+            yield
+        finally:
+            async with self._condition:
+                self._active -= 1
+                self._condition.notify_all()
+
+    def _has_room(self) -> bool:
+        return self._active < self._limit()
+
+
+def _configured_limit() -> int:
+    """현재 상한. `app_settings` 가 진실이고, 값이 없으면 환경변수에서 채워진다."""
     conn = db.connect()
     try:
-        await run_workflow(conn, workflow_id)
+        return settings.read_int(conn, settings.MAX_CONCURRENT_RUNS)
     finally:
         conn.close()
+
+
+_gate: RunGate | None = None
+
+
+def get_gate() -> RunGate:
+    """전역 문 하나. 상한은 이것을 모두가 공유할 때만 사실이다."""
+    global _gate
+    if _gate is None:
+        _gate = RunGate(_configured_limit)
+    return _gate
+
+
+async def _run(workflow_id: int) -> None:
+    """잡 하나의 기본 실행 경로. 상한을 얻은 뒤에 연결을 연다."""
+    async with get_gate().slot():
+        conn = db.connect()
+        try:
+            await run_workflow(conn, workflow_id)
+        finally:
+            conn.close()
 
 
 class WorkflowScheduler:
@@ -164,15 +237,19 @@ def _interval_minutes(job: object) -> int:
     return int(interval.total_seconds() // 60)
 
 
-def _log_skipped_tick(event: JobExecutionEvent) -> None:
-    """앞 실행이 아직 돌고 있어 건너뛴 tick. 건너뛴 사실은 반드시 남는다."""
+def _log_skipped_tick(event: JobSubmissionEvent) -> None:
+    """앞 실행이 아직 돌고 있어 건너뛴 tick. 건너뛴 사실은 반드시 남는다.
+
+    `EVENT_JOB_MAX_INSTANCES` 는 실행이 아니라 제출이 막힌 사건이라 `JobSubmissionEvent` 로
+    온다. 넘어오는 시각도 하나가 아니라 목록(`scheduled_run_times`)이다.
+    """
     workflow_id = workflow_id_of(event.job_id)
     if workflow_id is None:
         return
     logger.warning(
         "workflow %s: 앞 실행이 끝나지 않아 이번 tick 을 건너뛴다 (scheduled_at=%s)",
         workflow_id,
-        event.scheduled_run_time,
+        ", ".join(str(when) for when in event.scheduled_run_times),
     )
 
 
@@ -188,7 +265,8 @@ def get_scheduler() -> WorkflowScheduler:
 
 
 def shutdown_scheduler() -> None:
-    global _scheduler
+    global _scheduler, _gate
     if _scheduler is not None:
         _scheduler.shutdown()
         _scheduler = None
+    _gate = None
