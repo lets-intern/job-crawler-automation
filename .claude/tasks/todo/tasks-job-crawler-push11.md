@@ -83,10 +83,31 @@ Chromium 이 들어가면 이미지가 314MB 에서 약 1GB 가 되고, 브라�
         - [x] 11.3.V 검증: 픽스처 기반 pytest 작성 및 통과 — 껍데기 픽스처가 승격 안내를 내고,
           정상 목록 픽스처는 내지 않는지 단언
 
-    - [ ] 11.4 컨테이너에 Chromium
+    - [x] 11.4 컨테이너에 Chromium
         - `Dockerfile` 에 Playwright 브라우저 설치. `pyproject.toml` 에 의존성 추가
-        - [ ] 11.4.V 검증: `docker compose up -d --build` 후 컨테이너에서 렌더가 실제로 되는지 확인하고,
+        - [x] 11.4.V 검증: `docker compose up -d --build` 후 컨테이너에서 렌더가 실제로 되는지 확인하고,
           이미지 크기와 렌더 중 메모리를 숫자로 기록. 확인 후 이미지 상태를 보고할 것
+
+        측정 (2026-08-22, arm64/Apple Silicon):
+
+        | 항목 | 값 |
+        |---|---|
+        | Chromium 이전 이미지 | 510MB (`job-crawler-automation-api:latest`) |
+        | Chromium 이후 이미지 | 2.34GB (`job-crawler-playwright:check`) |
+        | 브라우저 설치 레이어 | 1.37GB |
+        | `/ms-playwright` | 984MB (chromium 641MB + headless shell 340MB + ffmpeg 3.3MB) |
+        | 컨테이너 메모리, 브라우저 없음 | 34.8MiB |
+        | 컨테이너 메모리, 렌더 중 | 185.3MiB |
+        | 컨테이너 메모리, 브라우저 닫은 뒤 | 42.3MiB |
+
+        렌더 확인은 컨테이너 안에 띄운 정적 서버의 JS 목록 페이지로 했다. 정적 본문 205자에
+        항목 0개, 렌더 후 619자에 item 4건 매칭이고 title·link·date 가 전부 값이 있다.
+
+        브라우저 하나가 약 150MiB 다. 동시 실행 상한이 3이면 최악 450MiB 를 브라우저가 쓴다.
+        추정치(150~300MB)의 아래쪽이다.
+
+        사용자가 보는 포트 8000 컨테이너는 재빌드하지 않았다. 지금 도는 이미지에는 Chromium 이
+        없어서, 재빌드 전까지 `render_mode=playwright` 크롤러는 그 컨테이너에서 실패한다.
 
     - [ ] 11.5 실사이트 등록 확인
         - `seeds/sample-sites.json` 의 JS 렌더 사이트로 실제 등록을 시도한다
