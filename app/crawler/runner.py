@@ -3,7 +3,12 @@
 행은 시작할 때 만들고, 어떤 종료 경로에서도 종료 상태와 카운트로 갱신한다. 기록이 없는 실행은
 아무도 디버깅하지 못한다 (`.claude/rules/crawling.md`).
 
-흐름은 목록 파싱 → 신규 판정 → 신규 건만 상세 → `raw_jobs` append 다.
+흐름은 목록 파싱 → 신규 판정 → 신규 건만 상세 → `raw_jobs` append → 정규화다
+(`.claude/docs/architecture.md` 실행 흐름).
+
+정규화는 적재한 건에 대해서만 돌고, 실패해도 실행을 죽이지 않는다. 규칙이 틀렸다고 수집한
+공고를 버리면 규칙을 고쳐도 되살릴 원본이 없다. 실패한 건은 `raw_jobs` 에 그대로 남고
+`fail_count` 로 세어져, 규칙을 고친 뒤 재정규화로 복구된다.
 
 신규 판정을 두 단계로 나눈 이유가 하나 있다. `content_hash` 는 상세에서 오는 `body` 와
 `deadline` 까지 넣어 만드는데, 상세를 가져오기 전에는 그 값이 없다. 그래서 목록 단계에서는
@@ -37,6 +42,8 @@ from app.crawler.failures import (
 from app.crawler.fetcher import Fetcher, get_fetcher
 from app.crawler.hashing import content_hash
 from app.crawler.parser import ListItem, parse_detail, parse_list
+from app.normalize.engine import NormalizeError, insert_normalized, load_rules
+from app.normalize.rules import Rule
 from app.selector.schema import SelectorSchemaError, SelectorSet, validate_selectors
 
 logger = logging.getLogger(__name__)
@@ -68,6 +75,8 @@ class ItemResult:
     source_url: str
     state: str
     fields: dict[str, str]
+    # 적재한 건만 값이 있다. 정규화가 읽을 `raw_jobs` 행이다
+    raw_job_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -281,6 +290,7 @@ async def _crawl(
     limit: int | None,
     result: RunResult,
 ) -> None:
+    rules, rules_error = _load_rules(conn)
     page = await fetcher.fetch(target.list_url)
     parsed = parse_list(page.text, target.selectors.list, page.url)
 
@@ -315,6 +325,7 @@ async def _crawl(
         result.success_count += 1
         if collected.state == STORED:
             result.new_count += 1
+            _normalize(conn, collected, rules, rules_error, result)
 
 
 async def _collect(
@@ -336,7 +347,7 @@ async def _collect(
     if _is_known(conn, target.workflow_id, "content_hash", digest):
         return ItemResult(source_url=item.link, state=KNOWN, fields=record)
 
-    conn.execute(
+    cursor = conn.execute(
         """
         INSERT INTO raw_jobs (workflow_id, source_url, raw_data_json, content_hash)
         VALUES (?, ?, ?, ?)
@@ -348,7 +359,54 @@ async def _collect(
             digest,
         ),
     )
-    return ItemResult(source_url=item.link, state=STORED, fields=record)
+    return ItemResult(
+        source_url=item.link,
+        state=STORED,
+        fields=record,
+        raw_job_id=int(cursor.lastrowid or 0),
+    )
+
+
+def _load_rules(conn: sqlite3.Connection) -> tuple[list[Rule], str | None]:
+    """정규화 규칙을 실행 시작에 한 번 읽는다. 못 읽어도 크롤링은 계속한다.
+
+    실행 중간에 규칙이 바뀌어도 한 실행 안에서는 같은 규칙이 적용되게 하려고 한 번만 읽는다.
+
+    저장된 설정이 깨져 있으면 이 실행의 정규화는 전부 실패하지만, 수집은 그대로 진행한다.
+    수집을 멈추면 규칙을 고쳐도 그 사이의 공고는 사라지고 없다.
+    """
+    try:
+        return load_rules(conn), None
+    except NormalizeError as exc:
+        logger.warning("정규화 규칙을 읽지 못했다. 이 실행은 적재만 한다: %s", exc)
+        return [], str(exc)
+
+
+def _normalize(
+    conn: sqlite3.Connection,
+    item: ItemResult,
+    rules: list[Rule],
+    rules_error: str | None,
+    result: RunResult,
+) -> None:
+    """적재한 건 하나를 정규화한다. 실패는 그 건에서 끝나고 raw 는 남는다."""
+    if item.raw_job_id is None:
+        return
+
+    message = rules_error
+    if message is None:
+        try:
+            insert_normalized(conn, item.raw_job_id, rules)
+            return
+        except NormalizeError as exc:
+            message = str(exc)
+
+    # transport·selector_miss·parse 중 어느 것도 아니다. 분류를 비우고 사유만 남긴다
+    # (`app/crawler/failures.py`).
+    result.fail_count += 1
+    result.failures.append(
+        ItemFailure(source_url=item.source_url, error_class=None, message=message)
+    )
 
 
 def _record(item: ListItem, detail: dict[str, str]) -> dict[str, str]:
