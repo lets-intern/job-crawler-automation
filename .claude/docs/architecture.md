@@ -56,7 +56,7 @@ app/
 │   ├── fetcher.py      공용 HTTP 클라이언트. 유일한 외부 요청 경로
 │   ├── parser.py       셀렉터 JSON 적용
 │   ├── runner.py       1회 실행 = crawl_runs 행 하나
-│   └── playwright.py   JS 렌더링이 필요한 사이트 전용
+│   └── playwright.py   브라우저 렌더. 새 크롤러의 기본 경로
 ├── selector/
 │   ├── cleaner.py      HTML 정제·샘플링
 │   ├── generator.py    Gemini API 호출
@@ -79,6 +79,16 @@ tests/
 `crawler/fetcher.py` 만 외부에 요청한다. 셀렉터 생성이 페이지를 가져올 때도 이 클라이언트를 쓴다.
 딜레이·User-Agent·robots 확인·재시도가 전부 여기 있고, 다른 경로가 생기는 순간 레포에 적힌
 어떤 rate limit 도 사실이 아니게 된다. `.claude/rules/crawling.md` 참조.
+
+## 가져오는 방식은 크롤러마다 갈린다
+
+`crawlers.render_mode` 가 정적(httpx)과 렌더(Playwright) 중 하나를 고른다. 새 크롤러의 기본은
+렌더다 — 대상 사이트 대부분이 JS 로 목록을 그려서, 정적으로 시작하면 빈 목록부터 보게 된다.
+
+정적 경로는 그대로 남는다. 렌더는 실행마다 브라우저 하나(150~300MB)와 몇 초를 쓰고, 정적은
+사실상 그 비용이 없다. 정적으로도 목록이 나오는 사이트는 운영자가 테스트 실행 화면에서 두
+모드를 비교한 뒤 정적으로 내린다. 어느 쪽이든 브라우저 수명은 실행 하나 안이다
+(`app/crawler/playwright.py` 의 `open_source()`).
 
 ## 실행 1회의 흐름
 

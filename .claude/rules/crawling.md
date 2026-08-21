@@ -24,13 +24,18 @@ Identify honestly in the User-Agent — a name and a contact. Never impersonate 
 block, and never work around a login wall, a CAPTCHA or a rate limit that a site put up on purpose.
 The PRD lists those sites as out of scope. When one turns up, report it and stop.
 
-## Static first, Playwright only when proven necessary
+## Render by default, static as a per-site downgrade
 
-Try httpx and BeautifulSoup first. Move a site to Playwright only after the static fetch is shown to
-return a shell without the postings — record that finding in the site recipe.
+A new crawler is registered with `render_mode = playwright`. Of the six measured target sites four
+return a shell without the postings under a static fetch, so static-first meant most registrations
+started from an empty list.
 
-Playwright costs a browser process per run and is the main reason a workflow times out. It is a
-per-site escalation, never the default path.
+The static path stays. It is not dead code — a browser costs 150~300MB per run and several seconds
+per page, against effectively nothing for httpx and BeautifulSoup. A site that a static fetch
+handles is moved down to `static` by the operator, and that finding goes in the site recipe.
+
+Prove it before moving a site either way. The test-run screen runs one crawler under both modes
+without changing what is stored, and the field match counts are what decides.
 
 ## Failure is data
 

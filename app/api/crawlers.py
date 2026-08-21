@@ -39,12 +39,17 @@ from pydantic import BaseModel
 from app import db
 from app.crawler.failures import SUCCESS
 from app.crawler.fetcher import FetchError, FetchPolicy, RobotsDisallowedError, get_fetcher
-from app.crawler.playwright import RENDER_MODES, STATIC, open_source
+from app.crawler.playwright import PLAYWRIGHT, RENDER_MODES, open_source
 from app.crawler.runner import RunTarget, run_once
 from app.selector.generator import GenerationResult, SelectorGenerationError, generate_for_urls
 from app.selector.schema import SelectorSchemaError, SelectorSet, validate_selectors
 
 router = APIRouter(prefix="/api/crawlers", tags=["crawlers"])
+
+# 새 크롤러가 받는 모드. 측정한 사이트 6개 중 4개가 JS 렌더라, 정적으로 먼저 시도하면 대부분이
+# 빈 목록으로 돌아온다. 정적은 지우지 않고 선택지로 남긴다 — 브라우저 하나가 150~300MB 라,
+# 정적으로 되는 사이트까지 렌더로 돌리면 그만큼이 그냥 나간다. 내리는 것은 운영자가 한다
+DEFAULT_RENDER_MODE = PLAYWRIGHT
 
 # 인자는 리스트 URL, 상세 URL, render_mode 다. 어느 경로로 가져올지는 크롤러마다 다르므로
 # 생성 함수가 매번 받는다.
@@ -57,8 +62,8 @@ class CrawlerCreate(BaseModel):
     name: str = ""
     # 회사명이 페이지에 없는 사이트를 위한 운영자 입력. 없으면 비운다
     default_company: str = ""
-    # 기본값은 정적이다. 렌더는 정적으로 목록이 안 나오는 것이 확인된 사이트만 올린다
-    render_mode: str = STATIC
+    # 기본값은 렌더다. 정적으로 충분한 사이트는 등록 뒤에 운영자가 내린다
+    render_mode: str = DEFAULT_RENDER_MODE
 
 
 class RenderModeUpdate(BaseModel):
@@ -257,8 +262,8 @@ async def create_crawler(
 
 
 def _validated_render_mode(value: str) -> str:
-    """모르는 값은 거절한다. 조용히 static 으로 되돌리면 운영자는 올린 줄 알고 기다린다."""
-    mode = value.strip() or STATIC
+    """모르는 값은 거절한다. 조용히 다른 모드로 되돌리면 운영자는 고른 줄 알고 기다린다."""
+    mode = value.strip() or DEFAULT_RENDER_MODE
     if mode not in RENDER_MODES:
         raise HTTPException(
             status_code=422,

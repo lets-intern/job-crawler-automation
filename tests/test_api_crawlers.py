@@ -557,16 +557,20 @@ def test_only_the_item_selector_matching_is_still_stored(
     assert len(rows(conn)) == 1
 
 
-def test_registration_defaults_to_static(client: TestClient, conn: sqlite3.Connection) -> None:
-    """아무것도 고르지 않은 등록은 정적이다. 렌더는 운영자가 명시적으로 고른다."""
+def test_registration_defaults_to_render(client: TestClient, conn: sqlite3.Connection) -> None:
+    """아무것도 고르지 않은 등록은 렌더다. 정적은 운영자가 명시적으로 고른다 (Push 13.1).
+
+    모드별로 나눠 보는 것은 `tests/test_render_default.py` 다. 여기서는 이 라우터의 기본값이
+    그쪽과 같은지만 본다.
+    """
     called_with = use_generator(result_for(GENERATED))
 
     response = client.post("/api/crawlers", json={"list_url": LIST_URL, "detail_url": DETAIL_URL})
 
     assert response.status_code == 201
-    assert called_with == ["static"]
-    assert rows(conn)[0]["render_mode"] == "static"
-    assert response.json()["render_mode"] == "static"
+    assert called_with == ["playwright"]
+    assert rows(conn)[0]["render_mode"] == "playwright"
+    assert response.json()["render_mode"] == "playwright"
 
 
 def test_registration_can_start_in_render_mode(

@@ -36,10 +36,12 @@
       <p>
         <fieldset>
           <legend>가져오는 방식</legend>
-          <label><input type="radio" name="render_mode" value="static" checked> 정적</label>
-          <label><input type="radio" name="render_mode" value="playwright"> 렌더(Playwright)</label>
+          <label><input type="radio" name="render_mode" value="playwright" checked> 렌더(Playwright)</label>
+          <label><input type="radio" name="render_mode" value="static"> 정적</label>
           <br>
-          기본은 정적이다. 정적으로 목록이 나오지 않는 것이 확인된 사이트만 렌더로 올린다.
+          <span class="text-sm text-slate-500">기본은 렌더다. 대상 사이트 대부분이 JS 로 목록을 그린다.
+          정적으로도 목록이 나오는 사이트는 등록 뒤 표에서 정적으로 내린다 — 렌더는 실행마다
+          브라우저 하나를 띄운다.</span>
         </fieldset>
       </p>
       <p>

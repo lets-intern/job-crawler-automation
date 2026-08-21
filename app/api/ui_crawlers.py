@@ -108,14 +108,15 @@ async def create_crawler_fragment(
     generate: Annotated[crawlers.GenerateFn, Depends(crawlers.get_generator)],
     name: Annotated[str, Form()] = "",
     default_company: Annotated[str, Form()] = "",
-    render_mode: Annotated[str, Form()] = "static",
+    render_mode: Annotated[str, Form()] = crawlers.DEFAULT_RENDER_MODE,
 ) -> HTMLResponse:
     """생성 요청. 성공하면 결과 요약과 편집기가, 실패하면 사유가 결과 영역에 들어간다.
 
     `default_company` 는 선택이다. 비워 두면 회사명은 공고에서 뽑은 값만 쓰인다.
 
-    `render_mode` 를 렌더로 고르면 셀렉터도 렌더된 HTML 에서 뽑는다. JS 로 그려지는 사이트는
-    정적 HTML 에 목록 자체가 없어서, 정적으로 생성한 셀렉터는 처음부터 맞을 수가 없다.
+    `render_mode` 는 기본이 렌더다. 셀렉터도 그 모드로 가져온 HTML 에서 뽑는다 — JS 로
+    그려지는 사이트는 정적 HTML 에 목록 자체가 없어서, 정적으로 생성한 셀렉터는 처음부터
+    맞을 수가 없다. 정적으로 충분한 사이트는 등록 뒤에 표에서 내린다.
     """
     payload = crawlers.CrawlerCreate(
         list_url=list_url,
