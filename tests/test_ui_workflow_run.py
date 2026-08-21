@@ -166,7 +166,7 @@ def add_workflow(
 
 
 def rows_in(html: str) -> list[str]:
-    return re.findall(r'<tbody id="workflow-row-(\d+)"', html)
+    return re.findall(r'<article id="workflow-row-(\d+)"', html)
 
 
 def counts(conn: sqlite3.Connection, workflow_id: int) -> tuple[int, int]:
@@ -197,7 +197,7 @@ def test_1회_실행이_crawl_runs_와_raw_jobs_를_남긴다(
     assert f"신규 {jobs}건" in html
 
 
-def test_실행_뒤에_그_줄의_최근_실행과_카운트가_갱신된다(
+def test_실행_뒤에_그_카드의_최근_실행과_카운트가_갱신된다(
     client: TestClient, conn: sqlite3.Connection
 ) -> None:
     workflow_id = add_workflow(conn)

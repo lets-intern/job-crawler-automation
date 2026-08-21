@@ -6,7 +6,7 @@
 |---|---|
 | 빈 목록이 승격 경로를 가리킨다 | 화면이 "API 로만 승격된다" 는 지난 사실을 계속 적는다 |
 | 승격한 워크플로우가 이름·대상·주기·상태·누적으로 나온다 | 승격했는데 어디에도 안 보인다 |
-| 조작이 누른 행 하나만 돌려준다 | 목록 전체가 다시 그려지며 다른 행에 입력하던 주기가 날아간다 |
+| 조작이 누른 카드 하나만 돌려준다 | 목록이 다시 그려지며 다른 카드에 입력하던 주기가 날아간다 |
 """
 
 from __future__ import annotations
@@ -91,8 +91,8 @@ def promote(client: TestClient, conn: sqlite3.Connection, name: str, minutes: in
 
 
 def rows_in(html: str) -> list[str]:
-    """돌려준 조각에 들어 있는 워크플로우 묶음. 하나여야 그 행만 갈린 것이다."""
-    return re.findall(r'<tbody id="workflow-row-(\d+)"', html)
+    """돌려준 조각에 들어 있는 워크플로우 카드. 하나여야 그 카드만 갈린 것이다."""
+    return re.findall(r'<article id="workflow-row-(\d+)"', html)
 
 
 def test_빈_목록은_승격_화면을_가리킨다(client: TestClient) -> None:
@@ -118,7 +118,7 @@ def test_승격한_워크플로우가_목록에_나온다(client: TestClient, co
     assert "임계치 없음" in html
 
 
-def test_주기_변경은_누른_행만_돌려준다(client: TestClient, conn: sqlite3.Connection) -> None:
+def test_주기_변경은_누른_카드만_돌려준다(client: TestClient, conn: sqlite3.Connection) -> None:
     first = promote(client, conn, "첫 워크플로우", 120)
     second = promote(client, conn, "둘째 워크플로우", 360)
 
@@ -131,7 +131,7 @@ def test_주기_변경은_누른_행만_돌려준다(client: TestClient, conn: s
     assert row["interval_minutes"] == 30
 
 
-def test_중지와_재개도_누른_행만_돌려준다(
+def test_중지와_재개도_누른_카드만_돌려준다(
     client: TestClient, conn: sqlite3.Connection, scheduler: WorkflowScheduler
 ) -> None:
     first = promote(client, conn, "첫 워크플로우", 120)

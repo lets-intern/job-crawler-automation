@@ -10,6 +10,18 @@
 임계치 초과 표시는 자동 중지가 보는 값과 같은 함수(`consecutive_failures`)로 센다. 누적 실패
 횟수로 대신하면 성공과 실패가 번갈아 난 워크플로우를 초과로 잘못 표시한다.
 
+## 화면에 무엇을 계산해서 넘기는가
+
+카드가 받는 것은 이미 판정이 끝난 값이다 (`.claude/agents/ui-worker.md`: 계산은 라우트, 렌더는
+템플릿). 연속 실패를 세는 것도, 그것을 `주의`/`점검 필요` 어느 단어로 부를지도 여기서 정한다.
+
+실패한 워크플로우는 색과 굵기만으로 구분하지 않는다. `tone` 이 테두리 색을 정하는 동안
+`attention` 이 같은 사실을 단어로 들고 간다 — 색을 못 보면 정보가 사라지는 화면을 만들지 않는다
+(`.claude/rules/writing.md`).
+
+최근 실행이 실패로 끝났으면 사유(`error_class` 와 `error_message`)를 카드까지 올린다. 어느
+셀렉터가 빗나갔는지를 보려고 다른 화면으로 옮겨 다니게 하지 않는다.
+
 승격도 여기 있다. 화면이 부르는 것은 `app/api/workflows.py` 의 `promote()` 그대로다 — 승격
 규칙(`tested` 만, 크롤러는 `promoted` 로, 스케줄러 `sync()` 까지)을 화면용으로 다시 쓰지
 않는다. 이 라우트가 하는 일은 폼 값을 `WorkflowCreate` 로 옮기고 결과를 실행 대상 표에 다시
@@ -42,6 +54,7 @@
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import dataclass
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -69,34 +82,110 @@ RUN_WORDS: dict[str, str] = {SUCCESS: "성공", "timeout": "시간 초과", "fai
 # 생기므로, 그전에 두 번째로 누른 요청을 이것이 막는다
 _running: set[int] = set()
 
+# 임계치가 없는 워크플로우의 연속 실패를 어디까지 거슬러 세는가. 임계치가 있으면 그 값까지만
+# 세는 것(자동 중지가 보는 것과 같은 값)과 달리, 여기서는 화면에 적을 숫자를 만들 뿐이라
+# 상한이 필요하다. 이 숫자를 넘긴 연속 실패는 "10회 이상" 으로 읽으면 된다
+STREAK_LOOKBACK = 10
+
 
 def get_run_gate() -> RunGate:
     """동시 실행 상한을 지키는 문. 스케줄러가 쓰는 것과 같은 것이다."""
     return get_gate()
 
 
-def _threshold_state(conn: sqlite3.Connection, item: workflows.WorkflowItem) -> str:
+@dataclass(frozen=True)
+class CardView:
+    """워크플로우 카드 하나에 들어가는 값. 판정은 전부 여기 오기 전에 끝나 있다."""
+
+    item: workflows.WorkflowItem
+    threshold_state: str
+    # "" | "warn" | "bad". 테두리와 배경 색을 정한다
+    tone: str
+    # 색과 같은 사실을 말하는 단어. 비어 있으면 배지를 붙이지 않는다
+    attention: str
+    # 최근 실행이 실패로 끝났을 때의 사유 한 줄
+    reason: str
+    # 운영자가 방금 누른 조작의 결과
+    message: str
+
+
+def _streak(conn: sqlite3.Connection, item: workflows.WorkflowItem) -> int:
+    """지금까지 이어진 실패 횟수. 자동 중지가 보는 것과 같은 함수로 센다."""
+    limit = int(item.auto_stop_threshold) if item.auto_stop_threshold else STREAK_LOOKBACK
+    return consecutive_failures(conn, item.id, limit)
+
+
+def _threshold_state(item: workflows.WorkflowItem, streak: int) -> str:
     """임계치 대비 지금 어디까지 왔는지. 단어로 적는다."""
     if item.auto_stop_threshold is None:
-        return "임계치 없음"
-    streak = consecutive_failures(conn, item.id, int(item.auto_stop_threshold))
-    if streak >= item.auto_stop_threshold:
-        return f"초과 (연속 실패 {streak}회 / 임계치 {item.auto_stop_threshold}회)"
-    return f"정상 (연속 실패 {streak}회 / 임계치 {item.auto_stop_threshold}회)"
+        # 임계치가 없어도 연속 실패는 센다. 자동으로 멈추지 않는 워크플로우일수록 쌓인 실패가
+        # 화면에 보여야 한다
+        return "임계치 없음" if streak == 0 else f"임계치 없음 (연속 실패 {streak}회)"
+    word = "초과" if streak >= item.auto_stop_threshold else "정상"
+    return f"{word} (연속 실패 {streak}회 / 임계치 {item.auto_stop_threshold}회)"
 
 
-def _row(
+def _attention(item: workflows.WorkflowItem, streak: int) -> tuple[str, str]:
+    """이 워크플로우가 눈에 띄어야 하는가. 색과 단어를 함께 정한다."""
+    if item.auto_stop_threshold is not None and streak >= item.auto_stop_threshold:
+        return "bad", f"임계치 초과 (연속 실패 {streak}회)"
+    if streak >= 2:
+        return "bad", f"연속 실패 {streak}회"
+    if streak == 1:
+        return "warn", "최근 실행 실패"
+    return "", ""
+
+
+def _last_failure(conn: sqlite3.Connection, workflow_id: int) -> str:
+    """가장 최근에 끝난 실행이 실패였으면 그 사유. 성공으로 끝났으면 빈 문자열이다."""
+    row = conn.execute(
+        """
+        SELECT id, status, error_class, error_message FROM crawl_runs
+         WHERE workflow_id = ? AND status IS NOT NULL
+         ORDER BY id DESC LIMIT 1
+        """,
+        (workflow_id,),
+    ).fetchone()
+    if row is None or row["status"] == SUCCESS:
+        return ""
+    word = RUN_WORDS.get(row["status"], row["status"])
+    reason = row["error_message"] or "사유가 기록되지 않았다"
+    return f"실행 {row['id']} {word} / {row['error_class'] or '분류 없음'}: {reason}"
+
+
+def _view(
+    conn: sqlite3.Connection,
+    item: workflows.WorkflowItem,
+    message: str = "",
+) -> CardView:
+    streak = _streak(conn, item)
+    tone, attention = _attention(item, streak)
+    return CardView(
+        item=item,
+        threshold_state=_threshold_state(item, streak),
+        tone=tone,
+        attention=attention,
+        reason=_last_failure(conn, item.id),
+        message=message,
+    )
+
+
+def _card(
     request: Request,
     conn: sqlite3.Connection,
     item: workflows.WorkflowItem,
     message: str = "",
 ) -> HTMLResponse:
+    return render(request, "fragments/workflow_card.html", card=_view(conn, item, message))
+
+
+def _missing(request: Request, workflow_id: int) -> HTMLResponse:
+    """그 워크플로우가 없다. 누른 자리에 사유만 남긴다."""
     return render(
         request,
-        "fragments/workflow_row.html",
-        item=item,
-        threshold_state=_threshold_state(conn, item),
-        message=message,
+        "fragments/workflow_card.html",
+        card=None,
+        notice=f"워크플로우 {workflow_id} 가 없다",
     )
 
 
@@ -194,11 +283,10 @@ def workflow_table_fragment(
     conn: Annotated[sqlite3.Connection, Depends(workflows.get_connection)],
 ) -> HTMLResponse:
     """목록 전체. 페이지 로드 때 한 번 들어온다."""
-    items = workflows.list_workflows(conn)
     return render(
         request,
-        "fragments/workflow_table.html",
-        rows=[(item, _threshold_state(conn, item)) for item in items],
+        "fragments/workflow_list.html",
+        cards=[_view(conn, item) for item in workflows.list_workflows(conn)],
     )
 
 
@@ -214,18 +302,12 @@ def update_workflow_fragment(
     """중지·재개와 주기 변경. 갈리는 것은 이 행 하나다."""
     current = _find(conn, workflow_id)
     if current is None:
-        return render(
-            request,
-            "fragments/workflow_row.html",
-            item=None,
-            threshold_state="",
-            message=f"워크플로우 {workflow_id} 가 없다",
-        )
+        return _missing(request, workflow_id)
 
     if status and status not in STATUSES:
-        return _row(request, conn, current, message=f"알 수 없는 상태다: {status}")
+        return _card(request, conn, current, message=f"알 수 없는 상태다: {status}")
     if not status and not interval_minutes.strip():
-        return _row(request, conn, current, message="바꿀 값이 없다")
+        return _card(request, conn, current, message="바꿀 값이 없다")
 
     try:
         payload = workflows.WorkflowUpdate(
@@ -234,7 +316,7 @@ def update_workflow_fragment(
         )
     except (ValidationError, ValueError):
         # 0, 음수, 정수가 아닌 값. 저장하지 않고 지금 값을 그대로 다시 그린다
-        return _row(
+        return _card(
             request,
             conn,
             current,
@@ -245,13 +327,13 @@ def update_workflow_fragment(
         updated = workflows.update_workflow(workflow_id, payload, conn, scheduler)
     except HTTPException as exc:
         detail = error_detail(exc)
-        return _row(request, conn, current, message=detail["message"])
+        return _card(request, conn, current, message=detail["message"])
 
     if payload.status is not None:
         message = "중지했다" if payload.status == "paused" else "재개했다"
     else:
         message = f"주기를 {payload.interval_minutes}분으로 바꿨다"
-    return _row(request, conn, updated, message=message)
+    return _card(request, conn, updated, message=message)
 
 
 @router.post("/ui/workflows/{workflow_id}/run", response_class=HTMLResponse)
@@ -270,17 +352,11 @@ async def run_now_fragment(
     """
     current = _find(conn, workflow_id)
     if current is None:
-        return render(
-            request,
-            "fragments/workflow_row.html",
-            item=None,
-            threshold_state="",
-            message=f"워크플로우 {workflow_id} 가 없다",
-        )
+        return _missing(request, workflow_id)
 
     if workflow_id in _running or _in_flight(conn, workflow_id):
         # 스케줄러의 tick 스킵과 같은 판단이다. 같은 워크플로우의 실행 둘을 동시에 띄우지 않는다
-        return _row(
+        return _card(
             request,
             conn,
             current,
@@ -288,7 +364,7 @@ async def run_now_fragment(
         )
 
     if gate.active >= gate.limit():
-        return _row(
+        return _card(
             request,
             conn,
             current,
@@ -309,5 +385,5 @@ async def run_now_fragment(
 
     updated = _find(conn, workflow_id)
     if updated is None:
-        return _row(request, conn, current, message=_run_message(result))
-    return _row(request, conn, updated, message=_run_message(result))
+        return _card(request, conn, current, message=_run_message(result))
+    return _card(request, conn, updated, message=_run_message(result))
