@@ -155,6 +155,12 @@ def normalize_fields(
             continue
         for rule in ordered.get(field_name, ()):
             value = _apply(value, rule)
+            if not value:
+                # 규칙이 값을 비웠으면 거기서 멈춘다. 빈 값을 다음 규칙에 넘기면
+                # date_parse 가 읽을 것이 없다며 실패하고, 그 공고가 통째로 빠진다.
+                # "상시채용" 을 mapping 으로 비우는 것이 이 경로다 — deadline 만 NULL 이 되고
+                # 공고는 남아야 한다.
+                break
         result[field_name] = value or None
     result[COMPANY_SOURCE] = source if result["company"] else None
     return result

@@ -278,3 +278,63 @@ def test_raw_jobs_is_untouched_by_normalization(conn: sqlite3.Connection) -> Non
     assert after_json == before_json
     assert after_json.encode("utf-8") == json.dumps(record, ensure_ascii=False).encode("utf-8")
     assert conn.execute("SELECT count(*) AS n FROM raw_jobs").fetchone()["n"] == 1
+
+
+def test_rule_that_empties_a_value_stops_the_chain() -> None:
+    """규칙이 값을 비우면 뒤 규칙에 넘기지 않는다.
+
+    "상시채용" 을 mapping 으로 비운 뒤 date_parse 가 그 빈 값을 읽으려 하면 실패가 나고,
+    그 공고가 통째로 `normalized_jobs` 에서 빠진다. deadline 만 NULL 이 되고 공고는 남아야 한다.
+    """
+    rules = [
+        build_rule(
+            field_name="deadline",
+            rule_type="mapping",
+            config={"map": {"상시채용": ""}},
+            priority=0,
+            rule_id=1,
+        ),
+        build_rule(
+            field_name="deadline",
+            rule_type="date_parse",
+            config={"formats": ["%Y-%m-%d"]},
+            priority=10,
+            rule_id=2,
+        ),
+    ]
+
+    out = normalize_fields({"title": "개발자", "deadline": "상시채용"}, rules)
+
+    assert out["deadline"] is None
+    assert out["title"] == "개발자"
+
+
+def test_a_real_date_still_goes_through_the_whole_chain() -> None:
+    """빈 값에서만 멈춘다. 값이 남아 있으면 뒤 규칙이 전부 돈다."""
+    rules = [
+        build_rule(
+            field_name="deadline",
+            rule_type="regex",
+            config={"pattern": "^.*?[~〜]\\s*", "replacement": ""},
+            priority=0,
+            rule_id=1,
+        ),
+        build_rule(
+            field_name="deadline",
+            rule_type="regex",
+            config={"pattern": "\\s*\\d{1,2}:\\d{2}\\s*$", "replacement": ""},
+            priority=10,
+            rule_id=2,
+        ),
+        build_rule(
+            field_name="deadline",
+            rule_type="date_parse",
+            config={"formats": ["%Y-%m-%d"]},
+            priority=20,
+            rule_id=3,
+        ),
+    ]
+
+    out = normalize_fields({"deadline": "2026-08-15 09:00 ~ 2026-08-30 17:00"}, rules)
+
+    assert out["deadline"] == "2026-08-30"
