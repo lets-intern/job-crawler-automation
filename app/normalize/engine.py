@@ -25,6 +25,18 @@
 고른 값에도 다른 필드와 똑같이 규칙이 적용된다. "삼성전기(주)" 를 "삼성전기" 로 맞추는 것은
 `mapping` 규칙의 일이지 이 해결 단계의 일이 아니다.
 
+## 규칙 다음에 사람 보정이다
+
+규칙을 다 태운 뒤 `job_field_overrides` 에 그 건의 그 필드가 있으면 사람이 정한 값으로 덮는다.
+이 순서여야 둘 다 산다. 규칙을 개선하면 보정하지 않은 필드는 같이 좋아지고, 보정한 필드는
+사람이 정한 값을 유지한다. 보정 행을 지우면 다음 정규화에서 규칙이 만든 값으로 돌아간다.
+
+보정도 `raw_jobs` 처럼 읽기만 한다. 정규화가 사람이 고친 값을 다시 쓰면 규칙 하나가 검수 결과를
+덮어쓰게 되고, 그것이 이 테이블을 따로 둔 이유를 없앤다.
+
+`company_source` 는 규칙 단계가 고른 출처만 말한다. 사람이 고쳤는지는 보정 행이 있는지로
+안다.
+
 ## 빈 값에는 규칙을 적용하지 않는다
 
 셀렉터가 아무것도 못 뽑은 필드는 정규화할 것이 없다. 규칙을 태우지 않고 NULL 로 둔다.
@@ -64,6 +76,10 @@ OPERATOR = "operator"
 
 # 규칙이 만드는 필드가 아니라 해결 단계가 정하는 값이다. `NORMALIZED_FIELDS` 에 넣지 않는다.
 COMPANY_SOURCE = "company_source"
+
+# 사람이 고칠 수 있는 필드. `job_field_overrides.field_name` 의 CHECK 제약과 같은 값이어야 한다.
+# 규칙이 만드는 필드와 같은 여섯 개다. `source_url` 은 공고의 신원이라 들어 있지 않다.
+OVERRIDABLE_FIELDS: tuple[str, ...] = NORMALIZED_FIELDS
 
 
 class NormalizeError(RuntimeError):
@@ -182,13 +198,60 @@ def read_raw(conn: sqlite3.Connection, raw_job_id: int) -> tuple[str, dict[str, 
     return str(row["source_url"]), data
 
 
+def read_overrides(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, str]:
+    """그 건에 사람이 고쳐 둔 값. 필드명이 키다. 읽기 전용이다.
+
+    허용 목록 밖의 필드명은 버린다. CHECK 가 이미 막고 있지만, 그 방어가 사라지는 경로는
+    누군가 DB 를 직접 고친 경우뿐이고 그때 정규화가 엉뚱한 컬럼을 쓰게 두지 않는다.
+    """
+    rows = conn.execute(
+        "SELECT field_name, value FROM job_field_overrides WHERE raw_job_id = ?", (raw_job_id,)
+    ).fetchall()
+    return {
+        str(row["field_name"]): str(row["value"])
+        for row in rows
+        if str(row["field_name"]) in OVERRIDABLE_FIELDS
+    }
+
+
+def apply_overrides(
+    fields: dict[str, str | None], overrides: Mapping[str, str]
+) -> dict[str, str | None]:
+    """규칙이 만든 값 위에 사람이 고친 값을 덮는다. 보정이 없는 필드는 그대로 둔다.
+
+    보정이 빈 문자열이면 그 필드는 NULL 이다. 규칙 결과가 빈 값일 때와 같은 취급이라
+    읽는 쪽이 "값 없음" 을 한 가지로만 보게 된다.
+    """
+    for field_name, value in overrides.items():
+        if field_name not in OVERRIDABLE_FIELDS:
+            continue
+        fields[field_name] = value or None
+    if fields.get("company") is None:
+        # 사람이 회사명을 지웠으면 출처도 사라진다. 남은 값이 없는데 어디서 왔는지만 적혀
+        # 있으면 그 행은 읽는 쪽을 헷갈리게 한다
+        fields[COMPANY_SOURCE] = None
+    return fields
+
+
+def normalized_values(
+    conn: sqlite3.Connection, raw_job_id: int, rules: Sequence[Rule]
+) -> tuple[str, dict[str, str | None]]:
+    """한 건의 `source_url` 과 확정 값. 규칙을 먼저 태우고 그 위에 사람 보정을 덮는다.
+
+    최초 정규화와 재정규화가 같은 값을 내려면 두 경로가 이 함수 하나를 지나야 한다. 순서를
+    각자 조립하면 한쪽에서만 보정이 빠지고, 그 차이는 재정규화를 돌린 뒤에야 드러난다.
+    """
+    source_url, data = read_raw(conn, raw_job_id)
+    fields = normalize_fields(data, rules, read_default_company(conn, raw_job_id))
+    return source_url, apply_overrides(fields, read_overrides(conn, raw_job_id))
+
+
 def insert_normalized(conn: sqlite3.Connection, raw_job_id: int, rules: Sequence[Rule]) -> int:
     """`raw_jobs` 한 행을 정규화해 `normalized_jobs` 에 넣는다. 새 행의 id 를 돌려준다.
 
     `delivered_at` 은 쓰지 않는다. 제공 API 경로만 쓴다 (`.claude/rules/data-safety.md`).
     """
-    source_url, data = read_raw(conn, raw_job_id)
-    fields = normalize_fields(data, rules, read_default_company(conn, raw_job_id))
+    source_url, fields = normalized_values(conn, raw_job_id, rules)
     cursor = conn.execute(
         """
         INSERT INTO normalized_jobs

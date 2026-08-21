@@ -12,6 +12,9 @@
 지우면 같은 데이터가 다시 넘어간다 (`.claude/rules/data-safety.md`). 아래 UPDATE 문이
 규칙이 만드는 컬럼과 `company_source`, `normalized_at` 만 적는 것이 그 보장이다.
 
+`job_field_overrides` 도 읽기만 한다. 재정규화는 규칙을 다시 태우는 동작이지 사람이 검수한
+값을 지우는 동작이 아니다. 규칙 위에 보정을 덮는 순서는 `app/normalize/engine.py` 가 정한다.
+
 `crawl_runs` 에도 쓰지 않는다. 재정규화는 크롤링 실행이 아니고, 섞어 쓰면 워크플로우의
 성공·실패 통계가 크롤링과 무관한 이유로 움직인다.
 
@@ -40,9 +43,7 @@ from app.normalize.engine import (
     RawJobMissingError,
     insert_normalized,
     load_rules,
-    normalize_fields,
-    read_default_company,
-    read_raw,
+    normalized_values,
 )
 from app.normalize.rules import Rule
 
@@ -180,9 +181,11 @@ def _rewrite(conn: sqlite3.Connection, raw_job_id: int, rules: list[Rule]) -> No
 
     운영자가 `crawlers.default_company` 를 고쳤으면 그 값이 이 경로로 반영된다. 회사명을
     파싱값으로 확정한 행은 운영자값을 고쳐도 같은 파싱값이 다시 이겨서 바뀌지 않는다.
+
+    사람이 고친 필드는 규칙을 다시 태워도 사람 값으로 남는다. 규칙이 좋아지는 것은 보정하지
+    않은 필드뿐이고, 그것이 검수가 살아남는 유일한 순서다.
     """
-    _, data = read_raw(conn, raw_job_id)
-    fields = normalize_fields(data, rules, read_default_company(conn, raw_job_id))
+    _, fields = normalized_values(conn, raw_job_id, rules)
     cursor = conn.execute(
         """
         UPDATE normalized_jobs

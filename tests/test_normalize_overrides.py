@@ -1,0 +1,215 @@
+"""규칙 위에 사람 보정을 덮는 순서 테스트.
+
+이 Push 의 전제가 여기서 확인된다. 사람이 검수한 값을 `normalized_jobs` 에 그냥 쓰면 다음
+재정규화가 규칙으로 덮어써서 사라진다. 보정을 `job_field_overrides` 에 따로 쌓고 규칙 다음에
+적용하면 둘 다 산다.
+
+확인하는 것은 다섯이다.
+
+- 보정한 필드는 재정규화 후에도 사람 값을 유지한다
+- 보정하지 않은 필드는 새 규칙을 반영한다
+- 보정을 지우면 다음 정규화에서 규칙이 만든 값으로 돌아간다
+- 정규화에 실패했던 건이 뒤늦게 들어올 때도 보정이 붙는다
+- `raw_jobs` 는 바이트 단위로 그대로고 `delivered_at` 도 그대로다
+
+픽스처로 돈다. 실사이트에 나가지 않는다.
+"""
+
+from __future__ import annotations
+
+import json
+import pathlib
+import sqlite3
+from collections.abc import Iterator
+
+import pytest
+
+from app import db
+from app.crawler.runner import run_workflow
+from app.normalize.backfill import BackfillProgress, renormalize
+from app.normalize.engine import OPERATOR
+from tests.test_normalize_engine import raw_snapshot
+from tests.test_normalize_pipeline import (
+    LIST_URL,
+    SELECTORS,
+    add_rule,
+    stub_fetcher,
+)
+
+DELIVERED_AT = "2026-08-20T09:00:00+00:00"
+DEFAULT_COMPANY = "운영자가 적은 회사"
+
+HUMAN_TITLE = "사람이 정한 제목"
+RULE_TITLE = "규칙이 만든 제목"
+RULE_DEPARTMENT = "규칙이 만든 부서"
+
+# 어느 원문 값과도 같지 않은 키. `mapping` 규칙이 항상 `default` 로 떨어지게 만든다
+UNMATCHED = "어느 공고에도 없는 값"
+
+
+@pytest.fixture
+def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
+    connection = db.connect(tmp_path / "jobs.db")
+    db.migrate_up(connection)
+    connection.execute(
+        """
+        INSERT INTO crawlers (name, list_url, selectors_json, status, default_company)
+        VALUES (?, ?, ?, 'promoted', ?)
+        """,
+        ("python.org", LIST_URL, json.dumps(SELECTORS), DEFAULT_COMPANY),
+    )
+    connection.execute("INSERT INTO workflows (crawler_id, name) VALUES (1, 'python.org')")
+    try:
+        yield connection
+    finally:
+        connection.close()
+
+
+async def collect(conn: sqlite3.Connection) -> None:
+    """1회 수집하고 전달 표시를 붙인다. 검수 대상은 이미 정규화된 데이터다."""
+    await run_workflow(conn, 1, fetcher=stub_fetcher(), limit=2)
+    conn.execute("UPDATE normalized_jobs SET delivered_at = ?", (DELIVERED_AT,))
+
+
+def set_override(conn: sqlite3.Connection, raw_job_id: int, field_name: str, value: str) -> None:
+    conn.execute(
+        "INSERT INTO job_field_overrides (raw_job_id, field_name, value) VALUES (?, ?, ?)",
+        (raw_job_id, field_name, value),
+    )
+
+
+def add_late_rules(conn: sqlite3.Connection) -> None:
+    """검수 뒤에 운영자가 손본 규칙. 두 필드를 모두 고정된 값으로 만든다.
+
+    `map` 은 비워 둘 수 없으므로 어디에도 맞지 않는 키를 하나 넣고 `default` 로 값을 정한다.
+    """
+    add_rule(conn, "title", "mapping", {"map": {UNMATCHED: "쓰이지 않는다"}, "default": RULE_TITLE})
+    add_rule(
+        conn,
+        "department",
+        "mapping",
+        {"map": {UNMATCHED: "쓰이지 않는다"}, "default": RULE_DEPARTMENT},
+    )
+
+
+def run_renormalize(conn: sqlite3.Connection) -> BackfillProgress:
+    progress = renormalize(conn, BackfillProgress())
+    assert progress.failed == 0, progress.errors
+    return progress
+
+
+def normalized(conn: sqlite3.Connection, raw_job_id: int) -> sqlite3.Row:
+    row = conn.execute(
+        "SELECT * FROM normalized_jobs WHERE raw_job_id = ?", (raw_job_id,)
+    ).fetchone()
+    assert row is not None
+    return row
+
+
+async def test_override_survives_a_later_rule_change(conn: sqlite3.Connection) -> None:
+    """보정한 필드는 사람 값을 유지하고, 보정 안 한 필드는 새 규칙을 받는다."""
+    await collect(conn)
+    set_override(conn, 1, "title", HUMAN_TITLE)
+    add_late_rules(conn)
+
+    run_renormalize(conn)
+
+    row = normalized(conn, 1)
+    assert row["title"] == HUMAN_TITLE
+    assert row["department"] == RULE_DEPARTMENT
+
+    other = normalized(conn, 2)
+    assert other["title"] == RULE_TITLE, "보정이 없는 건은 규칙 값 그대로다"
+
+
+async def test_override_survives_being_renormalized_twice(conn: sqlite3.Connection) -> None:
+    """한 번 살아남는 것으로는 부족하다. 몇 번을 돌려도 같은 값이어야 한다."""
+    await collect(conn)
+    set_override(conn, 1, "title", HUMAN_TITLE)
+    add_late_rules(conn)
+
+    run_renormalize(conn)
+    run_renormalize(conn)
+
+    assert normalized(conn, 1)["title"] == HUMAN_TITLE
+
+
+async def test_removing_the_override_returns_the_rule_value(conn: sqlite3.Connection) -> None:
+    await collect(conn)
+    set_override(conn, 1, "title", HUMAN_TITLE)
+    add_late_rules(conn)
+    run_renormalize(conn)
+
+    conn.execute("DELETE FROM job_field_overrides WHERE raw_job_id = 1 AND field_name = 'title'")
+    run_renormalize(conn)
+
+    assert normalized(conn, 1)["title"] == RULE_TITLE
+
+
+async def test_override_is_applied_when_the_row_is_first_inserted(
+    conn: sqlite3.Connection,
+) -> None:
+    """정규화에 실패했던 건이 뒤늦게 들어오는 경로에도 보정이 붙는다."""
+    add_rule(conn, "title", "date_parse", {"formats": ["%Y.%m.%d"]})
+    await run_workflow(conn, 1, fetcher=stub_fetcher(), limit=1)
+    assert conn.execute("SELECT count(*) AS n FROM normalized_jobs").fetchone()["n"] == 0
+
+    set_override(conn, 1, "title", HUMAN_TITLE)
+    conn.execute("DELETE FROM normalization_rules")
+    run_renormalize(conn)
+
+    assert normalized(conn, 1)["title"] == HUMAN_TITLE
+
+
+async def test_company_override_keeps_the_rule_stage_source(conn: sqlite3.Connection) -> None:
+    """`company_source` 는 규칙 단계가 고른 출처다. 사람이 고쳤는지는 보정 행이 말한다."""
+    await collect(conn)
+    before = normalized(conn, 1)
+    assert (before["company"], before["company_source"]) == (DEFAULT_COMPANY, OPERATOR)
+
+    set_override(conn, 1, "company", "사람이 정한 회사")
+    run_renormalize(conn)
+
+    row = normalized(conn, 1)
+    assert row["company"] == "사람이 정한 회사"
+    assert row["company_source"] == OPERATOR
+
+
+async def test_empty_override_clears_the_field(conn: sqlite3.Connection) -> None:
+    """빈 문자열은 "비어 있는 것이 맞다" 는 판단이다. 값 없음은 NULL 하나로만 나타난다."""
+    await collect(conn)
+    set_override(conn, 1, "company", "")
+    set_override(conn, 1, "department", "")
+
+    run_renormalize(conn)
+
+    row = normalized(conn, 1)
+    assert row["company"] is None
+    assert row["company_source"] is None, "회사명이 없는데 출처만 남으면 읽는 쪽이 헷갈린다"
+    assert row["department"] is None
+
+
+async def test_overrides_leave_raw_and_delivery_untouched(conn: sqlite3.Connection) -> None:
+    """보정과 재정규화는 수집 데이터도 전달 표시도 건드리지 않는다."""
+    await collect(conn)
+    before_raw = raw_snapshot(conn)
+    before_hashes = [
+        row["content_hash"] for row in conn.execute("SELECT content_hash FROM raw_jobs ORDER BY id")
+    ]
+
+    set_override(conn, 1, "title", HUMAN_TITLE)
+    set_override(conn, 2, "body", "사람이 정리한 본문")
+    add_late_rules(conn)
+    run_renormalize(conn)
+    conn.execute("DELETE FROM job_field_overrides WHERE raw_job_id = 2")
+    run_renormalize(conn)
+
+    assert raw_snapshot(conn) == before_raw
+    assert [
+        row["content_hash"] for row in conn.execute("SELECT content_hash FROM raw_jobs ORDER BY id")
+    ] == before_hashes
+    delivered = [
+        row["delivered_at"]
+        for row in conn.execute("SELECT delivered_at FROM normalized_jobs ORDER BY id")
+    ]
+    assert delivered == [DELIVERED_AT, DELIVERED_AT]
