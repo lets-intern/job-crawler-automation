@@ -14,9 +14,9 @@ DB 에 넣어도 되는 모양인지 판정한다.
 | `unknown_field` | 스키마에 없는 필드명이 왔다 |
 | `missing_field` | 필수 필드가 없거나 값이 비어 있다 |
 
-`company` 는 목록·상세 양쪽에서 선택이다. 키가 없어도, 빈 문자열이어도 통과한다 — 그래서 이
-필드가 생기기 전에 저장된 셀렉터 JSON 이 그대로 통과한다. 나머지 필드는 그대로 필수라, 값이
-비어도 되는 상세 필드조차 키는 있어야 한다.
+`company` 와 `list.link_template` 은 키가 없어도, 빈 문자열이어도 통과한다 — 그래서 이 필드들이
+생기기 전에 저장된 셀렉터 JSON 이 그대로 통과한다. 나머지 필드는 그대로 필수라, 값이 비어도
+되는 상세 필드조차 키는 있어야 한다.
 
 `unparsable` 만 1회 재생성 대상이다. 나머지는 모양이 아니라 내용의 문제라 다시 물어도 같은
 답이 온다.
@@ -31,7 +31,10 @@ from typing import Any
 from pydantic import BaseModel
 
 # 값이 비어 있어도 실패로 보지 않는 필드. 사이트에 그 항목 자체가 없을 수 있다.
-OPTIONAL_LIST_FIELDS: frozenset[str] = frozenset({"company"})
+# `link` 가 여기 있는 것은 링크가 없어도 된다는 뜻이 아니다. 상세로 가는 a 태그가 없는
+# 사이트에서 모델이 아무 요소나 대신 고르지 않고 비워 두게 하려는 것이고, 비어 있으면
+# 자체 검증이 `list.link` 를 실패로 적는다 (`app/selector/verify.py`).
+OPTIONAL_LIST_FIELDS: frozenset[str] = frozenset({"company", "link", "link_template"})
 OPTIONAL_DETAIL_FIELDS: frozenset[str] = frozenset(
     {"requirements", "deadline", "department", "company"}
 )
@@ -42,7 +45,7 @@ OPTIONAL_FIELDS: dict[str, frozenset[str]] = {
 
 # 키가 아예 없어도 되는 필드. 스키마에 나중에 더해진 것이라 그 전에 저장된 셀렉터 JSON 에는
 # 키 자체가 없다. 나머지 필드는 값이 비어도 키는 있어야 한다.
-OMITTABLE_FIELDS: frozenset[str] = frozenset({"company"})
+OMITTABLE_FIELDS: frozenset[str] = frozenset({"company", "link_template"})
 
 # 아래 모델은 Gemini 의 response_schema 로 그대로 나간다. `extra="forbid"` 를 걸면
 # `additionalProperties: false` 로 변환되는데 Gemini 가 그 필드를 모르고 400 을 낸다.
@@ -58,6 +61,11 @@ class ListSelectors(BaseModel):
     date: str
     # 계열사 공고가 섞인 사이트에서 공고마다 다른 회사명을 잡는다. 없으면 빈 문자열이다
     company: str = ""
+    # 상세 URL 을 속성값으로 만드는 사이트를 위한 것이다. 비어 있으면 지금까지처럼 `link` 가
+    # 잡은 노드의 href 를 읽는다 — 방식을 적지 않은 기존 셀렉터가 그대로 동작한다.
+    # 값이 있으면 `{속성이름}` 자리에 노드의 그 속성값을 끼워 URL 을 만든다. 자세한 것은
+    # `app/selector/link.py` 에 있다
+    link_template: str = ""
 
 
 class DetailSelectors(BaseModel):
@@ -82,6 +90,11 @@ class SelectorSet(BaseModel):
 
 
 LIST_FIELDS: tuple[str, ...] = tuple(ListSelectors.model_fields)
+# CSS 셀렉터인 목록 필드만. `link_template` 은 셀렉터가 아니라 URL 형식이라 HTML 에 돌리지
+# 않는다
+LIST_SELECTOR_FIELDS: tuple[str, ...] = tuple(
+    name for name in LIST_FIELDS if name != "link_template"
+)
 DETAIL_FIELDS: tuple[str, ...] = tuple(DetailSelectors.model_fields)
 SECTIONS: tuple[str, ...] = tuple(SelectorSet.model_fields)
 

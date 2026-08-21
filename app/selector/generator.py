@@ -44,7 +44,12 @@ script, style, 주석은 이미 걷어냈고 반복되는 목록 항목은 앞�
 규칙:
 - list.item 은 공고 하나에 해당하는 반복 요소다. 목록 전체를 감싸는 컨테이너가 아니다.
 - list.title, list.link, list.date 는 list.item 안에서 찾을 수 있는 셀렉터로 쓴다.
-- list.link 는 상세 페이지로 가는 a 태그를 가리켜야 한다.
+- list.link 는 상세 페이지로 가는 a 태그를 가리켜야 한다. 그 a 의 href 가 실제 주소여야 한다.
+- 항목 안에 그런 a 가 없거나 href 가 javascript: 나 # 뿐이면 list.link 를 빈 문자열로 둔다.
+  제목이나 카드 같은 다른 요소를 링크 대신 고르지 않는다. 링크가 아닌 요소를 고르면 목록은
+  읽히는데 상세로 갈 수 없어 실행이 통째로 실패한다.
+- link_template 은 항상 빈 문자열로 둔다. 상세 URL 형식은 이 HTML 만으로 알 수 없고,
+  필요하면 운영자가 채운다. 주소를 지어내지 않는다.
 - detail.title 과 detail.body 는 반드시 채운다.
 - detail.requirements, detail.deadline, detail.department 는 페이지에 해당 항목이 없으면
   빈 문자열로 둔다. 아무 요소나 억지로 고르지 않는다.

@@ -26,7 +26,7 @@ from soupsieve import SelectorSyntaxError
 from app.selector.link import resolve_link
 from app.selector.schema import (
     DETAIL_FIELDS,
-    LIST_FIELDS,
+    LIST_SELECTOR_FIELDS,
     OPTIONAL_DETAIL_FIELDS,
     OPTIONAL_LIST_FIELDS,
     ListSelectors,
@@ -120,7 +120,7 @@ def _verify_list(selectors: SelectorSet, html: str) -> list[FieldMatch]:
                 status=FAILED,
                 message="list.item 이 깨져 확인할 수 없다",
             )
-            for name in LIST_FIELDS
+            for name in LIST_SELECTOR_FIELDS
             if name != "item"
         ]
 
@@ -134,7 +134,7 @@ def _verify_list(selectors: SelectorSet, html: str) -> list[FieldMatch]:
         )
     ]
 
-    for name in LIST_FIELDS:
+    for name in LIST_SELECTOR_FIELDS:
         if name == "item":
             continue
         if name == "link":
@@ -191,7 +191,8 @@ def _verify_link(selectors: ListSelectors, items: list[Tag]) -> FieldMatch:
             message = f"{message}: {reasons[0]}"
     return FieldMatch(
         name="list.link",
-        selector=selectors.link,
+        # 속성 + 템플릿 방식은 셀렉터가 비어 있을 수 있다. 그때는 템플릿을 보여 준다
+        selector=selectors.link or selectors.link_template,
         matches=usable,
         status=OK if usable else FAILED,
         message=message,

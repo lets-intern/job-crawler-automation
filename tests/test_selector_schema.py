@@ -31,9 +31,10 @@ VALID: dict[str, Any] = {
 
 
 def stored(payload: dict[str, Any]) -> dict[str, Any]:
-    """저장되는 모양. 선택 필드 `company` 는 안 적어도 빈 문자열로 채워져 저장된다."""
+    """저장되는 모양. 선택 필드는 안 적어도 빈 문자열로 채워져 저장된다."""
     filled = json.loads(json.dumps(payload))
     filled["list"].setdefault("company", "")
+    filled["list"].setdefault("link_template", "")
     filled["detail"].setdefault("company", "")
     return filled
 
@@ -100,13 +101,28 @@ def test_missing_list_field_is_classified() -> None:
 def test_empty_required_selector_is_missing() -> None:
     """값이 빈 문자열인 필수 필드는 있는 것이 아니라 없는 것이다."""
     payload = json.loads(json.dumps(VALID))
-    payload["list"]["link"] = "   "
+    payload["list"]["title"] = "   "
 
     with pytest.raises(SelectorSchemaError) as caught:
         validate_selectors(payload)
 
     assert caught.value.reason == "missing_field"
-    assert "link" in str(caught.value)
+    assert "title" in str(caught.value)
+
+
+def test_an_empty_link_passes_the_schema() -> None:
+    """상세로 가는 a 가 없는 사이트에서 모델이 아무 요소나 대신 고르지 않게 한다.
+
+    스키마를 통과한다는 것이 링크를 뽑을 수 있다는 뜻은 아니다. 그 판정은 자체 검증이 한다
+    (`tests/test_selector_link.py`).
+    """
+    payload = json.loads(json.dumps(VALID))
+    payload["list"]["link"] = ""
+
+    selectors = validate_selectors(payload)
+
+    assert selectors.list.link == ""
+    assert selectors.list.link_template == ""
 
 
 def test_unknown_field_is_classified_not_repaired() -> None:

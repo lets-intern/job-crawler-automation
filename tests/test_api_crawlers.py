@@ -58,9 +58,10 @@ USAGE = Usage(
 
 
 def stored(payload: dict[str, Any]) -> dict[str, Any]:
-    """저장되는 모양. 선택 필드 `company` 는 안 적어도 빈 문자열로 채워져 저장된다."""
+    """저장되는 모양. 선택 필드는 안 적어도 빈 문자열로 채워져 저장된다."""
     filled = json.loads(json.dumps(payload))
     filled["list"].setdefault("company", "")
+    filled["list"].setdefault("link_template", "")
     filled["detail"].setdefault("company", "")
     return filled
 

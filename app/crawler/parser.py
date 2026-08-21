@@ -15,6 +15,11 @@
 | `FieldParseError` | 매칭은 됐는데 필요한 필드를 못 읽음 | 그 필드만 보정 |
 
 목록 항목 0건은 실패다. 신규 0건인 정상 실행과 같은 결과로 남기지 않는다.
+
+상세 링크를 어디서 뽑는지는 `app/selector/link.py` 가 정한다. `href` 를 읽는 것이 기본이고,
+`list.link_template` 이 있으면 항목의 속성값으로 URL 을 만든다. 어느 쪽이든 여기서는 목록
+URL 과 합쳐 절대 URL 로 만들 뿐이고, 따라가도 되는 URL 인지는 공용 fetch 클라이언트가 다시
+본다.
 """
 
 from __future__ import annotations
@@ -26,6 +31,7 @@ from bs4 import BeautifulSoup
 from bs4.element import Tag
 from soupsieve import SelectorSyntaxError
 
+from app.selector.link import LinkResult, resolve_link
 from app.selector.schema import DETAIL_FIELDS, DetailSelectors, ListSelectors
 
 # 이 값이 없으면 공고를 식별할 수도, 상세로 따라갈 수도 없다. 나머지는 비어도 항목이 남는다.
@@ -103,28 +109,32 @@ def parse_list(html: str, selectors: ListSelectors, base_url: str) -> ListParseR
 
     for index, node in enumerate(nodes):
         title = _text(node, selectors.title, f"list.title[{index}]")
-        link = _href(node, selectors.link, index)
+        link = _link(node, selectors, index)
         date = _text(node, selectors.date, f"list.date[{index}]")
         company = (
             _text(node, selectors.company, f"list.company[{index}]") if selectors.company else ""
         )
 
-        found = {"title": title, "link": link}
-        missing = [name for name in REQUIRED_LIST_FIELDS if not found[name]]
-        if missing:
-            failures.extend(
+        problems: list[FieldFailure] = []
+        if not title:
+            problems.append(
                 FieldFailure(
-                    index=index, field=name, message="셀렉터가 항목 안에서 값을 찾지 못했다"
+                    index=index, field="title", message="셀렉터가 항목 안에서 값을 찾지 못했다"
                 )
-                for name in missing
             )
+        if not link.ok:
+            # 링크는 왜 못 뽑았는지가 조치를 가른다. href 가 없는 것과 속성이 없는 것은
+            # 다른 문제다 (`app/selector/link.py`)
+            problems.append(FieldFailure(index=index, field="link", message=link.reason))
+        if problems:
+            failures.extend(problems)
             continue
 
         items.append(
             ListItem(
                 index=index,
                 title=title,
-                link=urljoin(base_url, link),
+                link=urljoin(base_url, link.url),
                 date=date,
                 company=company,
             )
@@ -134,8 +144,11 @@ def parse_list(html: str, selectors: ListSelectors, base_url: str) -> ListParseR
         # 실제로 못 읽은 필드만 적는다. 필수 필드 이름을 통째로 적으면 title 은 멀쩡한데
         # link 만 없는 사이트에서 운영자가 두 필드를 다 뒤지게 된다
         unread = [name for name in REQUIRED_LIST_FIELDS if any(f.field == name for f in failures)]
+        # 첫 항목의 사유까지 붙인다. 이 문구가 crawl_runs.error_message 로 남아서, 다음
+        # 사람이 실행을 다시 돌리지 않고도 무엇이 없었는지 알게 된다
         raise FieldParseError(
-            f"item {len(nodes)}건을 잡았지만 어느 항목에서도 {', '.join(unread)} 를 읽지 못했다"
+            f"item {len(nodes)}건을 잡았지만 어느 항목에서도 {', '.join(unread)} 를 "
+            f"읽지 못했다: {failures[0].message}"
         )
 
     return ListParseResult(matched=len(nodes), items=items, failures=failures)
@@ -181,12 +194,9 @@ def _text(scope: BeautifulSoup | Tag, selector: str, name: str) -> str:
     return nodes[0].get_text()
 
 
-def _href(node: Tag, selector: str, index: int) -> str:
-    """상세 링크. `href` 가 없는 노드를 잡았으면 값이 없는 것으로 본다."""
-    nodes = _select(node, selector, f"list.link[{index}]")
-    if not nodes:
-        return ""
-    href = nodes[0].get("href")
-    if not isinstance(href, str):
-        return ""
-    return href
+def _link(node: Tag, selectors: ListSelectors, index: int) -> LinkResult:
+    """상세 링크. 뽑는 방식과 실패 사유는 `app/selector/link.py` 가 정한다."""
+    try:
+        return resolve_link(node, selectors)
+    except SelectorSyntaxError as exc:
+        raise FieldParseError(f"list.link[{index}] 셀렉터 문법 오류: {exc}") from exc

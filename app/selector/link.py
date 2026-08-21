@@ -8,6 +8,29 @@
 나오는가**다. `href` 가 없는 요소를 잡았거나 `javascript:`, `#` 뿐이면 노드가 스무 개여도
 실패다.
 
+## 두 가지 방식
+
+| `link_template` | 어디서 URL 이 나오는가 |
+|---|---|
+| 비어 있음 | `link` 셀렉터가 잡은 노드의 `href`. 기존 셀렉터가 전부 이쪽이다 |
+| 값이 있음 | 노드의 속성값을 `{속성이름}` 자리에 끼워 만든다 |
+
+두 번째는 `href` 가 `javascript:void(0)` 이고 상세 파라미터가 데이터 속성에 들어 있는
+사이트를 위한 것이다. 예를 들어 `data-recuyy`, `data-recutype`, `data-recucls` 를 가진
+항목에 이런 템플릿을 준다.
+
+    https://talent.hyundai.com/apply/applyView.hc?recuYy={data-recuyy}&recuType={data-recutype}&recuCls={data-recucls}
+
+템플릿 방식에서 `link` 가 비어 있으면 항목 노드 자신의 속성을 읽는다. 값이 있으면 항목 안에서
+그 셀렉터가 잡은 첫 노드의 속성을 읽는다.
+
+속성값은 공백처럼 URL 을 깨는 문자만 인코딩하고 `/`, `?`, `=`, `&` 는 그대로 둔다. 파라미터
+자리에 들어갈 짧은 값이 주 용도지만, 경로 조각이 통째로 들어 있는 속성도 있기 때문이다.
+
+**항목에 없는 속성은 만들어 내지 않는다.** 속성 하나라도 비면 그 항목은 실패이고, 어느 속성이
+없었는지를 사유에 적는다. 상세 파라미터가 DOM 에 아예 없는 사이트는 이 방식으로도 풀리지
+않는다 — 그것은 셀렉터를 더 넓혀서 풀 문제가 아니라 사이트를 등록할 수 없다는 사실이다.
+
 절대 URL 로 만드는 것은 여기서 하지 않는다. 상대경로는 그대로 돌려주고, 목록 URL 과 합치는
 것은 파서의 몫이다. 조립된 절대 URL 이든 상대경로든 마지막에는 공용 fetch 클라이언트가 다시
 http(s) 인지 본다 (`.claude/rules/crawling.md`).
@@ -15,8 +38,9 @@ http(s) 인지 본다 (`.claude/rules/crawling.md`).
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from bs4.element import Tag
 
@@ -24,6 +48,12 @@ from app.selector.schema import ListSelectors
 
 # 크롤러가 따라갈 수 있는 스킴. 이 밖은 링크가 아니라 페이지 안에서 도는 동작이다.
 FOLLOWABLE_SCHEMES: tuple[str, ...] = ("http", "https")
+
+# `{data-recuyy}` 처럼 속성 이름을 그대로 적는다. HTML 속성 이름에 쓰이는 문자만 받는다
+PLACEHOLDER = re.compile(r"\{([A-Za-z_][A-Za-z0-9_:.-]*)\}")
+
+# 속성값을 URL 에 끼울 때 그대로 두는 문자. 나머지는 퍼센트 인코딩한다
+_KEEP_IN_URL = "/?:=&%+#"
 
 
 @dataclass(frozen=True)
@@ -44,6 +74,9 @@ def resolve_link(node: Tag, selectors: ListSelectors) -> LinkResult:
     셀렉터 문법 오류는 `SelectorSyntaxError` 로 그대로 올라간다. 호출부가 그 실패를 필드
     문법 오류로 따로 적기 때문에 여기서 사유 문자열로 바꾸지 않는다.
     """
+    if selectors.link_template:
+        return _from_attributes(node, selectors)
+
     if not selectors.link:
         return LinkResult(reason="list.link 셀렉터가 비어 있다. 목록에 상세 링크가 없다는 응답이다")
 
@@ -62,6 +95,50 @@ def resolve_link(node: Tag, selectors: ListSelectors) -> LinkResult:
     if not followable(href):
         return LinkResult(reason=f"따라갈 수 있는 링크가 아니다: {href}")
     return LinkResult(url=href)
+
+
+def _from_attributes(node: Tag, selectors: ListSelectors) -> LinkResult:
+    """`link_template` 의 `{속성이름}` 자리를 노드의 속성값으로 채운다."""
+    template = selectors.link_template
+    names = PLACEHOLDER.findall(template)
+    if not names:
+        return LinkResult(
+            reason=f"link_template 에 `{{속성이름}}` 자리가 없다: {template}",
+        )
+
+    if selectors.link:
+        found = node.select(selectors.link)
+        if not found:
+            return LinkResult(reason="list.link 셀렉터가 항목 안에서 노드를 찾지 못했다")
+        target = found[0]
+    else:
+        # 셀렉터가 없으면 항목 노드 자신의 속성을 읽는다
+        target = node
+
+    values: dict[str, str] = {}
+    for name in names:
+        value = _attribute(target, name)
+        if not value:
+            return LinkResult(
+                reason=f"<{target.name}> 에 `{name}` 속성이 없다. "
+                "상세 파라미터가 이 항목에 들어 있지 않다"
+            )
+        values[name] = quote(value, safe=_KEEP_IN_URL)
+
+    url = PLACEHOLDER.sub(lambda match: values[match.group(1)], template)
+    if not followable(url):
+        return LinkResult(reason=f"조립한 URL 이 http(s) 가 아니다: {url}")
+    return LinkResult(url=url)
+
+
+def _attribute(node: Tag, name: str) -> str:
+    """속성값을 문자열로. `class` 처럼 목록으로 오는 속성은 공백으로 잇는다."""
+    raw = node.get(name)
+    if isinstance(raw, list):
+        return " ".join(str(part) for part in raw).strip()
+    if isinstance(raw, str):
+        return raw.strip()
+    return ""
 
 
 def followable(url: str) -> bool:
