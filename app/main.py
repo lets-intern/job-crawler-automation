@@ -1,5 +1,6 @@
 """FastAPI 앱. 라우터 등록과 스케줄러 기동."""
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -23,7 +24,10 @@ from app.api import (
     workflows,
 )
 from app.crawler.fetcher import close_fetcher
+from app.crawler.runner import close_orphan_runs
 from app.scheduler import get_scheduler, shutdown_scheduler
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -31,6 +35,9 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     """기동 시 `workflows` 테이블에서 잡을 등록한다. 스키마 적용은 CLI 가 한다."""
     conn = db.connect()
     try:
+        orphans = close_orphan_runs(conn)
+        if orphans:
+            logger.warning("지난 프로세스가 남긴 미완 실행 %d건을 timeout 으로 닫았다", orphans)
         get_scheduler().start(conn)
     finally:
         conn.close()

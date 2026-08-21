@@ -67,3 +67,47 @@ def test_a_normal_site_is_unaffected() -> None:
 
     assert result.items[0].link == "https://example.test/jobs/1"
     assert result.items[0].detail_absent is False
+
+
+def test_a_list_only_record_takes_title_and_deadline_from_the_list() -> None:
+    """상세를 안 따라가면 title 이 올 곳은 목록뿐이다. 비워 두면 공고를 알아볼 수 없다."""
+    from app.crawler.parser import ListItem
+    from app.crawler.runner import _record
+    from app.selector.schema import DETAIL_FIELDS
+
+    item = ListItem(
+        index=0,
+        title="백엔드 개발자",
+        link="https://example.test/jobs",
+        date="2026-09-30",
+        company="삼성",
+        detail_absent=True,
+    )
+
+    record = _record(item, dict.fromkeys(DETAIL_FIELDS, ""))
+
+    assert record["title"] == "백엔드 개발자"
+    assert record["deadline"] == "2026-09-30"
+    assert record["company"] == "삼성"
+    # 상세에서 오는 값은 비어 있는 것이 맞다. 없는 페이지를 지어내지 않는다
+    assert record["body"] == ""
+
+
+def test_a_normal_record_still_prefers_the_detail_page() -> None:
+    from app.crawler.parser import ListItem
+    from app.crawler.runner import _record
+
+    item = ListItem(index=0, title="목록 제목", link="https://x/1", date="2026-01-01")
+    detail = {
+        "title": "상세 제목",
+        "body": "본문",
+        "requirements": "",
+        "deadline": "2026-12-31",
+        "department": "",
+        "company": "",
+    }
+
+    record = _record(item, detail)
+
+    assert record["title"] == "상세 제목"
+    assert record["deadline"] == "2026-12-31"

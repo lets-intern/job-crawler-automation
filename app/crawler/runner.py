@@ -448,13 +448,16 @@ def _record(item: ListItem, detail: dict[str, str]) -> dict[str, str]:
 
     운영자가 적어 둔 `crawlers.default_company` 는 여기 들어오지 않는다. 추출한 것만 담는
     테이블이다 (`.claude/rules/data-safety.md`).
+
+    상세가 없는 사이트에서는 `title` 과 `deadline` 이 목록에서 온다. 상세를 따라가지 않으니
+    그쪽에서 올 값이 없고, 목록에 있는 것을 두고 빈 칸으로 남기면 공고를 알아볼 수 없다.
     """
     return {
         "source_url": item.link,
-        "title": detail["title"],
+        "title": detail["title"] or item.title,
         "body": detail["body"],
         "requirements": detail["requirements"],
-        "deadline": detail["deadline"],
+        "deadline": detail["deadline"] or item.date,
         "department": detail["department"],
         "company": detail["company"] or item.company,
         "list_title": item.title,
@@ -472,6 +475,31 @@ def _is_known(conn: sqlite3.Connection, workflow_id: int | None, column: str, va
         (workflow_id, value),
     ).fetchone()
     return row is not None
+
+
+def close_orphan_runs(conn: sqlite3.Connection) -> int:
+    """프로세스가 죽으며 남긴 미완 실행을 닫는다. 기동 시 한 번 부른다.
+
+    실행 중에 프로세스가 사라지면 `crawl_runs` 행이 종료 상태 없이 남는다. 밖에서 온 취소는
+    코드가 받아 적지만, SIGKILL 이나 컨테이너 재시작은 받을 기회조차 주지 않는다.
+
+    행이 영원히 미완으로 남으면 누적 카운트가 그 실행을 세지 못하고, 화면은 끝나지 않는
+    실행을 계속 진행 중으로 읽는다. `.claude/rules/crawling.md` 는 어떤 종료 경로에서도
+    행이 기록되기를 요구한다 — 여기가 마지막 경로다.
+
+    `timeout` 으로 적는다. 얼마나 돌았는지 모르는 채 끝난 실행이고, 성공이 아닌 것은 실패로
+    센다는 규칙과 어긋나지 않는다. 그때까지 적재한 `raw_jobs` 는 건드리지 않는다 — append-only 다.
+    """
+    cursor = conn.execute(
+        """
+        UPDATE crawl_runs
+           SET status = 'timeout',
+               finished_at = datetime('now'),
+               error_message = '프로세스가 끝나기 전에 사라져 결과를 남기지 못했다'
+         WHERE status IS NULL
+        """
+    )
+    return int(cursor.rowcount or 0)
 
 
 def _start_run(conn: sqlite3.Connection, target: RunTarget) -> int:
