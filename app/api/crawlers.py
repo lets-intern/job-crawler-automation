@@ -11,6 +11,11 @@
 테스트 실행은 저장된 셀렉터로 실제 페이지를 1회 크롤링해 필드별 미리보기와 실패 사유를
 돌려준다. 통과한 것만 `tested` 가 된다 — 실패한 실행은 상태를 건드리지 않는다.
 
+삭제는 크롤러 정의만 지운다. 워크플로우로 승격된 크롤러는 거절한다 — 워크플로우와 그 실행
+기록이 매달려 있고, 정의만 사라지면 남은 기록이 누구 것인지 아무도 설명하지 못한다. 수집한
+데이터(`raw_jobs`, `normalized_jobs`)는 크롤러 정의와 수명이 다르므로 함께 지우지 않는다
+(`.claude/rules/data-safety.md`).
+
 `default_company` 는 회사명이 페이지에 없는 사이트를 위한 운영자 입력이고 선택이다. 운영자가
 타이핑한 값이라 추출 결과가 아니고, 그래서 `crawlers` 에만 있고 `raw_jobs` 에는 가지 않는다
 (`.claude/rules/data-safety.md`). 어느 회사명이 쓰일지는 정규화 단계가 정한다.
@@ -29,14 +34,17 @@ from pydantic import BaseModel
 
 from app import db
 from app.crawler.failures import SUCCESS
-from app.crawler.fetcher import Fetcher, FetchError, RobotsDisallowedError, get_fetcher
+from app.crawler.fetcher import FetchError, FetchPolicy, RobotsDisallowedError, get_fetcher
+from app.crawler.playwright import RENDER_MODES, STATIC, open_source
 from app.crawler.runner import RunTarget, run_once
 from app.selector.generator import GenerationResult, SelectorGenerationError, generate_for_urls
 from app.selector.schema import SelectorSchemaError, SelectorSet, validate_selectors
 
 router = APIRouter(prefix="/api/crawlers", tags=["crawlers"])
 
-GenerateFn = Callable[[str, str], Awaitable[GenerationResult]]
+# 인자는 리스트 URL, 상세 URL, render_mode 다. 어느 경로로 가져올지는 크롤러마다 다르므로
+# 생성 함수가 매번 받는다.
+GenerateFn = Callable[[str, str, str], Awaitable[GenerationResult]]
 
 
 class CrawlerCreate(BaseModel):
@@ -45,9 +53,14 @@ class CrawlerCreate(BaseModel):
     name: str = ""
     # 회사명이 페이지에 없는 사이트를 위한 운영자 입력. 없으면 비운다
     default_company: str = ""
+    # 기본값은 정적이다. 렌더는 정적으로 목록이 안 나오는 것이 확인된 사이트만 올린다
+    render_mode: str = STATIC
 
 
-class CompanyUpdate(BaseModel):
+class RenderModeUpdate(BaseModel):
+    """`static` 과 `playwright` 둘뿐이다. 승격은 운영자가 정한다."""
+
+    render_mode: str
     """운영자가 적어 둔 회사명만 바꾼다. 빈 문자열은 지운다는 뜻이다."""
 
     default_company: str = ""
@@ -68,6 +81,7 @@ class CrawlerOut(BaseModel):
     name: str
     status: str
     default_company: str | None
+    render_mode: str
     selectors: SelectorSet
     matches: dict[str, int]
     failed_fields: list[str]
@@ -75,11 +89,26 @@ class CrawlerOut(BaseModel):
     usage: UsageOut
 
 
+class RenderModeOut(BaseModel):
+    """전환 결과. 저장된 값을 그대로 돌려준다."""
+
+    id: int
+    render_mode: str
+
+
 class CompanyOut(BaseModel):
     """회사명 수정 결과. 저장된 값을 그대로 돌려준다."""
 
     id: int
     default_company: str | None
+
+
+class DeleteOut(BaseModel):
+    """삭제 결과. 함께 지운 테스트 실행 기록 수를 같이 돌려준다."""
+
+    id: int
+    name: str
+    deleted_test_runs: int
 
 
 class SelectorsOut(BaseModel):
@@ -129,7 +158,7 @@ def get_connection() -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
-def get_crawl_fetcher() -> Fetcher:
+def get_crawl_fetcher() -> FetchPolicy:
     """공용 fetch 클라이언트. 테스트는 이 의존성을 갈아끼운다."""
     return get_fetcher()
 
@@ -137,8 +166,10 @@ def get_crawl_fetcher() -> Fetcher:
 def get_generator() -> GenerateFn:
     """기본 생성 경로. 테스트는 이 의존성을 갈아끼운다."""
 
-    async def generate(list_url: str, detail_url: str) -> GenerationResult:
-        return await generate_for_urls(list_url, detail_url)
+    async def generate(list_url: str, detail_url: str, render_mode: str) -> GenerationResult:
+        # 렌더 모드면 브라우저가 이 블록 안에서만 산다. 생성이 끝나면 닫힌다
+        async with open_source(render_mode, get_fetcher()) as source:
+            return await generate_for_urls(list_url, detail_url, source=source)
 
     return generate
 
@@ -217,6 +248,64 @@ def update_company(
         "UPDATE crawlers SET default_company = ? WHERE id = ?", (default_company, crawler_id)
     )
     return CompanyOut(id=crawler_id, default_company=default_company)
+
+
+@router.delete("/{crawler_id}", response_model=DeleteOut)
+def delete_crawler(
+    crawler_id: int,
+    conn: Annotated[sqlite3.Connection, Depends(get_connection)],
+) -> DeleteOut:
+    """크롤러 정의를 지운다. 되돌릴 수 없다.
+
+    워크플로우가 매달려 있으면 거절한다. 크롤러만 사라지면 그 워크플로우의 `crawl_runs` 와
+    `raw_jobs` 가 어느 사이트에서 온 것인지 설명할 수 없게 된다. 지우려면 워크플로우를 먼저
+    지워야 한다.
+
+    함께 지우는 것은 승격 전 테스트 실행 기록뿐이다. 그 행은 이 크롤러 하나만 가리키고 있어
+    정의가 없으면 읽을 수 없다. 수집한 공고(`raw_jobs`, `normalized_jobs`)는 워크플로우에
+    매달려 있고 크롤러 정의와 수명이 다르므로 건드리지 않는다 (`.claude/rules/data-safety.md`).
+    """
+    row = conn.execute(
+        "SELECT id, name, status FROM crawlers WHERE id = ?", (crawler_id,)
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail={"message": f"크롤러 {crawler_id} 가 없다"})
+
+    workflow_ids = [
+        int(item["id"])
+        for item in conn.execute(
+            "SELECT id FROM workflows WHERE crawler_id = ? ORDER BY id", (crawler_id,)
+        ).fetchall()
+    ]
+    if workflow_ids:
+        joined = ", ".join(str(item) for item in workflow_ids)
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "reason": "has_workflow",
+                "message": (
+                    f"워크플로우 {joined} 가 이 크롤러를 쓰고 있어 지울 수 없다. "
+                    "워크플로우를 먼저 지운 뒤 다시 시도한다"
+                ),
+            },
+        )
+    if row["status"] == "promoted":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "reason": "promoted",
+                "message": (
+                    "승격된 크롤러는 지울 수 없다. 매달린 워크플로우를 먼저 정리한 뒤 "
+                    "상태를 되돌려야 한다"
+                ),
+            },
+        )
+
+    deleted = conn.execute(
+        "DELETE FROM crawl_runs WHERE crawler_id = ? AND workflow_id IS NULL", (crawler_id,)
+    ).rowcount
+    conn.execute("DELETE FROM crawlers WHERE id = ?", (crawler_id,))
+    return DeleteOut(id=crawler_id, name=str(row["name"]), deleted_test_runs=max(deleted, 0))
 
 
 @router.put("/{crawler_id}/selectors", response_model=SelectorsOut)

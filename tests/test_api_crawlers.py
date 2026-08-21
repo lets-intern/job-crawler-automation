@@ -311,3 +311,141 @@ def test_manual_edit_on_a_missing_crawler_is_404(client: TestClient) -> None:
     response = client.put("/api/crawlers/999/selectors", json=GENERATED)
 
     assert response.status_code == 404
+
+
+def make_test_run(conn: sqlite3.Connection, crawler_id: int) -> int:
+    """승격 전 테스트 실행 기록 하나. `workflow_id` 없이 크롤러만 가리킨다."""
+    cursor = conn.execute(
+        "INSERT INTO crawl_runs (crawler_id, status, success_count) VALUES (?, 'success', 1)",
+        (crawler_id,),
+    )
+    return int(cursor.lastrowid or 0)
+
+
+def make_workflow(conn: sqlite3.Connection, crawler_id: int) -> int:
+    cursor = conn.execute(
+        "INSERT INTO workflows (crawler_id, name) VALUES (?, '테스트 워크플로우')",
+        (crawler_id,),
+    )
+    conn.execute("UPDATE crawlers SET status = 'promoted' WHERE id = ?", (crawler_id,))
+    return int(cursor.lastrowid or 0)
+
+
+def make_collected_rows(conn: sqlite3.Connection, workflow_id: int) -> None:
+    """수집된 공고 한 건. 크롤러가 아니라 워크플로우에 매달려 있다."""
+    cursor = conn.execute(
+        """
+        INSERT INTO raw_jobs (workflow_id, source_url, raw_data_json, content_hash)
+        VALUES (?, 'https://example.com/1', '{}', 'hash-1')
+        """,
+        (workflow_id,),
+    )
+    conn.execute(
+        """
+        INSERT INTO normalized_jobs (raw_job_id, title, source_url)
+        VALUES (?, '공고', 'https://example.com/1')
+        """,
+        (int(cursor.lastrowid or 0),),
+    )
+
+
+def counts(conn: sqlite3.Connection) -> tuple[int, int]:
+    raw = conn.execute("SELECT count(*) AS n FROM raw_jobs").fetchone()["n"]
+    normalized = conn.execute("SELECT count(*) AS n FROM normalized_jobs").fetchone()["n"]
+    return int(raw), int(normalized)
+
+
+def register(client: TestClient) -> int:
+    use_generator(result_for(GENERATED))
+    return int(
+        client.post("/api/crawlers", json={"list_url": LIST_URL, "detail_url": DETAIL_URL}).json()[
+            "id"
+        ]
+    )
+
+
+def test_a_draft_crawler_is_deleted(client: TestClient, conn: sqlite3.Connection) -> None:
+    crawler_id = register(client)
+
+    response = client.delete(f"/api/crawlers/{crawler_id}")
+
+    assert response.status_code == 200
+    assert response.json()["id"] == crawler_id
+    assert rows(conn) == []
+
+
+def test_deleting_a_crawler_drops_its_test_runs(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """테스트 실행 기록은 이 크롤러만 가리킨다. 정의가 없으면 읽을 수 없어 함께 지운다."""
+    crawler_id = register(client)
+    make_test_run(conn, crawler_id)
+    make_test_run(conn, crawler_id)
+
+    response = client.delete(f"/api/crawlers/{crawler_id}")
+
+    assert response.json()["deleted_test_runs"] == 2
+    assert conn.execute("SELECT count(*) AS n FROM crawl_runs").fetchone()["n"] == 0
+
+
+def test_a_promoted_crawler_is_refused(client: TestClient, conn: sqlite3.Connection) -> None:
+    crawler_id = register(client)
+    make_workflow(conn, crawler_id)
+
+    response = client.delete(f"/api/crawlers/{crawler_id}")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["reason"] == "has_workflow"
+    assert "워크플로우를 먼저" in response.json()["detail"]["message"]
+    assert len(rows(conn)) == 1
+
+
+def test_a_promoted_crawler_without_a_workflow_is_still_refused(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """워크플로우 행이 없어도 상태가 promoted 면 지우지 않는다. 상태부터 설명돼야 한다."""
+    crawler_id = register(client)
+    conn.execute("UPDATE crawlers SET status = 'promoted' WHERE id = ?", (crawler_id,))
+
+    response = client.delete(f"/api/crawlers/{crawler_id}")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["reason"] == "promoted"
+    assert len(rows(conn)) == 1
+
+
+def test_refused_delete_keeps_the_collected_rows(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """거절된 삭제는 수집 데이터를 건드리지 않는다 (rules/data-safety.md)."""
+    crawler_id = register(client)
+    workflow_id = make_workflow(conn, crawler_id)
+    make_collected_rows(conn, workflow_id)
+    before = counts(conn)
+
+    client.delete(f"/api/crawlers/{crawler_id}")
+
+    assert counts(conn) == before == (1, 1)
+
+
+def test_delete_leaves_the_collected_rows_of_other_crawlers(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """지워지는 크롤러와 무관하게 raw_jobs·normalized_jobs 행 수는 그대로다."""
+    kept = register(client)
+    workflow_id = make_workflow(conn, kept)
+    make_collected_rows(conn, workflow_id)
+    doomed = register(client)
+    before = counts(conn)
+
+    response = client.delete(f"/api/crawlers/{doomed}")
+
+    assert response.status_code == 200
+    assert counts(conn) == before == (1, 1)
+    assert [row["id"] for row in rows(conn)] == [kept]
+
+
+def test_deleting_a_missing_crawler_is_404(client: TestClient) -> None:
+    response = client.delete("/api/crawlers/999")
+
+    assert response.status_code == 404
