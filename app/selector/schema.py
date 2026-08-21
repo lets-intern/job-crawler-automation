@@ -14,6 +14,10 @@ DB 에 넣어도 되는 모양인지 판정한다.
 | `unknown_field` | 스키마에 없는 필드명이 왔다 |
 | `missing_field` | 필수 필드가 없거나 값이 비어 있다 |
 
+`company` 는 목록·상세 양쪽에서 선택이다. 키가 없어도, 빈 문자열이어도 통과한다 — 그래서 이
+필드가 생기기 전에 저장된 셀렉터 JSON 이 그대로 통과한다. 나머지 필드는 그대로 필수라, 값이
+비어도 되는 상세 필드조차 키는 있어야 한다.
+
 `unparsable` 만 1회 재생성 대상이다. 나머지는 모양이 아니라 내용의 문제라 다시 물어도 같은
 답이 온다.
 """
@@ -26,8 +30,19 @@ from typing import Any
 
 from pydantic import BaseModel
 
-# 값이 비어 있어도 실패로 보지 않는 상세 필드. 사이트에 그 항목 자체가 없을 수 있다.
-OPTIONAL_DETAIL_FIELDS: frozenset[str] = frozenset({"requirements", "deadline", "department"})
+# 값이 비어 있어도 실패로 보지 않는 필드. 사이트에 그 항목 자체가 없을 수 있다.
+OPTIONAL_LIST_FIELDS: frozenset[str] = frozenset({"company"})
+OPTIONAL_DETAIL_FIELDS: frozenset[str] = frozenset(
+    {"requirements", "deadline", "department", "company"}
+)
+OPTIONAL_FIELDS: dict[str, frozenset[str]] = {
+    "list": OPTIONAL_LIST_FIELDS,
+    "detail": OPTIONAL_DETAIL_FIELDS,
+}
+
+# 키가 아예 없어도 되는 필드. 스키마에 나중에 더해진 것이라 그 전에 저장된 셀렉터 JSON 에는
+# 키 자체가 없다. 나머지 필드는 값이 비어도 키는 있어야 한다.
+OMITTABLE_FIELDS: frozenset[str] = frozenset({"company"})
 
 # 아래 모델은 Gemini 의 response_schema 로 그대로 나간다. `extra="forbid"` 를 걸면
 # `additionalProperties: false` 로 변환되는데 Gemini 가 그 필드를 모르고 400 을 낸다.
@@ -41,6 +56,8 @@ class ListSelectors(BaseModel):
     title: str
     link: str
     date: str
+    # 계열사 공고가 섞인 사이트에서 공고마다 다른 회사명을 잡는다. 없으면 빈 문자열이다
+    company: str = ""
 
 
 class DetailSelectors(BaseModel):
@@ -51,6 +68,7 @@ class DetailSelectors(BaseModel):
     requirements: str
     deadline: str
     department: str
+    company: str = ""
 
 
 class SelectorSet(BaseModel):
@@ -109,18 +127,20 @@ def _validate_section(value: Any, section: str, fields: tuple[str, ...]) -> dict
             "unparsable", f"`{section}` 이 객체가 아니다: {type(value).__name__}"
         )
 
+    optional = OPTIONAL_FIELDS.get(section, frozenset())
     _reject_unknown(value, fields, section)
-    _require(value, fields, section)
+    _require(value, tuple(name for name in fields if name not in OMITTABLE_FIELDS), section)
 
     result: dict[str, str] = {}
     for name in fields:
-        raw = value[name]
+        # 나중에 더해진 필드는 키가 없어도 된다. 그 전에 저장된 셀렉터가 그렇다
+        raw = value.get(name, "") if name in OMITTABLE_FIELDS else value[name]
         if not isinstance(raw, str):
             raise SelectorSchemaError(
                 "unparsable", f"`{section}.{name}` 이 문자열이 아니다: {type(raw).__name__}"
             )
         selector = raw.strip()
-        if not selector and not (section == "detail" and name in OPTIONAL_DETAIL_FIELDS):
+        if not selector and name not in optional:
             raise SelectorSchemaError("missing_field", f"`{section}.{name}` 이 비어 있다")
         result[name] = selector
     return result

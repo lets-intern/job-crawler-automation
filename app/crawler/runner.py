@@ -413,7 +413,15 @@ def _normalize(
 
 
 def _record(item: ListItem, detail: dict[str, str]) -> dict[str, str]:
-    """`raw_jobs.raw_data_json` 에 그대로 들어가는 값. 정제하지 않는다."""
+    """`raw_jobs.raw_data_json` 에 그대로 들어가는 값. 정제하지 않는다.
+
+    `company` 는 상세에서 뽑은 값을 먼저 쓰고, 없으면 목록에서 뽑은 값을 쓴다. 상세가 그
+    공고 한 건만 다루는 페이지라 계열사가 섞인 사이트에서 더 정확하다. 둘 다 없으면 빈
+    문자열이고, 그 자리를 무엇으로 채울지는 정규화 단계가 정한다.
+
+    운영자가 적어 둔 `crawlers.default_company` 는 여기 들어오지 않는다. 추출한 것만 담는
+    테이블이다 (`.claude/rules/data-safety.md`).
+    """
     return {
         "source_url": item.link,
         "title": detail["title"],
@@ -421,6 +429,7 @@ def _record(item: ListItem, detail: dict[str, str]) -> dict[str, str]:
         "requirements": detail["requirements"],
         "deadline": detail["deadline"],
         "department": detail["department"],
+        "company": detail["company"] or item.company,
         "list_title": item.title,
         "list_date": item.date,
     }

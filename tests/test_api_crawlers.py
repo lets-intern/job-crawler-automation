@@ -55,6 +55,14 @@ USAGE = Usage(
 )
 
 
+def stored(payload: dict[str, Any]) -> dict[str, Any]:
+    """저장되는 모양. 선택 필드 `company` 는 안 적어도 빈 문자열로 채워져 저장된다."""
+    filled = json.loads(json.dumps(payload))
+    filled["list"].setdefault("company", "")
+    filled["detail"].setdefault("company", "")
+    return filled
+
+
 def result_for(payload: dict[str, Any]) -> GenerationResult:
     selectors = validate_selectors(payload)
     return GenerationResult(
@@ -121,7 +129,7 @@ def test_registration_stores_a_draft_row(client: TestClient, conn: sqlite3.Conne
     assert saved[0]["status"] == "draft"
     assert saved[0]["name"] == "python.org 채용"
     assert saved[0]["list_url"] == LIST_URL
-    assert json.loads(saved[0]["selectors_json"]) == GENERATED
+    assert json.loads(saved[0]["selectors_json"]) == stored(GENERATED)
     assert response.json()["id"] == saved[0]["id"]
 
 
@@ -296,7 +304,7 @@ def test_manual_edit_rejects_a_field_the_schema_does_not_have(
 
     assert response.status_code == 422
     assert response.json()["detail"]["reason"] == "unknown_field"
-    assert json.loads(rows(conn)[0]["selectors_json"]) == GENERATED
+    assert json.loads(rows(conn)[0]["selectors_json"]) == stored(GENERATED)
 
 
 def test_manual_edit_on_a_missing_crawler_is_404(client: TestClient) -> None:

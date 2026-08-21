@@ -70,6 +70,8 @@ class ListItem:
     title: str
     link: str
     date: str
+    # 셀렉터가 없거나 못 찾으면 빈 문자열이다. 회사명이 없는 사이트가 흔하다
+    company: str = ""
 
 
 @dataclass(frozen=True)
@@ -103,6 +105,9 @@ def parse_list(html: str, selectors: ListSelectors, base_url: str) -> ListParseR
         title = _text(node, selectors.title, f"list.title[{index}]")
         link = _href(node, selectors.link, index)
         date = _text(node, selectors.date, f"list.date[{index}]")
+        company = (
+            _text(node, selectors.company, f"list.company[{index}]") if selectors.company else ""
+        )
 
         found = {"title": title, "link": link}
         missing = [name for name in REQUIRED_LIST_FIELDS if not found[name]]
@@ -115,7 +120,15 @@ def parse_list(html: str, selectors: ListSelectors, base_url: str) -> ListParseR
             )
             continue
 
-        items.append(ListItem(index=index, title=title, link=urljoin(base_url, link), date=date))
+        items.append(
+            ListItem(
+                index=index,
+                title=title,
+                link=urljoin(base_url, link),
+                date=date,
+                company=company,
+            )
+        )
 
     if not items:
         raise FieldParseError(

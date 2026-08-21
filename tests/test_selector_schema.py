@@ -30,12 +30,20 @@ VALID: dict[str, Any] = {
 }
 
 
+def stored(payload: dict[str, Any]) -> dict[str, Any]:
+    """저장되는 모양. 선택 필드 `company` 는 안 적어도 빈 문자열로 채워져 저장된다."""
+    filled = json.loads(json.dumps(payload))
+    filled["list"].setdefault("company", "")
+    filled["detail"].setdefault("company", "")
+    return filled
+
+
 def test_valid_payload_passes() -> None:
     selectors = validate_selectors(VALID)
 
     assert selectors.list.item == "ol.list-recent-jobs > li"
     assert selectors.detail.deadline == ""
-    assert json.loads(selectors.to_json()) == VALID
+    assert json.loads(selectors.to_json()) == stored(VALID)
 
 
 def test_parse_selectors_reads_a_json_string() -> None:

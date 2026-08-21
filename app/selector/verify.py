@@ -14,7 +14,13 @@ from dataclasses import dataclass
 from bs4 import BeautifulSoup
 from soupsieve import SelectorSyntaxError
 
-from app.selector.schema import DETAIL_FIELDS, LIST_FIELDS, OPTIONAL_DETAIL_FIELDS, SelectorSet
+from app.selector.schema import (
+    DETAIL_FIELDS,
+    LIST_FIELDS,
+    OPTIONAL_DETAIL_FIELDS,
+    OPTIONAL_LIST_FIELDS,
+    SelectorSet,
+)
 
 # 필드 하나의 판정.
 OK = "ok"
@@ -98,6 +104,18 @@ def _verify_list(selectors: SelectorSet, html: str) -> list[FieldMatch]:
         if name == "item":
             continue
         selector = getattr(selectors.list, name)
+        if not selector and name in OPTIONAL_LIST_FIELDS:
+            # 목록에 그 항목이 없다는 응답이다. 셀렉터가 없으니 실패도 성공도 아니다.
+            results.append(
+                FieldMatch(
+                    name=f"list.{name}",
+                    selector="",
+                    matches=0,
+                    status=SKIPPED,
+                    message="목록에 해당 항목이 없다는 응답",
+                )
+            )
+            continue
         try:
             matched = sum(1 for item in items if item.select(selector))
         except SelectorSyntaxError as exc:
