@@ -40,7 +40,9 @@ SQLite 파일 하나. 경로는 `DATABASE_PATH` 가 정하고 Docker named volum
 
 | 컬럼 | 설명 |
 |---|---|
-| id, workflow_id | |
+| id | |
+| workflow_id | 워크플로우 실행이면 채워지고, 승격 전 테스트 실행이면 NULL |
+| crawler_id | 승격 전 테스트 실행이면 채워지고, 워크플로우 실행이면 NULL |
 | started_at, finished_at | |
 | status | `success` / `failed` / `timeout` |
 | success_count | 정상 파싱된 항목 수 |
@@ -48,6 +50,9 @@ SQLite 파일 하나. 경로는 `DATABASE_PATH` 가 정하고 Docker named volum
 | fail_count | |
 | error_class | `transport` / `selector_miss` / `parse` |
 | error_message | |
+
+`workflow_id` 와 `crawler_id` 가 둘 다 NULL 인 행은 CHECK 가 막는다. 어느 쪽에도 걸리지 않은
+실행은 나중에 누구도 추적하지 못한다.
 
 `error_class` 가 세 가지로 나뉘어 있는 이유는 조치가 각각 다르기 때문이다.
 `transport` 만 재시도 대상이다. `.claude/rules/crawling.md` 참조.

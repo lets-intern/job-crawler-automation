@@ -36,6 +36,7 @@ EXPECTED_COLUMNS = {
     "crawl_runs": {
         "id",
         "workflow_id",
+        "crawler_id",
         "started_at",
         "finished_at",
         "status",
@@ -78,6 +79,9 @@ EXPECTED_COLUMNS = {
 
 EXPECTED_INDEXES = {"idx_raw_jobs_content_hash", "idx_normalized_jobs_normalized_at"}
 
+# 지금까지의 마이그레이션. 전부 역적용해야 테이블이 사라진다
+ALL_VERSIONS = ["0001", "0002"]
+
 
 @pytest.fixture
 def conn(tmp_path: Path) -> Iterator[sqlite3.Connection]:
@@ -103,6 +107,36 @@ def test_initial_migration_is_the_first_version() -> None:
 
     assert migrations[0].version == "0001"
     assert migrations[0].name == "initial_schema"
+    assert [migration.version for migration in migrations] == ALL_VERSIONS
+
+
+def test_crawl_runs_holds_a_test_run_without_a_workflow(conn: sqlite3.Connection) -> None:
+    """승격 전 크롤러의 1회 실행도 행을 남긴다. 어디에도 안 걸린 실행은 막는다."""
+    db.migrate_up(conn)
+    conn.execute(
+        "INSERT INTO crawlers (name, list_url) VALUES (?, ?)", ("테스트", "https://example.test")
+    )
+
+    conn.execute("INSERT INTO crawl_runs (crawler_id) VALUES (1)")
+
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("INSERT INTO crawl_runs (workflow_id, crawler_id) VALUES (NULL, NULL)")
+
+
+def test_down_keeps_workflow_runs_and_drops_test_runs(conn: sqlite3.Connection) -> None:
+    """0001 스키마는 workflow_id 가 NULL 인 행을 담지 못한다. 역적용은 그 행을 버린다."""
+    db.migrate_up(conn)
+    conn.execute(
+        "INSERT INTO crawlers (name, list_url) VALUES (?, ?)", ("테스트", "https://example.test")
+    )
+    conn.execute("INSERT INTO workflows (crawler_id, name) VALUES (1, '워크플로우')")
+    conn.execute("INSERT INTO crawl_runs (workflow_id) VALUES (1)")
+    conn.execute("INSERT INTO crawl_runs (crawler_id) VALUES (1)")
+
+    db.migrate_down(conn, steps=1)
+
+    rows = conn.execute("SELECT workflow_id FROM crawl_runs").fetchall()
+    assert [row["workflow_id"] for row in rows] == [1]
 
 
 def test_up_creates_the_six_tables(conn: sqlite3.Connection) -> None:
@@ -145,7 +179,7 @@ def test_status_check_constraints(conn: sqlite3.Connection) -> None:
 def test_down_removes_the_tables_and_indexes(conn: sqlite3.Connection) -> None:
     db.migrate_up(conn)
 
-    assert db.migrate_down(conn, steps=1) == ["0001"]
+    assert db.migrate_down(conn, steps=len(ALL_VERSIONS)) == list(reversed(ALL_VERSIONS))
     assert not set(EXPECTED_COLUMNS) & _names(conn, "table")
     assert not EXPECTED_INDEXES & _names(conn, "index")
     assert db.applied_versions(conn) == []
@@ -154,9 +188,9 @@ def test_down_removes_the_tables_and_indexes(conn: sqlite3.Connection) -> None:
 def test_up_after_down_restores_the_same_schema(conn: sqlite3.Connection) -> None:
     db.migrate_up(conn)
     before = _names(conn, "table") | _names(conn, "index")
-    db.migrate_down(conn, steps=1)
+    db.migrate_down(conn, steps=len(ALL_VERSIONS))
 
     db.migrate_up(conn)
 
     assert _names(conn, "table") | _names(conn, "index") == before
-    assert db.applied_versions(conn) == ["0001"]
+    assert db.applied_versions(conn) == ALL_VERSIONS

@@ -43,6 +43,14 @@
         - `app/crawler/runner.py`. 실행 시작에 `crawl_runs` 행을 만들고, 어떤 종료 경로에서도 종료 상태와 카운트로 갱신한다
         - 리스트 파싱 → 해시로 신규 판정 → 신규 건만 상세를 따라간다 → `raw_jobs` 에 append
         - 기존 건은 상세를 가져오지 않는다. `raw_jobs` 를 갱신하지 않는다
+        - [x] 3.4.1 수정: 승격 전 실행이 `crawl_runs` 행을 만들 수 없다
+            - 0001 의 `crawl_runs.workflow_id` 가 NOT NULL 이라 워크플로우가 없는 테스트 실행은
+              행 자체를 못 만든다. 3.5.V 가 확인할 행이 없어진다
+            - `migrations/0002_crawl_runs_test_run.sql`. `workflow_id` 를 NULL 허용으로 바꾸고
+              `crawler_id` 를 더한다. 둘 다 NULL 인 행은 CHECK 로 막는다
+            - 되돌리기: `python -m app.cli migrate down --steps 1`. `workflow_id` 가 NULL 인 행
+              (테스트 실행 기록)은 0001 스키마에 들어가지 못해 역적용 시 버려진다
+            - 같은 커밋에서 `.claude/docs/data-model.md` 의 `crawl_runs` 표를 고친다
         - [ ] 3.4.V 검증: 픽스처 기반 pytest 작성 및 통과 — 같은 픽스처로 2회 실행 시 `raw_jobs` 1행, 2회차 `new_count=0`, `crawl_runs` 2행
 
     - [ ] 3.5 테스트 실행 API
