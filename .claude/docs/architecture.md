@@ -64,7 +64,8 @@ app/
 ├── scheduler.py        APScheduler 등록·갱신·동시성 상한
 ├── normalize/
 │   ├── engine.py       규칙 적용
-│   └── rules.py        규칙 타입 정의
+│   ├── rules.py        규칙 타입 정의
+│   └── backfill.py     수동 재정규화
 ├── api/                라우터
 ├── templates/          Jinja2
 └── cli.py              운영 명령 (test-run, workflow, fetch)
@@ -102,9 +103,21 @@ tests/
 
 읽고 쓰는 곳은 `app/settings.py`, 상한을 실제로 거는 곳은 `app/scheduler.py` 다.
 
+## 기존 데이터 재정규화
+
+규칙을 저장해도 기존 `normalized_jobs` 는 그대로다 (2026-08-21 결정). 운영자가 재정규화를
+명시적으로 실행했을 때만 `raw_jobs` 를 다시 읽어 갱신한다.
+
+규칙 저장에 재처리를 묶지 않는 이유는 하나다. 규칙 다섯 개를 손보는 동안 같은 데이터를
+다섯 번 다시 쓰게 된다.
+
+재정규화는 크롤링 실행이 아니라 `crawl_runs` 에 쓰지 않고, `delivered_at` 도 건드리지 않는다.
+진행 상황은 한 프로세스 안의 메모리에 두고, 돌고 있는 동안 들어온 요청은 거부한다.
+
+동작은 `app/normalize/backfill.py`, 트리거는 `app/api/rules.py` 의 `/api/rules/renormalize` 다.
+
 ## 미결정 사항
 
 PRD 9장의 항목들. 결정되면 이 문서와 해당 rule 을 같이 고친다.
 
-- 정규화 규칙 변경 시 기존 데이터 일괄 재처리 방식
 - 셀렉터 생성 실패 시 재시도 정책의 상세 — 현재는 `rules/llm.md` 의 "깨진 응답만 1회"
