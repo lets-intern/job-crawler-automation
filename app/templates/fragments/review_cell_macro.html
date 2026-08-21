@@ -1,0 +1,59 @@
+{# 검수 표의 셀 하나. 표에서도, 셀 조각 라우트에서도 이 매크로 하나가 그린다.
+
+   두 곳이 각자 마크업을 들고 있으면 저장 후 갈려 들어온 셀만 다른 모양이 된다.
+
+   상태는 단어로 적는다 — `규칙값` 과 `사람 보정` 이고, 아이콘·이모지는 쓰지 않는다
+   (`.claude/rules/writing.md`). #}
+{% macro review_cell(cell) %}
+<td id="review-cell-{{ cell.raw_job_id }}-{{ cell.field }}" class="cell-text align-top">
+  {% if cell.editing %}
+  <form hx-put="/ui/review/cells/{{ cell.raw_job_id }}/{{ cell.field }}"
+        hx-target="closest td" hx-swap="outerHTML" hx-disabled-elt="find button">
+    <label class="block text-xs" for="review-input-{{ cell.raw_job_id }}-{{ cell.field }}">{{ cell.label }}</label>
+    {% if cell.long %}
+    <textarea id="review-input-{{ cell.raw_job_id }}-{{ cell.field }}" name="value"
+              rows="4" cols="40">{{ cell.value or "" }}</textarea>
+    {% else %}
+    <input id="review-input-{{ cell.raw_job_id }}-{{ cell.field }}" name="value" type="text"
+           size="24" value="{{ cell.value or "" }}">
+    {% endif %}
+    <span class="flex flex-wrap items-center gap-1">
+      <button type="submit">저장</button>
+      {# 폼의 hx-disabled-elt 를 그대로 물려받으면 이 버튼 안에서 button 을 찾다가 실패한다.
+         자기 자신으로 덮어쓴다 #}
+      <button type="button" hx-get="/ui/review/cells/{{ cell.raw_job_id }}/{{ cell.field }}"
+              hx-target="closest td" hx-swap="outerHTML"
+              hx-disabled-elt="this">취소</button>
+    </span>
+    <span class="wait-note">저장하는 중</span>
+    {% if cell.error %}
+    <span class="mt-1 block whitespace-normal text-xs font-semibold text-red-700">저장 실패 — {{ cell.error }}</span>
+    {% endif %}
+    {% if cell.delivered %}
+    <span class="mt-1 block whitespace-normal text-xs text-amber-700">이미 전달된 행이다. 고쳐도 소비 측이 가진 값은 바뀌지 않는다</span>
+    {% endif %}
+  </form>
+  {% else %}
+  <span class="block max-w-[16rem] truncate" title="{{ cell.value or "값 없음" }}">{{ cell.value or "값 없음" }}</span>
+  {% if cell.overridden %}
+  <span class="badge badge-ok">사람 보정</span>
+  <span class="mt-0.5 block max-w-[16rem] truncate text-xs text-slate-500"
+        title="{{ cell.rule_value or "값 없음" }}">규칙값: {{ cell.rule_value or "값 없음" }}</span>
+  {% else %}
+  <span class="badge badge-idle">규칙값</span>
+  {% endif %}
+  <span class="flex flex-wrap items-center gap-1">
+    <button type="button" hx-get="/ui/review/cells/{{ cell.raw_job_id }}/{{ cell.field }}/edit"
+            hx-target="closest td" hx-swap="outerHTML"
+            hx-indicator="closest td">고치기</button>
+    {% if cell.overridden %}
+    <button type="button" hx-delete="/ui/review/cells/{{ cell.raw_job_id }}/{{ cell.field }}"
+            hx-target="closest td" hx-swap="outerHTML" hx-indicator="closest td"
+            hx-confirm="{{ cell.label }} 보정을 지운다. 다음 정규화에서 규칙이 만든 값으로 돌아간다. 계속할까"
+            title="사람이 정한 값을 버리고 규칙 값으로 되돌린다">보정 삭제</button>
+    {% endif %}
+  </span>
+  <span class="wait-note">여는 중</span>
+  {% endif %}
+</td>
+{% endmacro %}

@@ -33,11 +33,12 @@ import sqlite3
 from typing import Annotated, Any
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 
 from app.api import crawlers
 from app.api.ui import render, render_page
+from app.normalize.engine import OVERRIDABLE_FIELDS
 
 router = APIRouter(tags=["ui"], include_in_schema=False)
 
@@ -47,6 +48,20 @@ DEFAULT_PAGE_SIZE = 20
 
 # 현재 페이지 주변으로 몇 개의 페이지 번호를 직접 누르게 둘지
 PAGE_WINDOW = 2
+
+# 고칠 수 있는 필드와 화면에 적을 이름. 키는 `OVERRIDABLE_FIELDS` 와 같아야 한다 —
+# 그쪽이 `job_field_overrides.field_name` 의 CHECK 와 이미 맞춰져 있다
+FIELD_LABELS: dict[str, str] = {
+    "company": "회사",
+    "title": "제목",
+    "department": "부서",
+    "deadline": "마감",
+    "body": "본문",
+    "requirements": "자격요건",
+}
+
+# 여러 줄로 들어오는 필드. 한 줄 입력으로 고치면 줄바꿈이 사라진다
+LONG_FIELDS: frozenset[str] = frozenset({"body", "requirements"})
 
 _BASE = """
     SELECT n.id            AS id,
@@ -107,6 +122,99 @@ def _page_numbers(page: int, total_pages: int) -> list[int]:
     return list(range(start, end + 1))
 
 
+def _cell(
+    job: sqlite3.Row,
+    field: str,
+    overrides: dict[str, str],
+    *,
+    editing: bool = False,
+    error: str = "",
+) -> dict[str, Any]:
+    """셀 하나가 그려지는 데 필요한 전부.
+
+    `rule_value` 는 `normalized_jobs` 컬럼, 즉 규칙이 만든 값이다. 보정이 있으면 화면에 나가는
+    값은 사람이 정한 값이고, 규칙값은 무엇에서 고쳤는지 보이도록 함께 남긴다.
+
+    보정 여부를 값의 참·거짓으로 판정하지 않는다. 빈 문자열은 "이 필드는 비어 있는 것이 맞다"
+    는 사람의 판단이고, 보정이 없는 것과 다르다 (`migrations/0005_job_field_overrides.sql`).
+    """
+    overridden = field in overrides
+    rule_value = job[field] if field in job.keys() else None
+    return {
+        "raw_job_id": int(job["raw_job_id"]),
+        "field": field,
+        "label": FIELD_LABELS[field],
+        "rule_value": rule_value,
+        "value": overrides[field] if overridden else rule_value,
+        "overridden": overridden,
+        "long": field in LONG_FIELDS,
+        "delivered": bool(job["delivered_at"]),
+        "editing": editing,
+        "error": error,
+    }
+
+
+def _read_overrides(conn: sqlite3.Connection, raw_job_ids: list[int]) -> dict[int, dict[str, str]]:
+    """여러 건의 보정을 한 번에 읽는다. 행마다 따로 물으면 한 페이지에 쿼리가 수십 개 붙는다."""
+    if not raw_job_ids:
+        return {}
+    marks = ",".join("?" for _ in raw_job_ids)
+    rows = conn.execute(
+        f"SELECT raw_job_id, field_name, value FROM job_field_overrides"
+        f" WHERE raw_job_id IN ({marks})",
+        raw_job_ids,
+    ).fetchall()
+    found: dict[int, dict[str, str]] = {}
+    for row in rows:
+        found.setdefault(int(row["raw_job_id"]), {})[str(row["field_name"])] = str(row["value"])
+    return found
+
+
+def _read_job(conn: sqlite3.Connection, raw_job_id: int) -> sqlite3.Row | None:
+    """그 수집 건의 확정 행. 재정규화로 여러 번 만들어졌다면 가장 최근 것이 화면의 값이다."""
+    return conn.execute(
+        f"{_BASE} WHERE n.raw_job_id = ? ORDER BY n.id DESC LIMIT 1", (raw_job_id,)
+    ).fetchone()
+
+
+def _cell_response(
+    request: Request,
+    conn: sqlite3.Connection,
+    raw_job_id: int,
+    field: str,
+    *,
+    editing: bool = False,
+    error: str = "",
+) -> HTMLResponse:
+    """셀 하나만 돌려준다. 표를 다시 그리지 않는다.
+
+    실패도 이 조각으로 나간다. 셀 하나를 고치다 실패했는데 표 전체가 오류 상자로 바뀌면
+    운영자는 방금 어디를 고치고 있었는지부터 다시 찾아야 한다.
+    """
+    if field not in OVERRIDABLE_FIELDS:
+        return render(
+            request,
+            "fragments/review_cell.html",
+            cell=None,
+            message=f"고칠 수 없는 필드다: {field} (가능한 값: {', '.join(OVERRIDABLE_FIELDS)})",
+        )
+    job = _read_job(conn, raw_job_id)
+    if job is None:
+        return render(
+            request,
+            "fragments/review_cell.html",
+            cell=None,
+            message=f"수집 건 {raw_job_id} 의 정규화 행이 없다. 목록을 다시 불러 확인한다",
+        )
+    overrides = _read_overrides(conn, [raw_job_id]).get(raw_job_id, {})
+    return render(
+        request,
+        "fragments/review_cell.html",
+        cell=_cell(job, field, overrides, editing=editing, error=error),
+        message="",
+    )
+
+
 @router.get("/review", response_class=HTMLResponse)
 def review_page(request: Request) -> HTMLResponse:
     return render_page(request, "pages/review.html")
@@ -149,6 +257,18 @@ def review_table_fragment(
         f"{_BASE}{where}{_ORDER} LIMIT ? OFFSET ?",
         [*params, size, (current - 1) * size],
     ).fetchall()
+    overrides = _read_overrides(conn, [int(row["raw_job_id"]) for row in rows])
+    listed = [
+        {
+            "job": row,
+            "cells": [
+                _cell(row, field, overrides.get(int(row["raw_job_id"]), {}))
+                for field in OVERRIDABLE_FIELDS
+            ],
+            "override_count": len(overrides.get(int(row["raw_job_id"]), {})),
+        }
+        for row in rows
+    ]
 
     criteria = {
         "workflow_id": workflow_id,
@@ -159,7 +279,9 @@ def review_table_fragment(
     return render(
         request,
         "fragments/review_table.html",
-        jobs=rows,
+        jobs=listed,
+        fields=OVERRIDABLE_FIELDS,
+        labels=FIELD_LABELS,
         total=total,
         page=current,
         page_size=size,
@@ -193,3 +315,78 @@ def review_filters_fragment(
         page_sizes=PAGE_SIZES,
         default_page_size=DEFAULT_PAGE_SIZE,
     )
+
+
+@router.get("/ui/review/cells/{raw_job_id}/{field}", response_class=HTMLResponse)
+def review_cell_fragment(
+    request: Request,
+    raw_job_id: int,
+    field: str,
+    conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
+) -> HTMLResponse:
+    """지금 값. 편집 취소가 이 조각으로 돌아온다 — 화면에 남은 입력값이 아니라 저장된 값이다."""
+    return _cell_response(request, conn, raw_job_id, field)
+
+
+@router.get("/ui/review/cells/{raw_job_id}/{field}/edit", response_class=HTMLResponse)
+def review_cell_edit_fragment(
+    request: Request,
+    raw_job_id: int,
+    field: str,
+    conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
+) -> HTMLResponse:
+    """그 셀만 입력으로 바꾼다."""
+    return _cell_response(request, conn, raw_job_id, field, editing=True)
+
+
+@router.put("/ui/review/cells/{raw_job_id}/{field}", response_class=HTMLResponse)
+def save_review_cell_fragment(
+    request: Request,
+    raw_job_id: int,
+    field: str,
+    conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
+    value: Annotated[str, Form()] = "",
+) -> HTMLResponse:
+    """사람이 정한 값을 `job_field_overrides` 에 쌓는다.
+
+    `normalized_jobs` 에 쓰지 않는다. 확정 값은 규칙과 보정에서 매번 다시 만들어지는 파생값이고,
+    파생값에 손으로 쓰면 다음 재정규화가 그것을 덮어쓴다. `delivered_at` 도 건드리지 않는다 —
+    수동 수정이 전달 표시를 되돌리면 소비 측에 같은 데이터가 다시 간다
+    (`.claude/rules/data-safety.md`).
+    """
+    if field not in OVERRIDABLE_FIELDS:
+        return _cell_response(request, conn, raw_job_id, field)
+    if _read_job(conn, raw_job_id) is None:
+        return _cell_response(request, conn, raw_job_id, field)
+
+    try:
+        conn.execute(
+            """
+            INSERT INTO job_field_overrides (raw_job_id, field_name, value)
+                 VALUES (?, ?, ?)
+            ON CONFLICT (raw_job_id, field_name)
+              DO UPDATE SET value = excluded.value, updated_at = datetime('now')
+            """,
+            (raw_job_id, field, value),
+        )
+    except sqlite3.DatabaseError as exc:
+        # 실패 사유를 셀 자리에 그대로 보여준다. 고쳐 쓴 값은 입력에 남는다
+        return _cell_response(request, conn, raw_job_id, field, editing=True, error=str(exc))
+
+    return _cell_response(request, conn, raw_job_id, field)
+
+
+@router.delete("/ui/review/cells/{raw_job_id}/{field}", response_class=HTMLResponse)
+def delete_review_cell_fragment(
+    request: Request,
+    raw_job_id: int,
+    field: str,
+    conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
+) -> HTMLResponse:
+    """보정을 지운다. 그 필드는 다음 정규화에서 규칙이 만든 값으로 돌아간다."""
+    if field in OVERRIDABLE_FIELDS:
+        conn.execute(
+            "DELETE FROM job_field_overrides WHERE raw_job_id = ? AND field_name = ?",
+            (raw_job_id, field),
+        )
+    return _cell_response(request, conn, raw_job_id, field)

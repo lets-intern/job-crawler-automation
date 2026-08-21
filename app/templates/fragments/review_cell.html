@@ -1,0 +1,9 @@
+{# 셀 하나만. 저장·취소·보정 삭제가 표를 다시 그리지 않고 이 조각으로 자기 자리만 갈아 끼운다 #}
+{% from "fragments/review_cell_macro.html" import review_cell %}
+{% if cell %}
+{{ review_cell(cell) }}
+{% else %}
+<td class="cell-text align-top">
+  <span class="whitespace-normal text-xs font-semibold text-red-700">실패 — {{ message }}</span>
+</td>
+{% endif %}
