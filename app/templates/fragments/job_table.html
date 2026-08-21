@@ -30,11 +30,11 @@
       <td>{{ job.department or "값 없음" }}</td>
       <td>{{ job.deadline or "값 없음" }}</td>
       <td>{{ job.workflow_id }} - {{ job.workflow_name }}</td>
-      <td>{{ job.normalized_at }}</td>
+      <td>{{ job.normalized_at | as_time }}</td>
       <td>
         {% if job.delivered_at %}
         <span class="badge badge-idle">전달됨</span>
-        <span class="text-xs text-slate-500">{{ job.delivered_at }}</span>
+        <span class="text-xs text-slate-500">{{ job.delivered_at | as_time }}</span>
         {% else %}
         <span class="badge badge-warn">미전달</span>
         {% endif %}
@@ -48,7 +48,7 @@
       </td>
     </tr>
     {% else %}
-    <tr><td colspan="11">조건에 맞는 공고가 없다</td></tr>
+    <tr><td colspan="11" class="cell-text text-slate-600">조건에 맞는 공고가 없다. 조회 조건을 넓히거나, 워크플로우가 한 번이라도 실행됐는지 <a class="font-medium underline" href="/workflows">워크플로우</a> 화면에서 확인한다</td></tr>
     {% endfor %}
   </tbody>
 </table>

@@ -26,7 +26,7 @@
     {% endif %}
     <span class="text-xs text-slate-500">({{ item.status }})</span>
   </td>
-  <td>{{ item.last_run_at or "실행 기록 없음" }}</td>
+  <td>{{ item.last_run_at | as_time or "실행 기록 없음" }}</td>
   <td>
     {% if item.last_run_status == "success" %}<span class="state-ok">성공</span>
     {% elif item.last_run_status == "failed" %}<span class="state-bad">실패</span>
@@ -47,12 +47,15 @@
     <button type="button" hx-patch="/ui/workflows/{{ item.id }}"
             hx-vals='{"status": "paused"}'
             hx-target="closest tr" hx-swap="outerHTML"
-            hx-disabled-elt="this" hx-indicator="closest td">중지</button>
+            hx-disabled-elt="this" hx-indicator="closest td"
+            hx-confirm="워크플로우 {{ item.id }} 를 중지한다. 스케줄러 잡도 함께 멈춰 다음 주기에 실행되지 않는다. 계속할까"
+            title="스케줄러 잡도 함께 멈춘다. 재개하면 다시 등록된다">중지</button>
     {% else %}
     <button type="button" hx-patch="/ui/workflows/{{ item.id }}"
             hx-vals='{"status": "active"}'
             hx-target="closest tr" hx-swap="outerHTML"
-            hx-disabled-elt="this" hx-indicator="closest td">재개</button>
+            hx-disabled-elt="this" hx-indicator="closest td"
+            title="스케줄러에 잡을 다시 등록한다. 다음 주기부터 실제 사이트를 가져온다">재개</button>
     {% endif %}
     <span class="wait-note">상태를 바꾸는 중</span>
   </td>

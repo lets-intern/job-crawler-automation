@@ -17,7 +17,7 @@ HTMX 와 Tailwind 둘 다 CDN 에서 받는다.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -77,6 +77,24 @@ NEXT_STEPS: dict[str, str] = {
 }
 
 
+def format_time(value: Any) -> str:
+    """시각을 화면 한 가지 형식으로 맞춘다.
+
+    DB 는 `datetime('now')` 로 UTC 를 초까지 넣고, 재정규화 진행은 ISO 문자열을 넣는다.
+    같은 화면에 두 형식이 섞이면 같은 시각인지 아닌지를 사람이 계산해야 한다.
+    """
+    if not value:
+        return ""
+    text = str(value).strip()
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return text
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(UTC).replace(tzinfo=None)
+    return parsed.strftime("%Y-%m-%d %H:%M:%S")
+
+
 def next_step(reason: str) -> str:
     """그 실패에서 운영자가 할 수 있는 다음 행동. 모르는 사유면 빈 문자열이다."""
     return NEXT_STEPS.get(reason, "")
@@ -84,6 +102,7 @@ def next_step(reason: str) -> str:
 
 # 라우트가 자기 조각에 직접 렌더하는 실패에도 같은 문구가 붙게 한다
 templates.env.globals["next_step"] = next_step
+templates.env.filters["as_time"] = format_time
 
 
 def render_error(request: Request, reason: str, message: str) -> HTMLResponse:

@@ -15,13 +15,13 @@
     <tr><th scope="row">부서</th><td>{{ job.department or "값 없음" }}</td></tr>
     <tr><th scope="row">마감</th><td>{{ job.deadline or "값 없음" }}</td></tr>
     <tr><th scope="row">워크플로우</th><td>{{ job.workflow_id }} - {{ job.workflow_name }}</td></tr>
-    <tr><th scope="row">수집 시각</th><td>{{ raw.crawled_at }}</td></tr>
-    <tr><th scope="row">정규화 시각</th><td>{{ job.normalized_at }}</td></tr>
+    <tr><th scope="row">수집 시각</th><td>{{ raw.crawled_at | as_time }}</td></tr>
+    <tr><th scope="row">정규화 시각</th><td>{{ job.normalized_at | as_time }}</td></tr>
     <tr><th scope="row">전달</th>
         <td>
           {% if job.delivered_at %}
           <span class="badge badge-idle">전달됨</span>
-          <span class="text-xs text-slate-500">{{ job.delivered_at }}</span>
+          <span class="text-xs text-slate-500">{{ job.delivered_at | as_time }}</span>
           {% else %}
           <span class="badge badge-warn">미전달</span>
           {% endif %}
