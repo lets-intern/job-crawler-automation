@@ -17,6 +17,26 @@
 
 승격 결과를 실행 대상 표(`fragments/test_targets.html`)에 그리는 이유는 승격이 눌리는 자리가
 거기이기 때문이다. 승격은 `crawlers.status` 를 바꾸므로 그 표는 어차피 다시 그려야 한다.
+
+## 지금 1회 실행
+
+주기 기본값이 360분이라, 승격이 제대로 됐는지 보려면 여섯 시간을 기다려야 한다. 그것을 지금
+확인하는 자리다. 실행하는 것은 스케줄러가 부르는 것과 같은 `run_workflow()` 이고, 무엇을
+가져올지는 여기서도 테이블이 정한다 — 화면 전용 실행 경로는 만들지 않는다.
+
+스케줄러가 지키는 두 가지를 이 경로도 그대로 지킨다 (`.claude/rules/crawling.md`).
+
+| 지키는 것 | 여기서 어떻게 |
+|---|---|
+| 한 워크플로우에 실행 둘이 동시에 뜨지 않는다 | 진행 중이면 시작하지 않고 그 사실을 줄에 적는다 |
+| 동시 실행 상한 | `RunGate` 로 자리를 얻고, 자리가 없으면 기다리지 않고 건너뛴다 |
+
+상한에 걸렸을 때 기다리지 않는 것은 화면이기 때문이다. 자리가 날 때까지 문 앞에서 기다리면
+버튼을 누른 사람은 몇 분 동안 아무 대답도 못 받는다. 스케줄러의 tick 스킵과 같은 판단을 하고,
+건너뛴 사실을 그 자리에 적는다.
+
+실행이 끝나면 `sync()` 한다. 연속 실패로 자동 중지된 워크플로우가 테이블에서는 `paused` 인데
+잡이 남아 있으면 멈춘 워크플로우가 계속 깨어난다.
 """
 
 from __future__ import annotations
@@ -28,17 +48,31 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import ValidationError
 
-from app.api import workflows
+from app.api import crawlers, workflows
 from app.api.ui import render
 from app.api.ui_crawlers import crawler_rows, error_detail
 from app.api.ui_tests import mode_word
-from app.crawler.runner import consecutive_failures
-from app.scheduler import WorkflowScheduler
+from app.crawler.failures import SUCCESS
+from app.crawler.fetcher import FetchPolicy
+from app.crawler.runner import RunResult, consecutive_failures, run_workflow
+from app.scheduler import RunGate, WorkflowScheduler, get_gate
 
 router = APIRouter(tags=["ui"], include_in_schema=False)
 
 # 폼에서 온 문자열을 `WorkflowUpdate` 가 받는 값으로 옮긴다. 표에 없는 값은 거절한다
 STATUSES: dict[str, Literal["active", "paused"]] = {"active": "active", "paused": "paused"}
+
+# 종료 상태를 사람이 읽는 단어로. 저장값은 그대로 영어다 (`.claude/rules/writing.md`)
+RUN_WORDS: dict[str, str] = {SUCCESS: "성공", "timeout": "시간 초과", "failed": "실패"}
+
+# 이 프로세스가 지금 화면에서 돌리고 있는 워크플로우. `crawl_runs` 행은 브라우저를 띄우고 나서야
+# 생기므로, 그전에 두 번째로 누른 요청을 이것이 막는다
+_running: set[int] = set()
+
+
+def get_run_gate() -> RunGate:
+    """동시 실행 상한을 지키는 문. 스케줄러가 쓰는 것과 같은 것이다."""
+    return get_gate()
 
 
 def _threshold_state(conn: sqlite3.Connection, item: workflows.WorkflowItem) -> str:
@@ -82,6 +116,32 @@ def _targets(
         notice=notice,
         notice_href=notice_href,
     )
+
+
+def _in_flight(conn: sqlite3.Connection, workflow_id: int) -> bool:
+    """아직 끝나지 않은 실행이 있는가. 스케줄러가 돌리는 중인 것도 여기서 보인다."""
+    row = conn.execute(
+        """
+        SELECT 1 FROM crawl_runs
+         WHERE workflow_id = ? AND status IS NULL AND finished_at IS NULL
+         LIMIT 1
+        """,
+        (workflow_id,),
+    ).fetchone()
+    return row is not None
+
+
+def _run_message(result: RunResult) -> str:
+    """실행 하나를 한 줄로. 실패하면 분류와 사유까지 적는다."""
+    word = RUN_WORDS.get(result.status, result.status or "알 수 없음")
+    line = (
+        f"1회 실행 {result.run_id}: {word} — 목록 {result.matched}건, "
+        f"정상 {result.success_count}건, 신규 {result.new_count}건, 실패 {result.fail_count}건"
+    )
+    if result.status == SUCCESS:
+        return line
+    reason = result.error_message or "사유가 기록되지 않았다"
+    return f"{line} / {result.error_class or '분류 없음'}: {reason}"
 
 
 def _find(conn: sqlite3.Connection, workflow_id: int) -> workflows.WorkflowItem | None:
@@ -192,3 +252,62 @@ def update_workflow_fragment(
     else:
         message = f"주기를 {payload.interval_minutes}분으로 바꿨다"
     return _row(request, conn, updated, message=message)
+
+
+@router.post("/ui/workflows/{workflow_id}/run", response_class=HTMLResponse)
+async def run_now_fragment(
+    request: Request,
+    workflow_id: int,
+    conn: Annotated[sqlite3.Connection, Depends(workflows.get_connection)],
+    scheduler: Annotated[WorkflowScheduler, Depends(workflows.get_workflow_scheduler)],
+    fetcher: Annotated[FetchPolicy, Depends(crawlers.get_crawl_fetcher)],
+    gate: Annotated[RunGate, Depends(get_run_gate)],
+) -> HTMLResponse:
+    """다음 주기를 기다리지 않고 지금 1회 실행한다. 갈리는 것은 이 워크플로우 하나다.
+
+    실제 사이트를 가져오므로 `RUN_TIMEOUT_SECONDS` 까지 걸릴 수 있다. 그동안 버튼은 잠겨
+    있고, 끝나면 최근 실행·최근 결과·누적 카운트가 이 줄과 함께 갱신된다.
+    """
+    current = _find(conn, workflow_id)
+    if current is None:
+        return render(
+            request,
+            "fragments/workflow_row.html",
+            item=None,
+            threshold_state="",
+            message=f"워크플로우 {workflow_id} 가 없다",
+        )
+
+    if workflow_id in _running or _in_flight(conn, workflow_id):
+        # 스케줄러의 tick 스킵과 같은 판단이다. 같은 워크플로우의 실행 둘을 동시에 띄우지 않는다
+        return _row(
+            request,
+            conn,
+            current,
+            message="이미 실행 중이다. 새로 시작하지 않았다. 끝나면 이 줄이 갱신된다",
+        )
+
+    if gate.active >= gate.limit():
+        return _row(
+            request,
+            conn,
+            current,
+            message=(
+                f"동시 실행 상한({gate.limit()})에 걸렸다. 진행 중 {gate.active}건이 "
+                "끝난 뒤 다시 누른다"
+            ),
+        )
+
+    _running.add(workflow_id)
+    try:
+        async with gate.slot():
+            result = await run_workflow(conn, workflow_id, fetcher=fetcher)
+    finally:
+        _running.discard(workflow_id)
+        # 연속 실패로 자동 중지됐을 수 있다. 그 사실이 잡까지 가야 실제로 멈춘다
+        scheduler.sync(conn)
+
+    updated = _find(conn, workflow_id)
+    if updated is None:
+        return _row(request, conn, current, message=_run_message(result))
+    return _row(request, conn, updated, message=_run_message(result))

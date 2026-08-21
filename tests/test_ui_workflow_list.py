@@ -91,7 +91,8 @@ def promote(client: TestClient, conn: sqlite3.Connection, name: str, minutes: in
 
 
 def rows_in(html: str) -> list[str]:
-    return re.findall(r'<tr id="workflow-row-(\d+)"', html)
+    """돌려준 조각에 들어 있는 워크플로우 묶음. 하나여야 그 행만 갈린 것이다."""
+    return re.findall(r'<tbody id="workflow-row-(\d+)"', html)
 
 
 def test_빈_목록은_승격_화면을_가리킨다(client: TestClient) -> None:
