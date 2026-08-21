@@ -22,7 +22,7 @@ from google import genai
 from google.genai import errors as genai_errors
 
 from app.config import Settings, get_settings
-from app.crawler.fetcher import Fetcher, get_fetcher
+from app.crawler.fetcher import PageSource, get_fetcher
 from app.selector.cleaner import CleanedHtml, clean_html
 from app.selector.schema import SelectorSchemaError, SelectorSet, parse_selectors
 from app.selector.verify import VerificationReport, verify_selectors
@@ -113,14 +113,19 @@ async def generate_for_urls(
     list_url: str,
     detail_url: str,
     *,
-    fetcher: Fetcher | None = None,
+    source: PageSource | None = None,
     settings: Settings | None = None,
     client: Any | None = None,
 ) -> GenerationResult:
-    """두 URL 을 공용 클라이언트로 가져와 셀렉터를 생성한다."""
-    resolved_fetcher = fetcher or get_fetcher()
-    list_html = (await resolved_fetcher.fetch(list_url)).text
-    detail_html = (await resolved_fetcher.fetch(detail_url)).text
+    """두 URL 을 가져와 셀렉터를 생성한다.
+
+    `source` 는 정적 fetch 클라이언트이거나 렌더러다. 어느 쪽인지는 `crawlers.render_mode` 를
+    읽는 호출부가 정하고, 여기서는 가져온 HTML 만 본다. JS 로 그려지는 사이트는 정적 HTML 에
+    목록이 없어서, 렌더된 HTML 이 아니면 셀렉터를 만들 근거 자체가 없다.
+    """
+    resolved_source = source or get_fetcher()
+    list_html = (await resolved_source.fetch(list_url)).text
+    detail_html = (await resolved_source.fetch(detail_url)).text
     return await generate_from_html(
         list_html,
         detail_html,

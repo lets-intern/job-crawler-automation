@@ -554,3 +554,82 @@ def test_only_the_item_selector_matching_is_still_stored(
     assert response.status_code == 201
     assert response.json()["failed_fields"] == ["list.title", "list.link", "list.date"]
     assert len(rows(conn)) == 1
+
+
+def test_registration_defaults_to_static(client: TestClient, conn: sqlite3.Connection) -> None:
+    """아무것도 고르지 않은 등록은 정적이다. 렌더는 운영자가 명시적으로 고른다."""
+    called_with = use_generator(result_for(GENERATED))
+
+    response = client.post("/api/crawlers", json={"list_url": LIST_URL, "detail_url": DETAIL_URL})
+
+    assert response.status_code == 201
+    assert called_with == ["static"]
+    assert rows(conn)[0]["render_mode"] == "static"
+    assert response.json()["render_mode"] == "static"
+
+
+def test_registration_can_start_in_render_mode(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """렌더로 등록하면 셀렉터 생성도 렌더된 HTML 을 본다."""
+    called_with = use_generator(result_for(GENERATED))
+
+    response = client.post(
+        "/api/crawlers",
+        json={"list_url": LIST_URL, "detail_url": DETAIL_URL, "render_mode": "playwright"},
+    )
+
+    assert response.status_code == 201
+    assert called_with == ["playwright"]
+    assert rows(conn)[0]["render_mode"] == "playwright"
+
+
+def test_registration_refuses_an_unknown_render_mode(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """모르는 값을 조용히 static 으로 바꾸지 않는다. 올린 줄 알고 기다리게 된다."""
+    use_generator(result_for(GENERATED))
+
+    response = client.post(
+        "/api/crawlers",
+        json={"list_url": LIST_URL, "detail_url": DETAIL_URL, "render_mode": "selenium"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["reason"] == "unknown_render_mode"
+    assert rows(conn) == []
+
+
+def test_render_mode_can_be_switched(client: TestClient, conn: sqlite3.Connection) -> None:
+    use_generator(result_for(GENERATED))
+    crawler_id = client.post(
+        "/api/crawlers", json={"list_url": LIST_URL, "detail_url": DETAIL_URL}
+    ).json()["id"]
+
+    response = client.put(
+        f"/api/crawlers/{crawler_id}/render-mode", json={"render_mode": "playwright"}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"id": crawler_id, "render_mode": "playwright"}
+    assert rows(conn)[0]["render_mode"] == "playwright"
+
+
+def test_switching_render_mode_keeps_the_selectors(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """모드를 바꾼다고 셀렉터를 다시 만들지 않는다. 손으로 고친 값이 날아가면 안 된다."""
+    use_generator(result_for(GENERATED))
+    crawler_id = client.post(
+        "/api/crawlers", json={"list_url": LIST_URL, "detail_url": DETAIL_URL}
+    ).json()["id"]
+
+    client.put(f"/api/crawlers/{crawler_id}/render-mode", json={"render_mode": "playwright"})
+
+    assert json.loads(rows(conn)[0]["selectors_json"]) == stored(GENERATED)
+
+
+def test_switching_render_mode_on_a_missing_crawler_is_404(client: TestClient) -> None:
+    response = client.put("/api/crawlers/999/render-mode", json={"render_mode": "playwright"})
+
+    assert response.status_code == 404

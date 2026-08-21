@@ -27,7 +27,8 @@ from app.api import crawlers
 from app.api.ui import render
 
 _LIST_QUERY = (
-    "SELECT id, name, status, list_url, detail_url, default_company FROM crawlers ORDER BY id DESC"
+    "SELECT id, name, status, list_url, detail_url, default_company, render_mode "
+    "FROM crawlers ORDER BY id DESC"
 )
 
 router = APIRouter(tags=["ui"], include_in_schema=False)
@@ -107,16 +108,21 @@ async def create_crawler_fragment(
     generate: Annotated[crawlers.GenerateFn, Depends(crawlers.get_generator)],
     name: Annotated[str, Form()] = "",
     default_company: Annotated[str, Form()] = "",
+    render_mode: Annotated[str, Form()] = "static",
 ) -> HTMLResponse:
     """생성 요청. 성공하면 결과 요약과 편집기가, 실패하면 사유가 결과 영역에 들어간다.
 
     `default_company` 는 선택이다. 비워 두면 회사명은 공고에서 뽑은 값만 쓰인다.
+
+    `render_mode` 를 렌더로 고르면 셀렉터도 렌더된 HTML 에서 뽑는다. JS 로 그려지는 사이트는
+    정적 HTML 에 목록 자체가 없어서, 정적으로 생성한 셀렉터는 처음부터 맞을 수가 없다.
     """
     payload = crawlers.CrawlerCreate(
         list_url=list_url,
         detail_url=detail_url,
         name=name,
         default_company=default_company,
+        render_mode=render_mode,
     )
     try:
         created = await crawlers.create_crawler(payload, conn, generate)
@@ -136,6 +142,35 @@ async def create_crawler_fragment(
             "notes": created.notes,
             "usage": created.usage,
         },
+    )
+
+
+@router.put("/ui/crawlers/{crawler_id}/render-mode", response_class=HTMLResponse)
+def switch_render_mode_fragment(
+    request: Request,
+    crawler_id: int,
+    render_mode: Annotated[str, Form()],
+    conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
+) -> HTMLResponse:
+    """정적과 렌더 사이를 옮긴다. 표의 버튼 하나가 이 경로를 부른다.
+
+    셀렉터는 그대로 둔다. 렌더된 DOM 이 정적 HTML 과 다를 수 있어서, 올린 뒤에는 테스트
+    실행으로 다시 확인해야 한다.
+    """
+    try:
+        saved = crawlers.update_render_mode(
+            crawler_id, crawlers.RenderModeUpdate(render_mode=render_mode), conn
+        )
+    except HTTPException as exc:
+        return _result(request, error=error_detail(exc))
+
+    return _result(
+        request,
+        conn=conn,
+        notice=(
+            f"크롤러 {saved.id} 를 {saved.render_mode} 모드로 바꿨다. "
+            "셀렉터가 그 모드에서도 맞는지 테스트 실행으로 확인한다."
+        ),
     )
 
 

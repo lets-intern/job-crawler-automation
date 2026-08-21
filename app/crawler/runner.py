@@ -39,9 +39,10 @@ from app.crawler.failures import (
     classify,
     run_status,
 )
-from app.crawler.fetcher import Fetcher, get_fetcher
+from app.crawler.fetcher import FetchPolicy, PageSource, get_fetcher
 from app.crawler.hashing import content_hash
 from app.crawler.parser import ListItem, parse_detail, parse_list
+from app.crawler.playwright import open_source
 from app.normalize.engine import NormalizeError, insert_normalized, load_rules
 from app.normalize.rules import Rule
 from app.selector.schema import SelectorSchemaError, SelectorSet, validate_selectors
@@ -110,14 +111,15 @@ async def run_workflow(
     conn: sqlite3.Connection,
     workflow_id: int,
     *,
-    fetcher: Fetcher | None = None,
+    fetcher: FetchPolicy | None = None,
     limit: int | None = None,
     timeout_seconds: float | None = None,
 ) -> RunResult:
     """스케줄러가 부르는 진입점. 무엇을 실행할지는 매번 테이블에서 다시 읽는다.
 
     `workflows` 와 `crawlers` 가 진실이다. 잡을 등록할 때의 값을 스케줄러가 들고 있다가
-    쓰지 않는다 (`.claude/rules/crawling.md`).
+    쓰지 않는다 (`.claude/rules/crawling.md`). 정적으로 가져올지 렌더할지도 매번
+    `crawlers.render_mode` 를 다시 읽어서 정한다.
 
     실행은 `RUN_TIMEOUT_SECONDS` 로 감싼다. 끝나지 않는 실행 하나가 동시 실행 자리를 영원히
     붙들고 있으면 나머지 워크플로우가 전부 멈춘다.
@@ -127,7 +129,8 @@ async def run_workflow(
     """
     row = conn.execute(
         """
-        SELECT c.list_url AS list_url, c.selectors_json AS selectors_json
+        SELECT c.list_url AS list_url, c.selectors_json AS selectors_json,
+               c.render_mode AS render_mode
           FROM workflows w
           JOIN crawlers c ON c.id = w.crawler_id
          WHERE w.id = ?
@@ -147,13 +150,19 @@ async def run_workflow(
         return result
 
     bound = timeout_seconds if timeout_seconds is not None else get_settings().run_timeout_seconds
-    result = await run_once(
-        conn,
-        RunTarget(list_url=row["list_url"], selectors=selectors, workflow_id=workflow_id),
-        fetcher=fetcher,
-        limit=limit,
-        timeout_seconds=bound,
-    )
+    # 어느 경로로 가져올지는 crawlers.render_mode 가 정한다. 브라우저는 이 블록에서만 산다
+    async with open_source(row["render_mode"], fetcher or get_fetcher()) as source:
+        result = await run_once(
+            conn,
+            RunTarget(
+                list_url=row["list_url"],
+                selectors=selectors,
+                workflow_id=workflow_id,
+            ),
+            fetcher=source,
+            limit=limit,
+            timeout_seconds=bound,
+        )
     _record_outcome(conn, workflow_id, result)
     return result
 
@@ -241,7 +250,7 @@ async def run_once(
     conn: sqlite3.Connection,
     target: RunTarget,
     *,
-    fetcher: Fetcher | None = None,
+    fetcher: PageSource | None = None,
     limit: int | None = None,
     timeout_seconds: float | None = None,
 ) -> RunResult:
@@ -289,7 +298,7 @@ async def run_once(
 async def _crawl(
     conn: sqlite3.Connection,
     target: RunTarget,
-    fetcher: Fetcher,
+    fetcher: PageSource,
     limit: int | None,
     result: RunResult,
 ) -> None:
@@ -332,7 +341,7 @@ async def _crawl(
 
 
 async def _collect(
-    conn: sqlite3.Connection, target: RunTarget, item: ListItem, fetcher: Fetcher
+    conn: sqlite3.Connection, target: RunTarget, item: ListItem, fetcher: PageSource
 ) -> ItemResult:
     """항목 하나를 처리한다. 아는 공고면 상세를 가져오지 않는다."""
     if _is_known(conn, target.workflow_id, "source_url", item.link):

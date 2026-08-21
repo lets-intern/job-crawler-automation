@@ -29,6 +29,15 @@
         <br>
         공고에서 회사명을 뽑지 못한 건에만 쓰인다. 페이지에 회사명이 있는 사이트는 비워 둔다.
       </p>
+      <p>
+        <fieldset>
+          <legend>가져오는 방식</legend>
+          <label><input type="radio" name="render_mode" value="static" checked> 정적</label>
+          <label><input type="radio" name="render_mode" value="playwright"> 렌더(Playwright)</label>
+          <br>
+          기본은 정적이다. 정적으로 목록이 나오지 않는 것이 확인된 사이트만 렌더로 올린다.
+        </fieldset>
+      </p>
       <button type="submit">셀렉터 생성</button>
     </fieldset>
   </form>

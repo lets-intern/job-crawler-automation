@@ -6,6 +6,7 @@
       <th scope="col">번호</th>
       <th scope="col">이름</th>
       <th scope="col">상태</th>
+      <th scope="col">렌더</th>
       <th scope="col">회사명</th>
       <th scope="col">리스트 URL</th>
       <th scope="col">동작</th>
@@ -17,6 +18,17 @@
       <td>{{ crawler.id }}</td>
       <td>{{ crawler.name }}</td>
       <td>{{ crawler.status }}</td>
+      <td>
+        {{ crawler.render_mode }}
+        {# 승격은 운영자가 정한다. 자동으로 렌더로 올라가는 경로는 없다 #}
+        <form hx-put="/ui/crawlers/{{ crawler.id }}/render-mode"
+              hx-target="#crawler-result"
+              hx-swap="innerHTML">
+          <input type="hidden" name="render_mode"
+                 value="{% if crawler.render_mode == 'playwright' %}static{% else %}playwright{% endif %}">
+          <button type="submit">{% if crawler.render_mode == 'playwright' %}정적으로{% else %}렌더로{% endif %}</button>
+        </form>
+      </td>
       <td>{{ crawler.default_company or "안 적음" }}</td>
       <td>{{ crawler.list_url }}</td>
       <td>
@@ -27,7 +39,7 @@
       </td>
     </tr>
     {% else %}
-    <tr><td colspan="6">등록된 크롤러가 없다</td></tr>
+    <tr><td colspan="7">등록된 크롤러가 없다</td></tr>
     {% endfor %}
   </tbody>
 </table>
