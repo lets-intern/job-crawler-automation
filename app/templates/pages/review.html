@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}데이터 검수{% endblock %}
+{% block heading %}데이터 검수{% endblock %}
+{% block content %}
+<section>
+  <div id="review-filters" hx-get="/ui/review/filters" hx-trigger="load" hx-swap="innerHTML">
+    <p>조회 조건을 불러오는 중</p>
+  </div>
+</section>
+
+<section>
+  <h3>검수 대상</h3>
+  <p>
+    미전달 건이 먼저 나온다. 이미 전달된 행을 고쳐도 소비 측이 가진 값은 그대로다 —
+    수동 수정은 전달 표시를 되돌리지 않는다.
+  </p>
+  <div id="review-table" hx-get="/ui/review" hx-trigger="load" hx-swap="innerHTML">
+    <p>목록을 불러오는 중</p>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,69 @@
+{# 검수 표 한 페이지. 조회 조건과 페이지 이동이 이 조각만 갈아 끼운다.
+   페이지 버튼은 서버가 지금 조건을 달아 만든 주소를 그대로 쓴다 #}
+<p>
+  전체 {{ total }}건 중
+  {% if total %}{{ first_index }}-{{ last_index }}번째{% else %}0건{% endif %}.
+  {{ page }} / {{ total_pages }} 페이지 (한 페이지 {{ page_size }}건)
+</p>
+<div class="table-scroll">
+<table class="data-table">
+  <caption>검수 대상 공고</caption>
+  <thead>
+    <tr>
+      <th scope="col" class="num">번호</th>
+      <th scope="col">회사</th>
+      <th scope="col">제목</th>
+      <th scope="col">부서</th>
+      <th scope="col">마감</th>
+      <th scope="col">워크플로우</th>
+      <th scope="col">수집 시각</th>
+      <th scope="col">원문</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for job in jobs %}
+    <tr>
+      <td class="num">{{ job.id }}</td>
+      <td class="cell-text">{{ job.company or "값 없음" }}</td>
+      <td class="cell-text">{{ job.title or "값 없음" }}</td>
+      <td class="cell-text">{{ job.department or "값 없음" }}</td>
+      <td>{{ job.deadline or "값 없음" }}</td>
+      <td>{{ job.workflow_id }} - {{ job.workflow_name }}</td>
+      <td>{{ job.crawled_at | as_time }}</td>
+      <td class="cell-url">
+        <a class="cell-url-value" href="{{ job.source_url }}" target="_blank" rel="noreferrer"
+           title="{{ job.source_url }}">{{ job.source_url }}</a>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="8" class="cell-text text-slate-600">조건에 맞는 공고가 없다. 조회 조건을 넓히거나, 워크플로우가 한 번이라도 실행됐는지 <a class="font-medium underline" href="/workflows">워크플로우</a> 화면에서 확인한다</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+{% if total_pages > 1 %}
+<nav aria-label="페이지 이동" class="flex flex-wrap items-center gap-1">
+  <button type="button" hx-get="{{ page_url(1) }}" hx-target="#review-table" hx-swap="innerHTML"
+          hx-indicator="closest nav" {% if page == 1 %}disabled{% endif %}>처음</button>
+  <button type="button" hx-get="{{ page_url(page - 1) }}" hx-target="#review-table"
+          hx-swap="innerHTML" hx-indicator="closest nav"
+          {% if page == 1 %}disabled{% endif %}>이전</button>
+  {% for number in page_numbers %}
+  {% if number == page %}
+  <button type="button" aria-current="page" disabled
+          class="border-slate-800 bg-slate-800 text-white opacity-100">{{ number }}</button>
+  {% else %}
+  <button type="button" hx-get="{{ page_url(number) }}" hx-target="#review-table"
+          hx-swap="innerHTML" hx-indicator="closest nav">{{ number }}</button>
+  {% endif %}
+  {% endfor %}
+  <button type="button" hx-get="{{ page_url(page + 1) }}" hx-target="#review-table"
+          hx-swap="innerHTML" hx-indicator="closest nav"
+          {% if page == total_pages %}disabled{% endif %}>다음</button>
+  <button type="button" hx-get="{{ page_url(total_pages) }}" hx-target="#review-table"
+          hx-swap="innerHTML" hx-indicator="closest nav"
+          {% if page == total_pages %}disabled{% endif %}>마지막</button>
+  <span class="wait-note ml-2">페이지를 여는 중</span>
+</nav>
+{% endif %}

@@ -1,0 +1,40 @@
+{# 검수 화면의 조회 조건. 어떤 조작이든 표 영역(#review-table)만 갈아 끼운다.
+   `page` 를 폼에 두지 않는다 — 조건을 바꾸면 언제나 1페이지로 돌아가야 한다 #}
+<form id="review-filter-form"
+      hx-get="/ui/review" hx-target="#review-table" hx-swap="innerHTML"
+      hx-trigger="submit, change" hx-disabled-elt="find button">
+  <fieldset>
+    <legend>조회 조건</legend>
+    <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
+      <label for="review-workflow">워크플로우</label>
+      <select id="review-workflow" name="workflow_id">
+        <option value="">전체</option>
+        {% for workflow in workflows %}
+        <option value="{{ workflow.id }}">{{ workflow.id }} - {{ workflow.name }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="review-company">회사</label>
+      <select id="review-company" name="company">
+        <option value="">전체</option>
+        {% for name in companies %}
+        <option value="{{ name }}">{{ name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+    <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
+      <label for="review-q">검색 (제목·회사·부서)</label>
+      <input id="review-q" name="q" type="search" size="40">
+
+      <label for="review-page-size">페이지 크기</label>
+      <select id="review-page-size" name="page_size">
+        {% for size in page_sizes %}
+        <option value="{{ size }}"{% if size == default_page_size %} selected{% endif %}>{{ size }}건</option>
+        {% endfor %}
+      </select>
+
+      <button type="submit">조회</button>
+      <span class="wait-note">조회하는 중</span>
+    </p>
+  </fieldset>
+</form>
