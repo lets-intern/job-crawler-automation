@@ -26,6 +26,8 @@ from app.selector.verify import verify_selectors
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
 LIST_HTML = (FIXTURES / "pythonorg-jobs-list-20260821.html").read_text(encoding="utf-8")
 DETAIL_HTML = (FIXTURES / "pythonorg-job-detail-20260821.html").read_text(encoding="utf-8")
+# 목록 컨테이너만 있고 항목은 스크립트가 채우는 사이트. 정적 HTML 에는 공고가 없다
+SHELL_HTML = (FIXTURES / "js-rendered-list-shell-20260822.html").read_text(encoding="utf-8")
 
 LIST_URL = "https://www.python.org/jobs/"
 DETAIL_URL = "https://www.python.org/jobs/8126/"
@@ -63,13 +65,17 @@ def stored(payload: dict[str, Any]) -> dict[str, Any]:
     return filled
 
 
-def result_for(payload: dict[str, Any]) -> GenerationResult:
+def result_for(
+    payload: dict[str, Any],
+    list_html: str = LIST_HTML,
+    detail_html: str = DETAIL_HTML,
+) -> GenerationResult:
     selectors = validate_selectors(payload)
     return GenerationResult(
         selectors=selectors,
         usage=USAGE,
         attempts=1,
-        verification=verify_selectors(selectors, LIST_HTML, DETAIL_HTML),
+        verification=verify_selectors(selectors, list_html, detail_html),
     )
 
 
@@ -100,15 +106,21 @@ def client(tmp_path: pathlib.Path, conn: sqlite3.Connection) -> Iterator[TestCli
         app.dependency_overrides.clear()
 
 
-def use_generator(result: Any) -> None:
-    """생성 의존성을 갈아끼운다. `result` 가 예외면 그것을 던진다."""
+def use_generator(result: Any) -> list[str]:
+    """생성 의존성을 갈아끼운다. `result` 가 예외면 그것을 던진다.
 
-    async def generate(list_url: str, detail_url: str) -> GenerationResult:
+    돌려주는 목록에는 생성이 어떤 `render_mode` 로 불렸는지가 쌓인다.
+    """
+    called_with: list[str] = []
+
+    async def generate(list_url: str, detail_url: str, render_mode: str) -> GenerationResult:
+        called_with.append(render_mode)
         if isinstance(result, Exception):
             raise result
         return result
 
     app.dependency_overrides[crawlers_api.get_generator] = lambda: generate
+    return called_with
 
 
 def rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
@@ -449,3 +461,96 @@ def test_deleting_a_missing_crawler_is_404(client: TestClient) -> None:
     response = client.delete("/api/crawlers/999")
 
     assert response.status_code == 404
+
+
+# 껍데기 페이지를 보고 생성된 셀렉터. 그럴듯하지만 어느 것도 노드를 잡지 못한다.
+SHELL_GENERATED: dict[str, Any] = {
+    "list": {
+        "item": "#applyList li",
+        "title": "#applyList li .tit_job",
+        "link": "#applyList li a",
+        "date": "#applyList li .date",
+    },
+    "detail": {
+        "title": "h1.tit",
+        "body": "#container",
+        "requirements": "",
+        "deadline": "",
+        "department": "",
+    },
+}
+
+
+def test_a_whole_list_miss_fails_and_stores_nothing(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """목록 4개 필드가 전부 0개 매칭이면 201 이 아니라 실패다. 행도 남지 않는다."""
+    use_generator(result_for(SHELL_GENERATED, list_html=SHELL_HTML, detail_html=SHELL_HTML))
+
+    response = client.post("/api/crawlers", json={"list_url": LIST_URL, "detail_url": DETAIL_URL})
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["reason"] == "list_not_found"
+    assert rows(conn) == []
+
+
+def test_the_whole_list_miss_names_the_failed_fields_and_a_next_step(
+    client: TestClient,
+) -> None:
+    """다음에 무엇을 할 수 있는지가 사유에 있어야 한다."""
+    use_generator(result_for(SHELL_GENERATED, list_html=SHELL_HTML, detail_html=SHELL_HTML))
+
+    response = client.post("/api/crawlers", json={"list_url": LIST_URL, "detail_url": DETAIL_URL})
+
+    detail = response.json()["detail"]
+    assert "정적 HTML 에서 목록을 찾지 못했다" in detail["message"]
+    assert "렌더 모드" in detail["message"]
+    for field in ("list.item", "list.title", "list.link", "list.date"):
+        assert field in detail["message"]
+        assert detail["matches"][field] == 0
+
+
+def test_matching_detail_fields_do_not_rescue_a_missing_list(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """상세가 다 잡혀도 목록이 없으면 못 쓰는 크롤러다. 판정은 목록만 본다."""
+    result = result_for(SHELL_GENERATED, list_html=SHELL_HTML, detail_html=SHELL_HTML)
+    assert "detail.title" not in result.verification.failed
+    use_generator(result)
+
+    response = client.post("/api/crawlers", json={"list_url": LIST_URL, "detail_url": DETAIL_URL})
+
+    assert response.status_code == 422
+    assert rows(conn) == []
+
+
+def test_a_partial_list_miss_is_still_stored(client: TestClient, conn: sqlite3.Connection) -> None:
+    """일부 목록 필드만 실패한 것은 사람이 손으로 고칠 수 있다. 저장하고 실패 필드를 알린다."""
+    partial = json.loads(json.dumps(GENERATED))
+    partial["list"]["date"] = "span.published-on"
+    partial["list"]["title"] = "span.no-such-name"
+    use_generator(result_for(partial))
+
+    response = client.post("/api/crawlers", json={"list_url": LIST_URL, "detail_url": DETAIL_URL})
+
+    assert response.status_code == 201
+    assert response.json()["failed_fields"] == ["list.title", "list.date"]
+    assert response.json()["matches"]["list.item"] > 0
+    assert len(rows(conn)) == 1
+
+
+def test_only_the_item_selector_matching_is_still_stored(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """item 하나라도 잡히면 목록이 있는 것이다. 나머지는 손으로 고칠 대상이다."""
+    partial = json.loads(json.dumps(GENERATED))
+    partial["list"]["title"] = "span.no-such-name"
+    partial["list"]["link"] = "a.no-such-link"
+    partial["list"]["date"] = "span.published-on"
+    use_generator(result_for(partial))
+
+    response = client.post("/api/crawlers", json={"list_url": LIST_URL, "detail_url": DETAIL_URL})
+
+    assert response.status_code == 201
+    assert response.json()["failed_fields"] == ["list.title", "list.link", "list.date"]
+    assert len(rows(conn)) == 1

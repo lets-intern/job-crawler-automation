@@ -8,6 +8,10 @@
 운영자가 그 필드만 손으로 고치게 한다. 손으로 고친 셀렉터를 요청 없이 다시 생성하지 않는다
 (`.claude/rules/llm.md`).
 
+예외는 목록 필드가 전부 0개 매칭인 경우다. 그때는 행을 남기지 않고 실패로 돌려준다. 고칠 필드
+하나가 틀린 것이 아니라 정적 HTML 에 목록이 없는 것이라, 저장해 봐야 아무것도 뽑지 못하는
+크롤러가 남는다. 0건 추출을 성공으로 내보내지 않는다는 규칙이 생성 단계에도 적용된다.
+
 테스트 실행은 저장된 셀렉터로 실제 페이지를 1회 크롤링해 필드별 미리보기와 실패 사유를
 돌려준다. 통과한 것만 `tested` 가 된다 — 실패한 실행은 상태를 건드리지 않는다.
 
@@ -61,6 +65,9 @@ class RenderModeUpdate(BaseModel):
     """`static` 과 `playwright` 둘뿐이다. 승격은 운영자가 정한다."""
 
     render_mode: str
+
+
+class CompanyUpdate(BaseModel):
     """운영자가 적어 둔 회사명만 바꾼다. 빈 문자열은 지운다는 뜻이다."""
 
     default_company: str = ""
@@ -180,8 +187,9 @@ async def create_crawler(
     conn: Annotated[sqlite3.Connection, Depends(get_connection)],
     generate: Annotated[GenerateFn, Depends(get_generator)],
 ) -> CrawlerOut:
+    render_mode = _validated_render_mode(payload.render_mode)
     try:
-        result = await generate(payload.list_url, payload.detail_url)
+        result = await generate(payload.list_url, payload.detail_url, render_mode)
     except RobotsDisallowedError as exc:
         # robots 가 막은 URL 은 등록 자체를 거절한다 (`.claude/rules/crawling.md`).
         raise HTTPException(
@@ -197,13 +205,31 @@ async def create_crawler(
             status_code=status, detail={"reason": exc.reason, "message": str(exc)}
         ) from exc
 
+    if result.verification.list_missing:
+        # 정적 HTML 에 목록이 없다. 셀렉터를 손으로 고쳐도 잡을 노드가 없으므로 행을 남기지
+        # 않는다. 다음 수단은 렌더 모드 승격이지 셀렉터 재생성이 아니다.
+        failed = ", ".join(result.verification.failed_list_fields)
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "reason": "list_not_found",
+                "message": (
+                    f"정적 HTML 에서 목록을 찾지 못했다. 목록 필드 {failed} 가 모두 0개 매칭이다. "
+                    "JS 로 목록을 그리는 사이트일 수 있으니 렌더 모드 승격을 검토한다"
+                ),
+                "failed_fields": result.verification.failed,
+                "matches": result.verification.summary(),
+            },
+        )
+
     name = payload.name.strip() or urlsplit(payload.list_url).netloc
     # 안 적었으면 NULL 이다. 빈 문자열로 넣으면 "회사명이 있다" 와 구분되지 않는다
     default_company = payload.default_company.strip() or None
     cursor = conn.execute(
         """
-        INSERT INTO crawlers (name, list_url, detail_url, selectors_json, status, default_company)
-        VALUES (?, ?, ?, ?, 'draft', ?)
+        INSERT INTO crawlers
+               (name, list_url, detail_url, selectors_json, status, default_company, render_mode)
+        VALUES (?, ?, ?, ?, 'draft', ?, ?)
         """,
         (
             name,
@@ -211,6 +237,7 @@ async def create_crawler(
             payload.detail_url,
             result.selectors.to_json(),
             default_company,
+            render_mode,
         ),
     )
     crawler_id = int(cursor.lastrowid or 0)
@@ -220,12 +247,48 @@ async def create_crawler(
         name=name,
         status="draft",
         default_company=default_company,
+        render_mode=render_mode,
         selectors=result.selectors,
         matches=result.verification.summary(),
         failed_fields=result.verification.failed,
         notes=result.notes,
         usage=UsageOut(**vars(result.usage)),
     )
+
+
+def _validated_render_mode(value: str) -> str:
+    """모르는 값은 거절한다. 조용히 static 으로 되돌리면 운영자는 올린 줄 알고 기다린다."""
+    mode = value.strip() or STATIC
+    if mode not in RENDER_MODES:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "reason": "unknown_render_mode",
+                "message": f"render_mode 는 {', '.join(RENDER_MODES)} 중 하나다: {value}",
+            },
+        )
+    return mode
+
+
+@router.put("/{crawler_id}/render-mode", response_model=RenderModeOut)
+def update_render_mode(
+    crawler_id: int,
+    payload: RenderModeUpdate,
+    conn: Annotated[sqlite3.Connection, Depends(get_connection)],
+) -> RenderModeOut:
+    """정적과 렌더 사이를 옮긴다. 자동 승격은 없다 — 이 경로로만 바뀐다.
+
+    바꾼다고 셀렉터가 다시 생성되지는 않는다. 정적으로 만든 셀렉터는 렌더된 DOM 과 다를 수
+    있으므로, 올린 뒤에는 테스트 실행으로 다시 확인하는 것이 순서다
+    (`.claude/skills/crawl-test/SKILL.md`).
+    """
+    row = conn.execute("SELECT id FROM crawlers WHERE id = ?", (crawler_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail={"message": f"크롤러 {crawler_id} 가 없다"})
+
+    mode = _validated_render_mode(payload.render_mode)
+    conn.execute("UPDATE crawlers SET render_mode = ? WHERE id = ?", (mode, crawler_id))
+    return RenderModeOut(id=crawler_id, render_mode=mode)
 
 
 @router.put("/{crawler_id}/company", response_model=CompanyOut)
@@ -337,7 +400,7 @@ def update_selectors(
 async def test_run(
     crawler_id: int,
     conn: Annotated[sqlite3.Connection, Depends(get_connection)],
-    fetcher: Annotated[Fetcher, Depends(get_crawl_fetcher)],
+    fetcher: Annotated[FetchPolicy, Depends(get_crawl_fetcher)],
     limit: Annotated[int, Query(ge=1, le=20)] = 3,
 ) -> TestRunOut:
     """저장된 셀렉터로 실제 페이지를 1회 크롤링한다.
@@ -349,7 +412,8 @@ async def test_run(
     이 응답의 미리보기뿐이다.
     """
     row = conn.execute(
-        "SELECT list_url, selectors_json, status FROM crawlers WHERE id = ?", (crawler_id,)
+        "SELECT list_url, selectors_json, status, render_mode FROM crawlers WHERE id = ?",
+        (crawler_id,),
     ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail={"message": f"크롤러 {crawler_id} 가 없다"})
@@ -367,12 +431,13 @@ async def test_run(
             status_code=409, detail={"reason": "invalid_selectors", "message": str(exc)}
         ) from exc
 
-    result = await run_once(
-        conn,
-        RunTarget(list_url=row["list_url"], selectors=selectors, crawler_id=crawler_id),
-        fetcher=fetcher,
-        limit=limit,
-    )
+    async with open_source(row["render_mode"], fetcher) as source:
+        result = await run_once(
+            conn,
+            RunTarget(list_url=row["list_url"], selectors=selectors, crawler_id=crawler_id),
+            fetcher=source,
+            limit=limit,
+        )
 
     crawler_status = row["status"]
     if result.status == SUCCESS and crawler_status == "draft":

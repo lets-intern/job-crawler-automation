@@ -3,6 +3,10 @@
 `.claude/rules/llm.md`: 0개 매칭 필드는 성공으로 내놓지 않는다. 실패한 필드 이름을 그대로
 결과에 넣어 운영자가 어디를 고쳐야 하는지 바로 알게 한다.
 
+목록 필드가 하나도 안 잡히는 것은 필드 하나가 틀린 것과 다르다. 그 페이지의 정적 HTML 에
+목록 자체가 없다는 뜻이고, 손으로 고칠 셀렉터가 없다. `list_missing` 이 그 경우를 따로 알려
+호출부가 부분 실패와 다르게 다루게 한다.
+
 여기서 하는 것은 "그 셀렉터가 노드를 잡는가"까지다. 잡은 값이 깨끗한지는 정규화의 몫이고,
 공백이나 광고 문구가 섞였다고 셀렉터를 바꾸지 않는다.
 """
@@ -55,6 +59,29 @@ class VerificationReport:
     @property
     def ok(self) -> bool:
         return not self.failed
+
+    @property
+    def failed_list_fields(self) -> list[str]:
+        """실패한 목록 필드 이름만."""
+        return [
+            field.name
+            for field in self.fields
+            if field.name.startswith("list.") and field.status == FAILED
+        ]
+
+    @property
+    def list_missing(self) -> bool:
+        """목록 필드가 전부 0개 매칭인가.
+
+        참이면 정적 HTML 에 목록이 없는 것이지 셀렉터 하나가 틀린 것이 아니다. 응답이 없다고
+        한 선택 필드(`skipped`)는 판정에서 뺀다 — 셀렉터가 없으니 실패도 성공도 아니다.
+        """
+        checked = [
+            field
+            for field in self.fields
+            if field.name.startswith("list.") and field.status != SKIPPED
+        ]
+        return bool(checked) and all(field.status == FAILED for field in checked)
 
     def summary(self) -> dict[str, int]:
         """필드 이름 -> 매칭 개수. 화면과 로그가 그대로 쓴다."""

@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>채용공고</title>
+</head>
+<body>
+  <!--
+    정적 HTML 에 목록이 없는 사이트의 최소 재현. 목록 컨테이너는 있는데 비어 있고, 항목은
+    브라우저에서 스크립트가 채운다. 생성 모델은 빈 컨테이너를 보고 그럴듯한 셀렉터를 내지만
+    어느 것도 노드를 잡지 못한다.
+  -->
+  <div id="container">
+    <h1 class="tit">채용공고</h1>
+    <ul id="applyList"></ul>
+  </div>
+  <script src="/js/apply.js"></script>
+</body>
+</html>
