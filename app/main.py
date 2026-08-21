@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from app import db
 from app.api import (
     crawlers,
+    jobs,
     rules,
     settings,
     ui,
@@ -40,6 +41,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="job-crawler-automation", lifespan=lifespan)
 app.include_router(crawlers.router)
+app.include_router(jobs.router)
 app.include_router(workflows.router)
 app.include_router(settings.router)
 app.include_router(rules.router)
