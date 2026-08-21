@@ -181,6 +181,29 @@ def switch_render_mode_fragment(
     )
 
 
+@router.delete("/ui/crawlers/{crawler_id}", response_class=HTMLResponse)
+def delete_crawler_fragment(
+    request: Request,
+    crawler_id: int,
+    conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
+) -> HTMLResponse:
+    """표의 삭제 버튼. 되돌릴 수 없으므로 누르기 전 확인은 버튼의 `hx-confirm` 이 받는다.
+
+    거절(409)도 여기서는 200 으로 나간다. 화면이 다시 판정하지 않고 API 가 돌려준 사유를
+    그대로 적는다 — 승격 여부를 목록이 스스로 판정하면 표가 낡았을 때 실제와 어긋난다.
+    성공이든 거절이든 목록을 다시 그려 지금 남아 있는 크롤러를 보여준다.
+    """
+    try:
+        deleted = crawlers.delete_crawler(crawler_id, conn)
+    except HTTPException as exc:
+        return _result(request, conn=conn, error=error_detail(exc))
+
+    notice = f"크롤러 {deleted.id}({deleted.name}) 를 지웠다. 되돌릴 수 없다."
+    if deleted.deleted_test_runs:
+        notice = f"{notice} 승격 전 테스트 실행 기록 {deleted.deleted_test_runs}건도 함께 지웠다."
+    return _result(request, conn=conn, notice=notice)
+
+
 @router.get("/ui/crawlers/{crawler_id}/editor", response_class=HTMLResponse)
 def selector_editor_fragment(
     request: Request,
