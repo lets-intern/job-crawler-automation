@@ -10,6 +10,10 @@
 
 테스트 실행은 저장된 셀렉터로 실제 페이지를 1회 크롤링해 필드별 미리보기와 실패 사유를
 돌려준다. 통과한 것만 `tested` 가 된다 — 실패한 실행은 상태를 건드리지 않는다.
+
+`default_company` 는 회사명이 페이지에 없는 사이트를 위한 운영자 입력이고 선택이다. 운영자가
+타이핑한 값이라 추출 결과가 아니고, 그래서 `crawlers` 에만 있고 `raw_jobs` 에는 가지 않는다
+(`.claude/rules/data-safety.md`). 어느 회사명이 쓰일지는 정규화 단계가 정한다.
 """
 
 from __future__ import annotations
@@ -39,6 +43,14 @@ class CrawlerCreate(BaseModel):
     list_url: str
     detail_url: str
     name: str = ""
+    # 회사명이 페이지에 없는 사이트를 위한 운영자 입력. 없으면 비운다
+    default_company: str = ""
+
+
+class CompanyUpdate(BaseModel):
+    """운영자가 적어 둔 회사명만 바꾼다. 빈 문자열은 지운다는 뜻이다."""
+
+    default_company: str = ""
 
 
 class UsageOut(BaseModel):
@@ -55,11 +67,19 @@ class CrawlerOut(BaseModel):
     id: int
     name: str
     status: str
+    default_company: str | None
     selectors: SelectorSet
     matches: dict[str, int]
     failed_fields: list[str]
     notes: list[str]
     usage: UsageOut
+
+
+class CompanyOut(BaseModel):
+    """회사명 수정 결과. 저장된 값을 그대로 돌려준다."""
+
+    id: int
+    default_company: str | None
 
 
 class SelectorsOut(BaseModel):
@@ -147,12 +167,20 @@ async def create_crawler(
         ) from exc
 
     name = payload.name.strip() or urlsplit(payload.list_url).netloc
+    # 안 적었으면 NULL 이다. 빈 문자열로 넣으면 "회사명이 있다" 와 구분되지 않는다
+    default_company = payload.default_company.strip() or None
     cursor = conn.execute(
         """
-        INSERT INTO crawlers (name, list_url, detail_url, selectors_json, status)
-        VALUES (?, ?, ?, ?, 'draft')
+        INSERT INTO crawlers (name, list_url, detail_url, selectors_json, status, default_company)
+        VALUES (?, ?, ?, ?, 'draft', ?)
         """,
-        (name, payload.list_url, payload.detail_url, result.selectors.to_json()),
+        (
+            name,
+            payload.list_url,
+            payload.detail_url,
+            result.selectors.to_json(),
+            default_company,
+        ),
     )
     crawler_id = int(cursor.lastrowid or 0)
 
@@ -160,12 +188,35 @@ async def create_crawler(
         id=crawler_id,
         name=name,
         status="draft",
+        default_company=default_company,
         selectors=result.selectors,
         matches=result.verification.summary(),
         failed_fields=result.verification.failed,
         notes=result.notes,
         usage=UsageOut(**vars(result.usage)),
     )
+
+
+@router.put("/{crawler_id}/company", response_model=CompanyOut)
+def update_company(
+    crawler_id: int,
+    payload: CompanyUpdate,
+    conn: Annotated[sqlite3.Connection, Depends(get_connection)],
+) -> CompanyOut:
+    """운영자가 적어 둔 회사명을 고친다.
+
+    이 값은 `normalized_jobs` 에 즉시 반영되지 않는다. 고친 뒤 재정규화를 돌려야 `operator`
+    로 확정된 행이 새 값을 받는다 (`.claude/tasks/todo/tasks-job-crawler-push7.md`).
+    """
+    row = conn.execute("SELECT id FROM crawlers WHERE id = ?", (crawler_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail={"message": f"크롤러 {crawler_id} 가 없다"})
+
+    default_company = payload.default_company.strip() or None
+    conn.execute(
+        "UPDATE crawlers SET default_company = ? WHERE id = ?", (default_company, crawler_id)
+    )
+    return CompanyOut(id=crawler_id, default_company=default_company)
 
 
 @router.put("/{crawler_id}/selectors", response_model=SelectorsOut)

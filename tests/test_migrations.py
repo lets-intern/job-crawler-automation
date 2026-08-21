@@ -20,6 +20,7 @@ EXPECTED_COLUMNS = {
         "selectors_json",
         "render_mode",
         "status",
+        "default_company",
         "created_at",
     },
     "workflows": {
@@ -58,6 +59,7 @@ EXPECTED_COLUMNS = {
         "id",
         "raw_job_id",
         "company",
+        "company_source",
         "title",
         "department",
         "deadline",
@@ -85,7 +87,7 @@ EXPECTED_COLUMNS = {
 EXPECTED_INDEXES = {"idx_raw_jobs_content_hash", "idx_normalized_jobs_normalized_at"}
 
 # 지금까지의 마이그레이션. 전부 역적용해야 테이블이 사라진다
-ALL_VERSIONS = ["0001", "0002", "0003"]
+ALL_VERSIONS = ["0001", "0002", "0003", "0004"]
 
 
 @pytest.fixture
@@ -163,6 +165,61 @@ def test_columns_match_the_data_model(conn: sqlite3.Connection, table: str) -> N
     db.migrate_up(conn)
 
     assert _columns(conn, table) == EXPECTED_COLUMNS[table]
+
+
+def test_company_columns_start_empty_and_hold_the_two_sources(conn: sqlite3.Connection) -> None:
+    """0004 는 컬럼을 더하기만 한다. 기존 행은 NULL 로 남고, 그 NULL 이 "안 적었다" 는 뜻이다."""
+    db.migrate_up(conn)
+    conn.execute(
+        "INSERT INTO crawlers (name, list_url) VALUES (?, ?)", ("이전 행", "https://example.test")
+    )
+
+    row = conn.execute("SELECT default_company FROM crawlers WHERE id = 1").fetchone()
+    assert row["default_company"] is None
+
+    conn.execute("UPDATE crawlers SET default_company = ? WHERE id = 1", ("삼성전기",))
+    saved = conn.execute("SELECT default_company FROM crawlers WHERE id = 1").fetchone()
+    assert saved["default_company"] == "삼성전기"
+
+
+def test_company_source_rejects_a_value_outside_the_two(conn: sqlite3.Connection) -> None:
+    db.migrate_up(conn)
+    conn.execute(
+        "INSERT INTO crawlers (name, list_url) VALUES (?, ?)", ("테스트", "https://example.test")
+    )
+    conn.execute("INSERT INTO workflows (crawler_id, name) VALUES (1, '워크플로우')")
+    conn.execute(
+        """
+        INSERT INTO raw_jobs (workflow_id, source_url, raw_data_json, content_hash)
+        VALUES (1, 'https://example.test/1', '{}', 'hash')
+        """
+    )
+
+    conn.execute(
+        """
+        INSERT INTO normalized_jobs (raw_job_id, source_url, company, company_source)
+        VALUES (1, 'https://example.test/1', '삼성SDS', 'parsed')
+        """
+    )
+
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            """
+            INSERT INTO normalized_jobs (raw_job_id, source_url, company_source)
+            VALUES (1, 'https://example.test/1', '운영자')
+            """
+        )
+
+
+def test_company_down_removes_only_the_two_columns(conn: sqlite3.Connection) -> None:
+    """역적용은 0004 가 더한 두 컬럼만 지운다. 나머지 컬럼은 그대로다."""
+    db.migrate_up(conn)
+
+    db.migrate_down(conn, steps=1)
+
+    assert "default_company" not in _columns(conn, "crawlers")
+    assert "company_source" not in _columns(conn, "normalized_jobs")
+    assert "company" in _columns(conn, "normalized_jobs")
 
 
 def test_foreign_key_is_enforced(conn: sqlite3.Connection) -> None:

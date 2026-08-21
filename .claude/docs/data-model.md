@@ -19,6 +19,7 @@ SQLite 파일 하나. 경로는 `DATABASE_PATH` 가 정하고 Docker named volum
 | selectors_json | 생성 또는 수동 보정된 셀렉터 |
 | render_mode | `static` 또는 `playwright` |
 | status | `draft` / `tested` / `promoted` |
+| default_company | 운영자가 적어 둔 회사명. 선택. NULL 이면 안 적은 것 |
 | created_at | |
 
 `status` 는 `tested` 를 거쳐야 `promoted` 가 된다. 테스트 없이 워크플로우로 올라가지 않는다.
@@ -86,6 +87,7 @@ SQLite 파일 하나. 경로는 `DATABASE_PATH` 가 정하고 Docker named volum
 |---|---|
 | id, raw_job_id | |
 | company, title, department | |
+| company_source | 회사명이 어디서 왔는지. `parsed` / `operator`. 회사명이 없으면 NULL |
 | deadline | 정규화된 날짜 |
 | body, requirements | 정제된 텍스트 |
 | source_url | |
@@ -93,6 +95,12 @@ SQLite 파일 하나. 경로는 `DATABASE_PATH` 가 정하고 Docker named volum
 | delivered_at | 소비 측이 가져간 시각. **제공 API 경로만 쓴다** |
 
 `delivered_at` 을 크롤링·재정규화·수동 수정이 건드리면 소비 측에 같은 데이터가 다시 간다.
+
+회사명은 출처가 둘이다. 공고에서 뽑은 값(`raw_jobs.raw_data_json` 의 `company`)과 운영자가
+크롤러에 적어 둔 값(`crawlers.default_company`). 사이트 하나에 계열사 공고가 섞여 들어오므로
+공고 단위인 파싱값이 이기고, 파싱값이 없을 때만 운영자값을 쓴다. 둘 다 없으면 `company` 와
+`company_source` 가 모두 NULL 이다 — 빈 문자열로 채우지 않는다. 합치는 것은 정규화 단계
+하나뿐이다.
 
 ### normalization_rules
 

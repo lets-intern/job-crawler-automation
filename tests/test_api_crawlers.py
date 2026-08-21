@@ -152,6 +152,74 @@ def test_failed_field_is_surfaced_but_the_draft_is_kept(
     assert rows(conn)[0]["status"] == "draft"
 
 
+def test_registration_stores_the_operator_company(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """운영자가 적은 회사명은 `crawlers` 에만 저장된다. 추출 결과가 아니라 raw 로 가지 않는다."""
+    use_generator(result_for(GENERATED))
+
+    response = client.post(
+        "/api/crawlers",
+        json={
+            "list_url": LIST_URL,
+            "detail_url": DETAIL_URL,
+            "default_company": "  삼성전기  ",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["default_company"] == "삼성전기"
+    assert rows(conn)[0]["default_company"] == "삼성전기"
+
+
+def test_registration_without_a_company_leaves_null(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """안 적으면 NULL 이다. 빈 문자열이면 "회사명이 있다" 와 구분되지 않는다."""
+    use_generator(result_for(GENERATED))
+
+    response = client.post("/api/crawlers", json={"list_url": LIST_URL, "detail_url": DETAIL_URL})
+
+    assert response.json()["default_company"] is None
+    assert rows(conn)[0]["default_company"] is None
+
+
+def test_company_can_be_corrected_after_registration(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    use_generator(result_for(GENERATED))
+    created = client.post(
+        "/api/crawlers",
+        json={"list_url": LIST_URL, "detail_url": DETAIL_URL, "default_company": "삼성전자"},
+    ).json()
+
+    response = client.put(
+        f"/api/crawlers/{created['id']}/company", json={"default_company": "삼성전기"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["default_company"] == "삼성전기"
+    assert rows(conn)[0]["default_company"] == "삼성전기"
+
+
+def test_clearing_the_company_stores_null(client: TestClient, conn: sqlite3.Connection) -> None:
+    use_generator(result_for(GENERATED))
+    created = client.post(
+        "/api/crawlers",
+        json={"list_url": LIST_URL, "detail_url": DETAIL_URL, "default_company": "삼성전자"},
+    ).json()
+
+    client.put(f"/api/crawlers/{created['id']}/company", json={"default_company": "   "})
+
+    assert rows(conn)[0]["default_company"] is None
+
+
+def test_company_update_on_a_missing_crawler_is_404(client: TestClient) -> None:
+    response = client.put("/api/crawlers/999/company", json={"default_company": "삼성전기"})
+
+    assert response.status_code == 404
+
+
 def test_robots_disallow_refuses_registration(client: TestClient, conn: sqlite3.Connection) -> None:
     use_generator(RobotsDisallowedError("robots.txt 가 막은 경로다"))
 
