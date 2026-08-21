@@ -25,6 +25,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app import db
+from app.normalize.backfill import (
+    Backfill,
+    BackfillProgress,
+    BackfillRunningError,
+    ConnectFactory,
+    get_backfill,
+)
 from app.normalize.rules import RuleConfigError, build_rule
 
 router = APIRouter(prefix="/api/rules", tags=["rules"])
@@ -74,12 +81,41 @@ class ReorderRequest(BaseModel):
     order: list[RulePosition]
 
 
+class RenormalizeOut(BaseModel):
+    """재정규화 진행 상황. 대상 건수, 처리 건수, 실패 건수."""
+
+    running: bool
+    total: int
+    processed: int
+    failed: int
+    started_at: str | None
+    finished_at: str | None
+    errors: list[str]
+
+
 def get_connection() -> Iterator[sqlite3.Connection]:
     conn = db.connect()
     try:
         yield conn
     finally:
         conn.close()
+
+
+def get_connect_factory() -> ConnectFactory:
+    """재정규화가 자기 스레드에서 열 연결. 요청 연결은 응답과 함께 닫히므로 쓸 수 없다."""
+    return db.connect
+
+
+def _progress_out(progress: BackfillProgress) -> RenormalizeOut:
+    return RenormalizeOut(
+        running=progress.running,
+        total=progress.total,
+        processed=progress.processed,
+        failed=progress.failed,
+        started_at=progress.started_at,
+        finished_at=progress.finished_at,
+        errors=progress.errors,
+    )
 
 
 def _out(row: sqlite3.Row) -> RuleOut:
@@ -143,6 +179,32 @@ def create_rule(
         ),
     )
     return _out(_row(conn, int(cursor.lastrowid or 0)))
+
+
+@router.post("/renormalize", response_model=RenormalizeOut, status_code=202)
+def start_renormalize(
+    backfill: Annotated[Backfill, Depends(get_backfill)],
+    connect: Annotated[ConnectFactory, Depends(get_connect_factory)],
+) -> RenormalizeOut:
+    """기존 데이터를 지금 규칙으로 다시 정규화한다. 운영자가 눌렀을 때만 돈다.
+
+    응답은 시작했다는 것까지다. 진행 상황은 같은 경로의 GET 으로 본다.
+    """
+    try:
+        progress = backfill.start(connect)
+    except BackfillRunningError as exc:
+        raise HTTPException(
+            status_code=409, detail={"reason": "already_running", "message": str(exc)}
+        ) from exc
+    return _progress_out(progress)
+
+
+@router.get("/renormalize", response_model=RenormalizeOut)
+def read_renormalize(
+    backfill: Annotated[Backfill, Depends(get_backfill)],
+) -> RenormalizeOut:
+    """마지막 재정규화의 진행 상황. 프로세스가 다시 뜨면 비어 있다."""
+    return _progress_out(backfill.progress())
 
 
 @router.put("/order", response_model=list[RuleOut])
