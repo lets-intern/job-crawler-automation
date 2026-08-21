@@ -3,13 +3,14 @@
 Gemini 도 실사이트도 브라우저도 부르지 않는다. 생성 의존성을 갈아끼우고, 확인하는 것은
 `crawlers.render_mode` 에 무엇이 저장됐는가와 생성이 어느 모드로 불렸는가다.
 
-검증 대상은 셋이다 (13.1.V).
-
 | 확인 | 근거 |
 |---|---|
-| 값을 안 준 등록은 `playwright` | 대상 사이트 대부분이 JS 렌더다 |
-| `static` 을 명시한 등록은 그대로 | 정적 경로는 지우지 않고 선택지로 남는다 |
-| 이미 있는 행은 안 바뀐다 | 기본값 변경은 새 등록에만 걸린다. 마이그레이션이 아니다 |
+| 값을 안 준 등록은 `static` | 렌더는 실행당 브라우저 하나다. 기본으로 켜지 않는다 |
+| `playwright` 를 명시한 등록은 그대로 | 승격은 운영자가 고른다 |
+| 이미 있는 행은 안 바뀐다 | 기본값은 새 등록에만 걸린다. 마이그레이션이 아니다 |
+
+어느 모드가 필요한지 비교하는 것은 테스트 실행 화면이고, 그쪽은
+`tests/test_test_run_mode.py` 가 본다.
 """
 
 from __future__ import annotations
@@ -119,17 +120,17 @@ def modes(conn: sqlite3.Connection) -> list[str]:
     return [str(row["render_mode"]) for row in conn.execute("SELECT render_mode FROM crawlers")]
 
 
-def test_등록에_모드를_안_주면_렌더로_저장된다(
+def test_등록에_모드를_안_주면_정적으로_저장된다(
     client: TestClient, conn: sqlite3.Connection, called_with: list[str]
 ) -> None:
-    """대상 사이트 대부분이 JS 렌더다. 정적으로 시작하면 빈 목록부터 보게 된다."""
+    """렌더는 실행마다 브라우저 하나를 띄운다. 고르지 않은 등록에 그 비용을 붙이지 않는다."""
     response = client.post("/api/crawlers", json={"list_url": LIST_URL, "detail_url": DETAIL_URL})
 
     assert response.status_code == 201
-    assert response.json()["render_mode"] == "playwright"
-    assert modes(conn) == ["playwright"]
+    assert response.json()["render_mode"] == "static"
+    assert modes(conn) == ["static"]
     # 셀렉터 생성도 같은 모드로 간다. 정적으로 뽑은 셀렉터는 렌더된 DOM 과 다를 수 있다
-    assert called_with == ["playwright"]
+    assert called_with == ["static"]
 
 
 def test_빈_문자열도_기본값으로_읽는다(
@@ -142,30 +143,30 @@ def test_빈_문자열도_기본값으로_읽는다(
     )
 
     assert response.status_code == 201
-    assert modes(conn) == ["playwright"]
+    assert modes(conn) == ["static"]
 
 
-def test_정적을_명시한_등록은_정적으로_저장된다(
+def test_렌더를_명시한_등록은_렌더로_저장된다(
     client: TestClient, conn: sqlite3.Connection, called_with: list[str]
 ) -> None:
-    """정적 경로는 지우지 않았다. 고르면 그대로 저장된다."""
+    """정적으로 목록이 안 나오는 것을 아는 사이트다. 고르면 생성도 렌더된 HTML 을 본다."""
     response = client.post(
         "/api/crawlers",
-        json={"list_url": LIST_URL, "detail_url": DETAIL_URL, "render_mode": "static"},
+        json={"list_url": LIST_URL, "detail_url": DETAIL_URL, "render_mode": "playwright"},
     )
 
     assert response.status_code == 201
-    assert response.json()["render_mode"] == "static"
-    assert modes(conn) == ["static"]
-    assert called_with == ["static"]
+    assert response.json()["render_mode"] == "playwright"
+    assert modes(conn) == ["playwright"]
+    assert called_with == ["playwright"]
 
 
 def test_이미_있는_행은_새_기본값에_끌려가지_않는다(
     client: TestClient, conn: sqlite3.Connection, called_with: list[str]
 ) -> None:
-    """기본값 변경은 새 등록에만 걸린다. 잘 도는 정적 크롤러를 건드릴 이유가 없다."""
+    """기본값은 새 등록에만 걸린다. 이미 올려 둔 크롤러를 등록 하나가 끌어내리면 안 된다."""
     conn.execute(
-        "INSERT INTO crawlers (name, list_url, render_mode) VALUES ('기존', ?, 'static')",
+        "INSERT INTO crawlers (name, list_url, render_mode) VALUES ('기존', ?, 'playwright')",
         (LIST_URL,),
     )
     conn.commit()
@@ -174,7 +175,7 @@ def test_이미_있는_행은_새_기본값에_끌려가지_않는다(
     db.migrate_up(conn)
 
     saved = conn.execute("SELECT render_mode FROM crawlers WHERE name = '기존'").fetchone()
-    assert saved["render_mode"] == "static"
+    assert saved["render_mode"] == "playwright"
 
 
 def test_화면_경로도_같은_기본값을_쓴다(
@@ -184,12 +185,12 @@ def test_화면_경로도_같은_기본값을_쓴다(
     response = client.post("/ui/crawlers", data={"list_url": LIST_URL, "detail_url": DETAIL_URL})
 
     assert response.status_code == 200
-    assert modes(conn) == ["playwright"]
+    assert modes(conn) == ["static"]
 
 
-def test_등록_화면의_기본_선택도_렌더다() -> None:
-    """폼이 정적을 보낸 채로 남아 있으면 저장값만 바뀐 것이 된다."""
+def test_등록_화면의_기본_선택도_정적이다() -> None:
+    """폼과 저장값이 갈리면 화면에서 고른 것과 저장된 것이 달라진다."""
     template = (TEMPLATES / "pages" / "crawlers.html").read_text(encoding="utf-8")
 
-    assert '<input type="radio" name="render_mode" value="playwright" checked>' in template
-    assert '<input type="radio" name="render_mode" value="static" checked>' not in template
+    assert '<input type="radio" name="render_mode" value="static" checked>' in template
+    assert '<input type="radio" name="render_mode" value="playwright" checked>' not in template

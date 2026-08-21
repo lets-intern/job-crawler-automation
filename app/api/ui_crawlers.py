@@ -114,9 +114,9 @@ async def create_crawler_fragment(
 
     `default_company` 는 선택이다. 비워 두면 회사명은 공고에서 뽑은 값만 쓰인다.
 
-    `render_mode` 는 기본이 렌더다. 셀렉터도 그 모드로 가져온 HTML 에서 뽑는다 — JS 로
+    `render_mode` 는 기본이 정적이다. 셀렉터도 고른 모드로 가져온 HTML 에서 뽑는다 — JS 로
     그려지는 사이트는 정적 HTML 에 목록 자체가 없어서, 정적으로 생성한 셀렉터는 처음부터
-    맞을 수가 없다. 정적으로 충분한 사이트는 등록 뒤에 표에서 내린다.
+    맞을 수가 없다. 어느 쪽이 필요한지는 테스트 실행 화면에서 두 모드를 비교해 정한다.
     """
     payload = crawlers.CrawlerCreate(
         list_url=list_url,
