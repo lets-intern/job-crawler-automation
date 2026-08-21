@@ -1,0 +1,70 @@
+{# 결과 영역. 생성 결과·편집기·거절 사유가 모두 이 조각 하나로 들어간다 #}
+{% if error %}
+<h3>실패</h3>
+<dl>
+  <dt>사유</dt><dd>{{ error.reason }}</dd>
+  <dt>내용</dt><dd>{{ error.message }}</dd>
+</dl>
+{% endif %}
+
+{% if notice %}
+<p>{{ notice }}</p>
+{% endif %}
+
+{% if generation %}
+<h3>생성 결과</h3>
+<table>
+  <caption>필드별 매칭 수 (생성 시점 HTML 기준)</caption>
+  <thead><tr><th scope="col">필드</th><th scope="col">매칭</th><th scope="col">판정</th></tr></thead>
+  <tbody>
+    {% for field, count in generation.matches.items() %}
+    <tr>
+      <td>{{ field }}</td>
+      <td>{{ count }}</td>
+      <td>{% if field in generation.failed_fields %}실패{% else %}성공{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% if generation.failed_fields %}
+<p>손으로 고쳐야 하는 필드: {{ generation.failed_fields | join(", ") }}</p>
+{% else %}
+<p>모든 필드가 생성 시점 HTML 에서 값을 찾았다.</p>
+{% endif %}
+{% if generation.notes %}
+<ul>{% for note in generation.notes %}<li>{{ note }}</li>{% endfor %}</ul>
+{% endif %}
+<p>
+  모델 {{ generation.usage.model }},
+  입력 {{ generation.usage.input_tokens }} 토큰,
+  출력 {{ generation.usage.output_tokens }} 토큰,
+  {{ generation.usage.latency_ms }} ms
+</p>
+{% endif %}
+
+{% if crawler_id %}
+<h3>셀렉터 편집</h3>
+<form hx-put="/ui/crawlers/{{ crawler_id }}/selectors"
+      hx-target="#crawler-result"
+      hx-swap="innerHTML">
+  <fieldset>
+    <legend>크롤러 {{ crawler_id }}{% if status %} (상태 {{ status }}){% endif %}</legend>
+    <label for="selectors-json">셀렉터 JSON</label>
+    <br>
+    <textarea id="selectors-json" name="selectors_json" rows="24" cols="90"
+              spellcheck="false">{{ selectors_json }}</textarea>
+    <br>
+    <button type="submit">셀렉터 저장</button>
+  </fieldset>
+</form>
+<p>
+  <a href="/tests">테스트 실행 화면으로 이동</a>
+</p>
+{% endif %}
+
+{% if crawlers is not none %}
+{# 등록·저장으로 목록의 상태가 바뀐다. 결과 영역과 함께 목록도 갈아 끼운다 #}
+<div id="crawler-list" hx-swap-oob="true">
+  {% include "fragments/crawler_list.html" %}
+</div>
+{% endif %}

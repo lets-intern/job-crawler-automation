@@ -7,6 +7,8 @@ dependencies = [
     "fastapi",
     "uvicorn[standard]",
     "jinja2",
+    # 화면 폼 전송(application/x-www-form-urlencoded) 파싱에 FastAPI 가 요구한다
+    "python-multipart",
     "httpx",
     "beautifulsoup4",
     "apscheduler>=3.10,<4",
