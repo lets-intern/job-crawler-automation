@@ -75,12 +75,17 @@ EXPECTED_COLUMNS = {
         "priority",
         "enabled",
     },
+    "app_settings": {
+        "key",
+        "value",
+        "updated_at",
+    },
 }
 
 EXPECTED_INDEXES = {"idx_raw_jobs_content_hash", "idx_normalized_jobs_normalized_at"}
 
 # 지금까지의 마이그레이션. 전부 역적용해야 테이블이 사라진다
-ALL_VERSIONS = ["0001", "0002"]
+ALL_VERSIONS = ["0001", "0002", "0003"]
 
 
 @pytest.fixture
@@ -133,13 +138,14 @@ def test_down_keeps_workflow_runs_and_drops_test_runs(conn: sqlite3.Connection) 
     conn.execute("INSERT INTO crawl_runs (workflow_id) VALUES (1)")
     conn.execute("INSERT INTO crawl_runs (crawler_id) VALUES (1)")
 
-    db.migrate_down(conn, steps=1)
+    # 0002 까지 되돌린다. 뒤에 붙은 마이그레이션 수만큼 steps 가 늘어난다
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - 1)
 
     rows = conn.execute("SELECT workflow_id FROM crawl_runs").fetchall()
     assert [row["workflow_id"] for row in rows] == [1]
 
 
-def test_up_creates_the_six_tables(conn: sqlite3.Connection) -> None:
+def test_up_creates_the_declared_tables(conn: sqlite3.Connection) -> None:
     db.migrate_up(conn)
 
     tables = _names(conn, "table")

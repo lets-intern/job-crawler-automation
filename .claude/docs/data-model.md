@@ -102,6 +102,22 @@ SQLite 파일 하나. 경로는 `DATABASE_PATH` 가 정하고 Docker named volum
 규칙 변경은 **이후 신규 데이터부터** 적용된다. 기존 데이터 일괄 재정규화는 별도 동작이고,
 `raw_jobs` 를 다시 읽어 `normalized_jobs` 를 갱신한다.
 
+### app_settings
+
+어드민 화면에서 바꾸는 운영 설정. 키-값 한 쌍이다.
+
+| 컬럼 | 설명 |
+|---|---|
+| key | 설정 키. 지금은 `max_concurrent_runs` 하나 |
+| value | 문자열로 저장하고 읽는 쪽이 형으로 바꾼다 |
+| updated_at | 마지막 변경 시각 |
+
+값이 아직 없을 때만 환경변수에서 채운다. 한 번 들어간 뒤로는 이 테이블이 진실이고, 환경변수를
+나중에 고쳐도 저장된 값을 덮지 않는다. 읽고 쓰는 곳은 `app/settings.py` 하나다.
+
+배포가 정하는 값(`CRAWL_DELAY_SECONDS`, `RUN_TIMEOUT_SECONDS` 등)은 여기로 옮기지 않는다.
+같은 설정이 두 곳에 있으면 어느 쪽이 진실인지 매번 확인해야 한다.
+
 ## 중복 감지 hash
 
 `content_hash` 에 들어가는 것:

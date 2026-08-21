@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -28,7 +29,9 @@ class Settings(BaseSettings):
     crawl_max_retries: int = 3
 
     # 실행
-    max_concurrent_runs: int = 3
+    # 동시 실행 상한의 초기값. 한 번 app_settings 에 들어간 뒤로는 DB 값이 이긴다
+    # (`app/settings.py`). 초기값으로 들어갈 값이라 여기서 범위를 지킨다
+    max_concurrent_runs: int = Field(default=3, ge=1)
     run_timeout_seconds: int = 600
 
 
