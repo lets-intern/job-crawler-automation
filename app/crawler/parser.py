@@ -131,9 +131,11 @@ def parse_list(html: str, selectors: ListSelectors, base_url: str) -> ListParseR
         )
 
     if not items:
+        # 실제로 못 읽은 필드만 적는다. 필수 필드 이름을 통째로 적으면 title 은 멀쩡한데
+        # link 만 없는 사이트에서 운영자가 두 필드를 다 뒤지게 된다
+        unread = [name for name in REQUIRED_LIST_FIELDS if any(f.field == name for f in failures)]
         raise FieldParseError(
-            f"item {len(nodes)}건을 잡았지만 어느 항목에서도 "
-            f"{', '.join(REQUIRED_LIST_FIELDS)} 를 읽지 못했다"
+            f"item {len(nodes)}건을 잡았지만 어느 항목에서도 {', '.join(unread)} 를 읽지 못했다"
         )
 
     return ListParseResult(matched=len(nodes), items=items, failures=failures)

@@ -118,6 +118,22 @@ def test_항목은_잡혔는데_필수_필드를_못_읽으면_parse_다() -> No
     assert caught.value.error_class == "parse"
 
 
+def test_못_읽은_필드만_사유에_적는다() -> None:
+    """title 은 멀쩡한데 link 만 없는 사이트가 있다. 둘 다 못 읽었다고 적으면 헛짚게 된다."""
+    selectors = ListSelectors(
+        item="ol.list-recent-jobs > li",
+        title=LIST_SELECTORS.title,
+        link="a.does-not-exist",
+        date=LIST_SELECTORS.date,
+    )
+
+    with pytest.raises(FieldParseError) as caught:
+        parse_list(LIST_HTML, selectors, LIST_URL)
+
+    assert "link" in str(caught.value)
+    assert "title" not in str(caught.value)
+
+
 def test_일부_항목만_실패하면_나머지는_남고_실패가_기록된다() -> None:
     """item 셀렉터가 공고가 아닌 영역까지 잡은 경우다. 잡힌 공고는 그대로 남는다."""
     selectors = ListSelectors(
