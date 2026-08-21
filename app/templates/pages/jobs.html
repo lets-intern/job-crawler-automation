@@ -10,15 +10,9 @@
 
 <section>
   <h3>목록</h3>
+  <p>표의 상세를 누르면 모달에서 전체 값을 본다. 본문과 자격요건은 잘리지 않는다.</p>
   <div id="job-table" hx-get="/ui/jobs" hx-trigger="load" hx-swap="innerHTML">
     <p>목록을 불러오는 중</p>
-  </div>
-</section>
-
-<section>
-  <h3>상세</h3>
-  <div id="job-detail">
-    <p>표에서 상세를 누르면 여기에 들어온다.</p>
   </div>
 </section>
 {% endblock %}

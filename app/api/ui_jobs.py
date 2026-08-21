@@ -138,7 +138,10 @@ def job_detail_fragment(
     job_id: int,
     conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
 ) -> HTMLResponse:
-    """공고 한 건. 원문 링크는 수집한 값 그대로다."""
+    """공고 한 건. 모달 안을 채우는 조각이고, 원문 링크는 수집한 값 그대로다.
+
+    읽기만 한다. 이 화면에서 값을 고치는 경로는 두지 않는다 — 고치는 것은 검수 화면의 일이다.
+    """
     row = conn.execute(
         f"{_BASE} WHERE n.id = ?",
         (job_id,),

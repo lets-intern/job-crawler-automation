@@ -1,4 +1,5 @@
-{# 수집 공고 표. 필터·검색·정렬이 이 조각만 갈아 끼운다 #}
+{# 수집 공고 표. 필터·검색·정렬이 이 조각만 갈아 끼운다.
+   상세는 모달에서 연다 — 이 조각도, 걸어 둔 조회 조건도 그대로 남는다 #}
 {# 회사명이 어디서 왔는지. 상태는 단어로 적는다 (`.claude/rules/writing.md`) #}
 {% set company_source_label = {"parsed": "파싱", "operator": "입력"} %}
 <p>{{ total }}건 중 {{ shown }}건을 보여준다 (한 번에 최대 {{ row_limit }}건).</p>
@@ -41,10 +42,10 @@
       </td>
       <td><a href="{{ job.source_url }}" target="_blank" rel="noreferrer">원문 열기</a></td>
       <td>
-        <button type="button" hx-get="/ui/jobs/{{ job.id }}"
-                hx-target="#job-detail" hx-swap="innerHTML"
-                hx-disabled-elt="this" hx-indicator="closest td">상세</button>
-        <span class="wait-note">여는 중</span>
+        {# 모달이 열리고 그 안이 채워진다. 표 아래로 밀려나지 않아 목록과 상세를 오갈 수 있다 #}
+        <button type="button" id="job-open-{{ job.id }}" data-modal-open
+                hx-get="/ui/jobs/{{ job.id }}"
+                hx-target="#app-modal-body" hx-swap="innerHTML">상세</button>
       </td>
     </tr>
     {% else %}
