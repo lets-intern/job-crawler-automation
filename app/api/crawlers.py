@@ -7,20 +7,26 @@
 생성된 셀렉터는 가설이라 실패한 필드가 있어도 행은 남는다. 실패한 필드 이름을 응답에 실어
 운영자가 그 필드만 손으로 고치게 한다. 손으로 고친 셀렉터를 요청 없이 다시 생성하지 않는다
 (`.claude/rules/llm.md`).
+
+테스트 실행은 저장된 셀렉터로 실제 페이지를 1회 크롤링해 필드별 미리보기와 실패 사유를
+돌려준다. 통과한 것만 `tested` 가 된다 — 실패한 실행은 상태를 건드리지 않는다.
 """
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Awaitable, Callable, Iterator
 from typing import Annotated, Any
 from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app import db
-from app.crawler.fetcher import FetchError, RobotsDisallowedError
+from app.crawler.failures import SUCCESS
+from app.crawler.fetcher import Fetcher, FetchError, RobotsDisallowedError, get_fetcher
+from app.crawler.runner import RunTarget, run_once
 from app.selector.generator import GenerationResult, SelectorGenerationError, generate_for_urls
 from app.selector.schema import SelectorSchemaError, SelectorSet, validate_selectors
 
@@ -64,12 +70,48 @@ class SelectorsOut(BaseModel):
     selectors: SelectorSet
 
 
+class PreviewItem(BaseModel):
+    """추출된 값 그대로. 정제 전이라 공백과 줄바꿈이 섞여 있는 것이 정상이다."""
+
+    source_url: str
+    state: str
+    fields: dict[str, str]
+
+
+class RunFailure(BaseModel):
+    source_url: str
+    error_class: str | None
+    message: str
+
+
+class TestRunOut(BaseModel):
+    """`crawl_runs` 행에 남은 값과 같은 카운트 + 미리보기."""
+
+    crawler_id: int
+    run_id: int
+    status: str
+    crawler_status: str
+    matched: int
+    success_count: int
+    new_count: int
+    fail_count: int
+    error_class: str | None
+    error_message: str
+    items: list[PreviewItem]
+    failures: list[RunFailure]
+
+
 def get_connection() -> Iterator[sqlite3.Connection]:
     conn = db.connect()
     try:
         yield conn
     finally:
         conn.close()
+
+
+def get_crawl_fetcher() -> Fetcher:
+    """공용 fetch 클라이언트. 테스트는 이 의존성을 갈아끼운다."""
+    return get_fetcher()
 
 
 def get_generator() -> GenerateFn:
@@ -149,3 +191,75 @@ def update_selectors(
         (selectors.to_json(), crawler_id),
     )
     return SelectorsOut(id=crawler_id, status=row["status"], selectors=selectors)
+
+
+@router.post("/{crawler_id}/test-run", response_model=TestRunOut)
+async def test_run(
+    crawler_id: int,
+    conn: Annotated[sqlite3.Connection, Depends(get_connection)],
+    fetcher: Annotated[Fetcher, Depends(get_crawl_fetcher)],
+    limit: Annotated[int, Query(ge=1, le=20)] = 3,
+) -> TestRunOut:
+    """저장된 셀렉터로 실제 페이지를 1회 크롤링한다.
+
+    `limit` 은 상세를 몇 건까지 따라갈지다. 테스트는 3건이면 충분하고, 전체를 도는 것은
+    테스트가 아니라 그냥 크롤링이다 (`.claude/skills/crawl-test/SKILL.md`).
+
+    워크플로우가 없는 실행이라 `raw_jobs` 에는 적재하지 않는다. 남는 것은 `crawl_runs` 행과
+    이 응답의 미리보기뿐이다.
+    """
+    row = conn.execute(
+        "SELECT list_url, selectors_json, status FROM crawlers WHERE id = ?", (crawler_id,)
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail={"message": f"크롤러 {crawler_id} 가 없다"})
+    if not row["selectors_json"]:
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": "no_selectors", "message": "셀렉터가 없는 크롤러는 실행할 수 없다"},
+        )
+
+    try:
+        selectors = validate_selectors(json.loads(row["selectors_json"]))
+    except (json.JSONDecodeError, SelectorSchemaError) as exc:
+        # 저장된 셀렉터가 스키마에 맞지 않는다. 추측해서 고치지 않고 그대로 알린다.
+        raise HTTPException(
+            status_code=409, detail={"reason": "invalid_selectors", "message": str(exc)}
+        ) from exc
+
+    result = await run_once(
+        conn,
+        RunTarget(list_url=row["list_url"], selectors=selectors, crawler_id=crawler_id),
+        fetcher=fetcher,
+        limit=limit,
+    )
+
+    crawler_status = row["status"]
+    if result.status == SUCCESS and crawler_status == "draft":
+        conn.execute("UPDATE crawlers SET status = 'tested' WHERE id = ?", (crawler_id,))
+        crawler_status = "tested"
+
+    return TestRunOut(
+        crawler_id=crawler_id,
+        run_id=result.run_id,
+        status=result.status,
+        crawler_status=crawler_status,
+        matched=result.matched,
+        success_count=result.success_count,
+        new_count=result.new_count,
+        fail_count=result.fail_count,
+        error_class=result.error_class,
+        error_message=result.error_message,
+        items=[
+            PreviewItem(source_url=item.source_url, state=item.state, fields=item.fields)
+            for item in result.items
+        ],
+        failures=[
+            RunFailure(
+                source_url=failure.source_url,
+                error_class=failure.error_class,
+                message=failure.message,
+            )
+            for failure in result.failures
+        ],
+    )

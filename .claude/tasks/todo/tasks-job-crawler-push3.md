@@ -56,8 +56,10 @@
             - 같은 커밋에서 `.claude/docs/data-model.md` 의 `crawl_runs` 표를 고친다
         - [x] 3.4.V 검증: 픽스처 기반 pytest 작성 및 통과 — 같은 픽스처로 2회 실행 시 `raw_jobs` 1행, 2회차 `new_count=0`, `crawl_runs` 2행
 
-    - [ ] 3.5 테스트 실행 API
+    - [x] 3.5 테스트 실행 API
         - 저장된 셀렉터로 실제 페이지를 1회 크롤링하고 필드별 미리보기와 실패 사유를 돌려준다
-        - 통과 시 `crawlers.status` 를 `tested` 로 올린다
+        - 통과 시 `crawlers.status` 를 `tested` 로 올린다. 실패한 실행은 상태를 건드리지 않는다
+        - 워크플로우가 없는 실행이라 `raw_jobs` 에 적재하지 않는다. `crawl_runs` 행과 응답의
+          미리보기만 남고, 그 실행의 `new_count` 는 0 이다
         - [ ] 3.5.V 검증: 실사이트 1회 실행 후 `crawl_runs` 행과 카운트 확인 (`.claude/skills/crawl-test/SKILL.md`).
           이 Push 에서 실사이트를 때리는 검증은 이것 하나다 (`.claude/rules/crawling.md`)
