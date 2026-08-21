@@ -22,7 +22,7 @@
     {% for item, threshold_state in rows %}
     {% with message = "" %}{% include "fragments/workflow_row.html" %}{% endwith %}
     {% else %}
-    <tr><td colspan="12" class="cell-text text-slate-600">등록된 워크플로우가 없다. 테스트를 통과한 크롤러를 워크플로우로 승격하면 여기에 나온다 (지금은 <code>POST /api/workflows</code> 로만 승격된다)</td></tr>
+    <tr><td colspan="12" class="cell-text text-slate-600">등록된 워크플로우가 없다. <a class="font-medium underline" href="/tests">테스트 실행</a> 화면에서 테스트를 통과한 크롤러를 승격하면 여기에 나온다</td></tr>
     {% endfor %}
   </tbody>
 </table>
