@@ -86,6 +86,7 @@ def create_rule_fragment(
     rule_config: Annotated[str, Form()] = "{}",
     priority: Annotated[int, Form()] = 0,
     enabled: Annotated[str, Form()] = "",
+    note: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
     """규칙을 추가한다. 이 규칙은 다음에 정규화되는 건부터 적용된다 — 기존 데이터는 그대로다."""
     try:
@@ -93,6 +94,7 @@ def create_rule_fragment(
             field_name=field_name,
             rule_type=rule_type,
             rule_config=_config(rule_config),
+            note=note,
             priority=priority,
             enabled=bool(enabled),
         )
@@ -117,6 +119,7 @@ def update_rule_fragment(
     rule_config: Annotated[str, Form()] = "{}",
     priority: Annotated[int, Form()] = 0,
     enabled: Annotated[str, Form()] = "",
+    note: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
     """규칙을 고친다. 우선순위도 여기서 바뀐다."""
     try:
@@ -124,6 +127,7 @@ def update_rule_fragment(
             field_name=field_name,
             rule_type=rule_type,
             rule_config=_config(rule_config),
+            note=note,
             priority=priority,
             enabled=bool(enabled),
         )

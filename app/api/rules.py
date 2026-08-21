@@ -37,7 +37,7 @@ from app.normalize.rules import RuleConfigError, build_rule
 router = APIRouter(prefix="/api/rules", tags=["rules"])
 
 _SELECT = """
-    SELECT id, field_name, rule_type, rule_config_json, priority, enabled
+    SELECT id, field_name, rule_type, rule_config_json, priority, enabled, note
       FROM normalization_rules
 """
 
@@ -49,6 +49,8 @@ class RuleCreate(BaseModel):
     rule_config: dict[str, Any]
     priority: int = 0
     enabled: bool = True
+    # 사람이 읽는 메모. 정규화 엔진은 읽지 않는다
+    note: str = ""
 
 
 class RuleUpdate(BaseModel):
@@ -59,6 +61,7 @@ class RuleUpdate(BaseModel):
     rule_config: dict[str, Any] | None = None
     priority: int | None = None
     enabled: bool | None = None
+    note: str | None = None
 
 
 class RuleOut(BaseModel):
@@ -68,6 +71,7 @@ class RuleOut(BaseModel):
     rule_config: dict[str, Any]
     priority: int
     enabled: bool
+    note: str = ""
 
 
 class RulePosition(BaseModel):
@@ -126,6 +130,7 @@ def _out(row: sqlite3.Row) -> RuleOut:
         rule_config=json.loads(row["rule_config_json"]),
         priority=int(row["priority"]),
         enabled=bool(row["enabled"]),
+        note=str(row["note"] or ""),
     )
 
 
@@ -167,8 +172,8 @@ def create_rule(
     cursor = conn.execute(
         """
         INSERT INTO normalization_rules
-               (field_name, rule_type, rule_config_json, priority, enabled)
-        VALUES (?, ?, ?, ?, ?)
+               (field_name, rule_type, rule_config_json, priority, enabled, note)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
         (
             rule.field_name,
@@ -176,6 +181,7 @@ def create_rule(
             rule.config_json(),
             rule.priority,
             int(rule.enabled),
+            payload.note.strip(),
         ),
     )
     return _out(_row(conn, int(cursor.lastrowid or 0)))
@@ -268,7 +274,8 @@ def update_rule(
     conn.execute(
         """
         UPDATE normalization_rules
-           SET field_name = ?, rule_type = ?, rule_config_json = ?, priority = ?, enabled = ?
+           SET field_name = ?, rule_type = ?, rule_config_json = ?, priority = ?,
+               enabled = ?, note = ?
          WHERE id = ?
         """,
         (
@@ -277,6 +284,7 @@ def update_rule(
             rule.config_json(),
             rule.priority,
             int(rule.enabled),
+            merged.note.strip(),
             rule_id,
         ),
     )

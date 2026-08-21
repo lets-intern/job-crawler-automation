@@ -18,6 +18,7 @@
     <tr>
       <th scope="col" class="num">번호</th>
       <th scope="col">필드</th>
+      <th scope="col">메모</th>
       <th scope="col">타입</th>
       <th scope="col">설정</th>
       <th scope="col">우선순위</th>
@@ -37,6 +38,11 @@
           <option value="{{ field }}" {% if field == rule.field_name %}selected{% endif %}>{{ field }}</option>
           {% endfor %}
         </select>
+      </td>
+      <td>
+        <input name="note" form="rule-form-{{ rule.id }}" type="text"
+               value="{{ rule.note }}" placeholder="이 규칙이 하는 일"
+               class="w-56 rounded border border-slate-300 px-2 py-1 text-sm">
       </td>
       <td>
         <select name="rule_type" form="rule-form-{{ rule.id }}">
@@ -111,6 +117,11 @@
       </select>
       <label for="new-priority">우선순위</label>
       <input id="new-priority" name="priority" type="number" value="0" size="4">
+    </label>
+    <label for="new-note" class="grow">
+      <span class="block text-slate-600">메모</span>
+      <input id="new-note" name="note" type="text" placeholder="이 규칙이 하는 일"
+             class="mt-1 w-full rounded border border-slate-300 px-2 py-1">
       <label for="new-enabled">활성</label>
       <input id="new-enabled" name="enabled" type="checkbox" checked>
     </p>

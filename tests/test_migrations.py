@@ -76,6 +76,7 @@ EXPECTED_COLUMNS = {
         "rule_config_json",
         "priority",
         "enabled",
+        "note",
     },
     "app_settings": {
         "key",
@@ -98,7 +99,7 @@ OVERRIDABLE = ["company", "title", "department", "deadline", "body", "requiremen
 EXPECTED_INDEXES = {"idx_raw_jobs_content_hash", "idx_normalized_jobs_normalized_at"}
 
 # 지금까지의 마이그레이션. 전부 역적용해야 테이블이 사라진다
-ALL_VERSIONS = ["0001", "0002", "0003", "0004", "0005"]
+ALL_VERSIONS = ["0001", "0002", "0003", "0004", "0005", "0006"]
 
 
 @pytest.fixture
@@ -226,8 +227,9 @@ def test_company_down_removes_only_the_two_columns(conn: sqlite3.Connection) -> 
     """역적용은 0004 가 더한 두 컬럼만 지운다. 나머지 컬럼은 그대로다."""
     db.migrate_up(conn)
 
-    # 0005 를 먼저 되돌려야 0004 차례가 온다. 뒤에 마이그레이션이 붙으면 steps 가 늘어난다
-    db.migrate_down(conn, steps=2)
+    # 0004 까지 내려가려면 그 뒤에 붙은 것들을 먼저 되돌려야 한다. 개수를 세어 구한다 —
+    # 마이그레이션이 하나 붙을 때마다 이 숫자를 손으로 고치면 언젠가 잊는다
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0004"))
 
     assert "default_company" not in _columns(conn, "crawlers")
     assert "company_source" not in _columns(conn, "normalized_jobs")
@@ -368,7 +370,7 @@ def test_override_down_removes_only_its_own_table(conn: sqlite3.Connection) -> N
         """
     )
 
-    db.migrate_down(conn, steps=1)
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0005"))
 
     assert "job_field_overrides" not in _names(conn, "table")
     assert conn.execute("SELECT count(*) AS n FROM raw_jobs").fetchone()["n"] == 1
