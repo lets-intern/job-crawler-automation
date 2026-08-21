@@ -1,5 +1,6 @@
 {# 필터·검색·정렬 폼. 어떤 조작이든 표 영역(#job-table)만 갈아 끼운다 #}
-<form hx-get="/ui/jobs" hx-target="#job-table" hx-swap="innerHTML" hx-trigger="submit, change">
+<form hx-get="/ui/jobs" hx-target="#job-table" hx-swap="innerHTML" hx-trigger="submit, change"
+      hx-disabled-elt="find button">
   <fieldset>
     <legend>조회 조건</legend>
     <p>
@@ -35,6 +36,7 @@
       </select>
 
       <button type="submit">조회</button>
+      <span class="wait-note">조회하는 중</span>
     </p>
   </fieldset>
 </form>

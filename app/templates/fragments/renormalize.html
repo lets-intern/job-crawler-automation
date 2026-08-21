@@ -30,12 +30,15 @@
     {% if confirming %}
     <p>{{ target_count }}건을 다시 정규화한다. 계속할까.</p>
     <button type="button" hx-post="/ui/renormalize"
-            hx-target="#renormalize-panel" hx-swap="outerHTML">재정규화 실행</button>
+            hx-target="#renormalize-panel" hx-swap="outerHTML"
+            hx-disabled-elt="this" hx-indicator="#renormalize-wait">재정규화 실행</button>
+    <span id="renormalize-wait" class="wait-note">{{ target_count }}건을 다시 정규화하는 중. 건수만큼 걸린다</span>
     <button type="button" hx-get="/ui/renormalize"
             hx-target="#renormalize-panel" hx-swap="outerHTML">취소</button>
     {% else %}
     <button type="button" hx-get="/ui/renormalize?confirm=true"
-            hx-target="#renormalize-panel" hx-swap="outerHTML">기존 데이터 재정규화</button>
+            hx-target="#renormalize-panel" hx-swap="outerHTML"
+            hx-disabled-elt="this">기존 데이터 재정규화</button>
     {% endif %}
   {% endif %}
 </div>

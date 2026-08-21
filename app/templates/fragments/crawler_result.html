@@ -46,7 +46,9 @@
 <h3>셀렉터 편집</h3>
 <form hx-put="/ui/crawlers/{{ crawler_id }}/selectors"
       hx-target="#crawler-result"
-      hx-swap="innerHTML">
+      hx-swap="innerHTML"
+      hx-disabled-elt="find button"
+      hx-indicator="#selectors-save-wait, #crawler-result-wait">
   <fieldset>
     <legend>크롤러 {{ crawler_id }}{% if status %} (상태 {{ status }}){% endif %}</legend>
     <label for="selectors-json">셀렉터 JSON</label>
@@ -55,6 +57,7 @@
               spellcheck="false">{{ selectors_json }}</textarea>
     <br>
     <button type="submit">셀렉터 저장</button>
+    <span id="selectors-save-wait" class="wait-note">셀렉터를 저장하는 중</span>
   </fieldset>
 </form>
 <p>

@@ -34,7 +34,9 @@
       <td><a href="{{ job.source_url }}" target="_blank" rel="noreferrer">원문 열기</a></td>
       <td>
         <button type="button" hx-get="/ui/jobs/{{ job.id }}"
-                hx-target="#job-detail" hx-swap="innerHTML">상세</button>
+                hx-target="#job-detail" hx-swap="innerHTML"
+                hx-disabled-elt="this" hx-indicator="closest td">상세</button>
+        <span class="wait-note">여는 중</span>
       </td>
     </tr>
     {% else %}

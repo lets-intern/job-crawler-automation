@@ -6,7 +6,8 @@
 <p>{{ message }}</p>
 {% endif %}
 
-<form hx-put="/ui/settings/{{ key }}" hx-target="#settings-form" hx-swap="innerHTML">
+<form hx-put="/ui/settings/{{ key }}" hx-target="#settings-form" hx-swap="innerHTML"
+      hx-disabled-elt="find button">
   <fieldset>
     <legend>동시 실행 상한 ({{ key }})</legend>
     <p>
@@ -15,6 +16,7 @@
       <input id="max-concurrent-runs" name="value" type="number" step="1"
              value="{{ values[key] }}" size="6">
       <button type="submit">저장</button>
+      <span class="wait-note">저장하는 중</span>
     </p>
     <p>저장된 값: {{ values[key] }}</p>
   </fieldset>

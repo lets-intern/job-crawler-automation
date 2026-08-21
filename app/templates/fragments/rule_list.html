@@ -58,22 +58,30 @@
         <form id="rule-form-{{ rule.id }}"
               hx-put="/ui/rules/{{ rule.id }}"
               hx-target="#rule-list"
-              hx-swap="innerHTML">
+              hx-swap="innerHTML"
+              hx-disabled-elt="find button">
           <button type="submit">저장</button>
+          <span class="wait-note">저장하는 중</span>
         </form>
       </td>
       <td>
         <button type="button"
                 hx-post="/ui/rules/{{ rule.id }}/toggle"
                 hx-target="#rule-list"
-                hx-swap="innerHTML">{% if rule.enabled %}끄기{% else %}켜기{% endif %}</button>
+                hx-swap="innerHTML"
+                hx-disabled-elt="this"
+                hx-indicator="closest td">{% if rule.enabled %}끄기{% else %}켜기{% endif %}</button>
+        <span class="wait-note">바꾸는 중</span>
       </td>
       <td>
         <button type="button"
                 hx-delete="/ui/rules/{{ rule.id }}"
                 hx-target="#rule-list"
                 hx-swap="innerHTML"
+                hx-disabled-elt="this"
+                hx-indicator="closest td"
                 hx-confirm="규칙 {{ rule.id }} 를 지운다. 계속할까">삭제</button>
+        <span class="wait-note">지우는 중</span>
       </td>
     </tr>
     {% else %}
@@ -83,7 +91,8 @@
 </table>
 
 <h4>규칙 추가</h4>
-<form hx-post="/ui/rules" hx-target="#rule-list" hx-swap="innerHTML">
+<form hx-post="/ui/rules" hx-target="#rule-list" hx-swap="innerHTML"
+      hx-disabled-elt="find button">
   <fieldset>
     <legend>추가한 규칙은 다음에 정규화되는 건부터 적용된다</legend>
     <p>
@@ -106,6 +115,7 @@
       <textarea id="new-config" name="rule_config" rows="4" cols="70" spellcheck="false">{}</textarea>
     </p>
     <button type="submit">규칙 추가</button>
+    <span class="wait-note">규칙을 추가하는 중</span>
   </fieldset>
 </form>
 

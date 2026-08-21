@@ -23,10 +23,13 @@
         {# 승격은 운영자가 정한다. 자동으로 렌더로 올라가는 경로는 없다 #}
         <form hx-put="/ui/crawlers/{{ crawler.id }}/render-mode"
               hx-target="#crawler-result"
-              hx-swap="innerHTML">
+              hx-swap="innerHTML"
+              hx-disabled-elt="find button"
+              hx-indicator="closest form, #crawler-result-wait">
           <input type="hidden" name="render_mode"
                  value="{% if crawler.render_mode == 'playwright' %}static{% else %}playwright{% endif %}">
           <button type="submit">{% if crawler.render_mode == 'playwright' %}정적으로{% else %}렌더로{% endif %}</button>
+          <span class="wait-note">바꾸는 중</span>
         </form>
       </td>
       <td>{{ crawler.default_company or "안 적음" }}</td>
@@ -35,7 +38,9 @@
         <button type="button"
                 hx-get="/ui/crawlers/{{ crawler.id }}/editor"
                 hx-target="#crawler-result"
-                hx-swap="innerHTML">셀렉터 편집</button>
+                hx-swap="innerHTML"
+                hx-disabled-elt="this"
+                hx-indicator="#crawler-result-wait">셀렉터 편집</button>
       </td>
     </tr>
     {% else %}

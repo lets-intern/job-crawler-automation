@@ -12,7 +12,9 @@
 
 <section>
   <h3>결과</h3>
-  <div id="test-result">
+  {# 대기 문구는 결과 영역 바로 앞이다. 이 자리여야 다음 형제인 결과가 흐려진다 #}
+  <p id="test-result-wait" class="wait-note">실행 결과를 기다리는 중. 아래는 이전 실행 결과다</p>
+  <div id="test-result" class="wait-dim">
     <p>실행하면 여기에 필드별 판정과 미리보기가 들어온다.</p>
   </div>
 </section>

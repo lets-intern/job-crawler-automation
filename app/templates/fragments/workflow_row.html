@@ -7,11 +7,13 @@
   <td>{{ item.name }}</td>
   <td>{{ item.list_url }}</td>
   <td>
-    <form hx-patch="/ui/workflows/{{ item.id }}" hx-target="closest tr" hx-swap="outerHTML">
+    <form hx-patch="/ui/workflows/{{ item.id }}" hx-target="closest tr" hx-swap="outerHTML"
+          hx-disabled-elt="find button">
       <label for="interval-{{ item.id }}">분</label>
       <input id="interval-{{ item.id }}" name="interval_minutes" type="number"
              value="{{ item.interval_minutes }}" min="1" size="5">
       <button type="submit">주기 저장</button>
+      <span class="wait-note">저장하는 중</span>
     </form>
   </td>
   <td>{% if item.status == "active" %}실행 중{% else %}중지됨{% endif %} ({{ item.status }})</td>
@@ -29,12 +31,15 @@
     {% if item.status == "active" %}
     <button type="button" hx-patch="/ui/workflows/{{ item.id }}"
             hx-vals='{"status": "paused"}'
-            hx-target="closest tr" hx-swap="outerHTML">중지</button>
+            hx-target="closest tr" hx-swap="outerHTML"
+            hx-disabled-elt="this" hx-indicator="closest td">중지</button>
     {% else %}
     <button type="button" hx-patch="/ui/workflows/{{ item.id }}"
             hx-vals='{"status": "active"}'
-            hx-target="closest tr" hx-swap="outerHTML">재개</button>
+            hx-target="closest tr" hx-swap="outerHTML"
+            hx-disabled-elt="this" hx-indicator="closest td">재개</button>
     {% endif %}
+    <span class="wait-note">상태를 바꾸는 중</span>
   </td>
   <td>{{ message or "" }}</td>
 </tr>
