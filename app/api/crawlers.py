@@ -8,9 +8,11 @@
 운영자가 그 필드만 손으로 고치게 한다. 손으로 고친 셀렉터를 요청 없이 다시 생성하지 않는다
 (`.claude/rules/llm.md`).
 
-예외는 목록 필드가 전부 0개 매칭인 경우다. 그때는 행을 남기지 않고 실패로 돌려준다. 고칠 필드
-하나가 틀린 것이 아니라 정적 HTML 에 목록이 없는 것이라, 저장해 봐야 아무것도 뽑지 못하는
-크롤러가 남는다. 0건 추출을 성공으로 내보내지 않는다는 규칙이 생성 단계에도 적용된다.
+예외는 둘이다. 목록 필드가 전부 0개 매칭이면 정적 HTML 에 목록이 없는 것이고, 항목은 잡혔는데
+그 안의 제목·링크·날짜가 전부 0개면 항목 셀렉터가 목록이 아닌 다른 것을 잡은 것이다. 둘 다 행을
+남기지 않고 실패로 돌려주되 사유를 갈라 적는다 — 앞은 렌더 승격을, 뒤는 항목 셀렉터를 다시
+잡는 것을 다음 수단으로 가리킨다. 어느 쪽이든 저장해 봐야 아무것도 뽑지 못하는 크롤러가 남고,
+0건 추출을 성공으로 내보내지 않는다는 규칙이 생성 단계에도 적용된다.
 
 테스트 실행은 저장된 셀렉터로 실제 페이지를 1회 크롤링해 필드별 미리보기와 실패 사유를
 돌려준다. 통과한 것만 `tested` 가 된다 — 실패한 실행은 상태를 건드리지 않는다.
@@ -250,6 +252,25 @@ async def create_crawler(
                 "message": (
                     f"정적 HTML 에서 목록을 찾지 못했다. 목록 필드 {failed} 가 모두 0개 매칭이다. "
                     "JS 로 목록을 그리는 사이트일 수 있으니 렌더 모드 승격을 검토한다"
+                ),
+                "failed_fields": result.verification.failed,
+                "matches": result.verification.summary(),
+            },
+        )
+
+    if result.verification.list_fields_missing:
+        # 항목은 잡혔는데 그 안이 비었다. 목록이 없는 것과 사유가 다르다 — 여기서는 목록을
+        # 찾았으므로 다음 수단이 렌더 승격이 아니라 항목 셀렉터를 다시 잡는 것이다.
+        failed = ", ".join(result.verification.failed_list_fields)
+        matched = result.verification.summary().get("list.item", 0)
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "reason": "list_fields_not_found",
+                "message": (
+                    f"목록 항목은 찾았으나 그 안에서 필드를 뽑지 못했다. 항목 {matched}건을 "
+                    f"잡고도 {failed} 가 모두 0개 매칭이다. 항목 셀렉터가 공고 목록이 아닌 "
+                    "다른 반복 요소를 잡았거나, 항목 안의 셀렉터가 실제 구조와 다르다"
                 ),
                 "failed_fields": result.verification.failed,
                 "matches": result.verification.summary(),

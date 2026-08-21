@@ -540,10 +540,15 @@ def test_a_partial_list_miss_is_still_stored(client: TestClient, conn: sqlite3.C
     assert len(rows(conn)) == 1
 
 
-def test_only_the_item_selector_matching_is_still_stored(
+def test_only_the_item_selector_matching_is_refused(
     client: TestClient, conn: sqlite3.Connection
 ) -> None:
-    """item 하나라도 잡히면 목록이 있는 것이다. 나머지는 손으로 고칠 대상이다."""
+    """item 만 잡히고 그 안이 전부 0이면 저장하지 않는다 (12.5).
+
+    12.2 까지는 저장했다. 항목이 잡혔으니 목록은 있다고 본 것인데, 제목도 링크도 날짜도
+    없는 공고만 나오는 크롤러라 실행해도 쓸 값이 하나도 안 나온다. 자세한 것은
+    `tests/test_empty_list_items.py` 가 본다.
+    """
     partial = json.loads(json.dumps(GENERATED))
     partial["list"]["title"] = "span.no-such-name"
     partial["list"]["link"] = "a.no-such-link"
@@ -552,9 +557,9 @@ def test_only_the_item_selector_matching_is_still_stored(
 
     response = client.post("/api/crawlers", json={"list_url": LIST_URL, "detail_url": DETAIL_URL})
 
-    assert response.status_code == 201
-    assert response.json()["failed_fields"] == ["list.title", "list.link", "list.date"]
-    assert len(rows(conn)) == 1
+    assert response.status_code == 422
+    assert response.json()["detail"]["reason"] == "list_fields_not_found"
+    assert rows(conn) == []
 
 
 def test_registration_defaults_to_static(client: TestClient, conn: sqlite3.Connection) -> None:

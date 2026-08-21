@@ -100,6 +100,30 @@ class VerificationReport:
         ]
         return bool(checked) and all(field.status == FAILED for field in checked)
 
+    @property
+    def list_fields_missing(self) -> bool:
+        """목록 항목은 잡혔는데 그 안에서 아무 필드도 뽑지 못했는가.
+
+        참이면 `item` 이 목록이 아닌 다른 반복 요소를 잡았거나 항목 안의 셀렉터가 실제
+        구조와 다르다. 어느 쪽이든 제목도 링크도 날짜도 없는 공고만 나오는 크롤러라 못 쓴다.
+
+        항목 개수로는 판정하지 않는다 — 공고가 진짜 1건인 목록 페이지가 있고, 그것은 정상이다.
+        판정에 쓰는 것은 항목 안의 `title`·`link`·`date` 뿐이고, 셀렉터가 없어 건너뛴 것은
+        뺀다. `company` 는 넣지 않는다. 계열사 이름은 있어도 그만인 정보라 그것 하나가 잡혔다고
+        쓸 수 있는 크롤러가 되지 않는다.
+        """
+        by_name = {field.name: field for field in self.fields}
+        item = by_name.get("list.item")
+        if item is None or item.status != OK:
+            # 항목 자체가 없는 것은 다른 실패다. `list_missing` 이 그 경우를 맡는다
+            return False
+        checked = [
+            by_name[name]
+            for name in ("list.title", "list.link", "list.date")
+            if name in by_name and by_name[name].status != SKIPPED
+        ]
+        return bool(checked) and all(field.status == FAILED for field in checked)
+
     def summary(self) -> dict[str, int]:
         """필드 이름 -> 매칭 개수. 화면과 로그가 그대로 쓴다."""
         return {field.name: field.matches for field in self.fields}

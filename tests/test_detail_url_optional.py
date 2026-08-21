@@ -70,6 +70,8 @@ class Verified:
     failed = ["detail.title", "detail.body"]
     # 셀렉터가 비어 판정을 건너뛴 필드는 없다. 상세가 0개인 것은 볼 HTML 이 없어서다
     skipped: list[str] = []
+    # 목록 항목 안의 필드는 잡혔다. 12.5 의 거절 대상이 아니다
+    list_fields_missing = False
 
     def summary(self) -> dict[str, int]:
         return dict(MATCHES)

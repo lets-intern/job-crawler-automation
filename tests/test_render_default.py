@@ -63,6 +63,8 @@ class Verified:
     failed_list_fields: list[str] = []
     # 셀렉터가 비어 판정을 건너뛴 필드는 없다 (`app/selector/verify.py`)
     skipped: list[str] = []
+    # 항목 안의 필드도 잡혔다. 12.5 의 거절 대상이 아니다
+    list_fields_missing = False
 
     def summary(self) -> dict[str, int]:
         return {"list.item": 25}
