@@ -31,7 +31,70 @@
       }
       /* 기다리는 동안의 대상 영역. 이전 결과가 새 결과처럼 읽히지 않게 흐린다 */
       .wait-note.htmx-request + .wait-dim { @apply opacity-40; }
-      button[disabled] { @apply cursor-not-allowed opacity-50; }
+
+      /* 화면 대부분이 표와 폼이다. 조각마다 클래스를 흩뿌리는 대신 여기서 태그로 잡는다 —
+         조각이 갈려 들어와도 같은 모양이 나온다 */
+      main section {
+        @apply mb-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm;
+      }
+      main section h3 { @apply mb-3 text-base font-semibold text-slate-900; }
+      main section h4 { @apply mb-2 mt-5 text-sm font-semibold text-slate-900; }
+      main section h5 { @apply mb-1 mt-4 text-sm font-semibold text-slate-700; }
+      main section > p, main section > div > p { @apply my-2 text-sm text-slate-600; }
+      hr { @apply my-6 border-slate-200; }
+
+      /* 표. 긴 표는 이 상자 안에서만 가로로 흐른다 — 페이지가 밀리지 않는다 */
+      .table-scroll { @apply my-3 overflow-x-auto rounded-md border border-slate-200; }
+      .data-table { @apply w-full border-collapse text-sm; }
+      .data-table caption {
+        @apply border-b border-slate-200 bg-slate-50 px-3 py-2 text-left text-sm text-slate-500;
+      }
+      .data-table th {
+        @apply whitespace-nowrap border-b border-slate-200 bg-slate-50 px-3 py-2 text-left
+               text-xs font-semibold tracking-wide text-slate-600;
+      }
+      /* 기본은 줄바꿈 없음이다. 한글은 글자 단위로 끊겨서, 좁아진 열에 두면 한 줄에 한 글자씩
+         쌓인다. 넘치는 폭은 .table-scroll 이 받는다 */
+      .data-table td { @apply whitespace-nowrap border-b border-slate-100 px-3 py-2 align-top; }
+      /* URL 처럼 길고 끊어도 되는 값. 폭을 정해 두고 그 안에서만 접는다 */
+      /* 최소 폭을 함께 준다. 표가 폭을 나눌 때 접히는 열부터 짜부라뜨리기 때문이다 */
+      .data-table td.cell-url {
+        @apply min-w-[11rem] max-w-xs whitespace-normal break-all text-xs;
+      }
+      /* 표 안의 숫자 입력은 좁게. 넓으면 그 열 하나가 표를 화면 밖으로 밀어낸다 */
+      .data-table input[type="number"] { @apply w-20; }
+      /* 사람이 읽는 긴 문장. 낱말 단위로만 접는다 */
+      .data-table td.cell-text { @apply min-w-[9rem] max-w-md whitespace-normal break-keep; }
+      .data-table tbody tr:last-child td { @apply border-b-0; }
+      .data-table tbody tr:hover { @apply bg-slate-50; }
+      /* 숫자 열. 자릿수를 맞춰 위아래로 비교되게 한다 */
+      .num { @apply text-right tabular-nums; }
+
+      /* 폼. 라벨과 입력 사이, 입력과 다음 줄 사이 간격을 여기서 준다 */
+      /* fieldset 은 기본이 min-width: min-content 라, size=80 같은 입력 하나가 페이지 전체를
+         가로로 늘린다. 9.2.V 에서 420px 창이 272px 밀린 원인이 이것이다 */
+      fieldset { @apply min-w-0 rounded-md border border-slate-200 p-4; }
+      legend { @apply px-1 text-sm font-semibold text-slate-900; }
+      label { @apply text-sm font-medium text-slate-700; }
+      form p { @apply my-3; }
+      input[type="text"], input[type="url"], input[type="number"], input[type="search"],
+      select, textarea {
+        @apply mt-1 max-w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm
+               text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none
+               focus:ring-1 focus:ring-slate-500;
+      }
+      textarea { @apply font-mono text-xs leading-5; }
+
+      /* 버튼. 제출은 채운 버튼, 나머지는 테두리 버튼, 삭제는 빨강. 태그와 속성으로 갈린다 */
+      button {
+        @apply mt-1 inline-flex items-center rounded-md border border-slate-300 bg-white px-2.5
+               py-1 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50;
+      }
+      button[type="submit"] {
+        @apply border-slate-800 bg-slate-800 text-white hover:bg-slate-700;
+      }
+      button[hx-delete] { @apply border-red-300 bg-white text-red-700 hover:bg-red-50; }
+      button[disabled] { @apply cursor-not-allowed opacity-50 hover:bg-white; }
     }
   </style>
 </head>

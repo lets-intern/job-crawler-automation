@@ -9,11 +9,12 @@
 <p>{{ message }}</p>
 {% endif %}
 
-<table>
+<div class="table-scroll">
+<table class="data-table">
   <caption>등록된 규칙. 같은 필드 안에서는 우선순위 순서로 적용된다</caption>
   <thead>
     <tr>
-      <th scope="col">번호</th>
+      <th scope="col" class="num">번호</th>
       <th scope="col">필드</th>
       <th scope="col">타입</th>
       <th scope="col">설정</th>
@@ -27,7 +28,7 @@
   <tbody>
     {% for rule in rules %}
     <tr>
-      <td>{{ rule.id }}</td>
+      <td class="num">{{ rule.id }}</td>
       <td>
         <select name="field_name" form="rule-form-{{ rule.id }}">
           {% for field in fields %}
@@ -90,6 +91,7 @@
     {% endfor %}
   </tbody>
 </table>
+</div>
 
 <h4>규칙 추가</h4>
 <form hx-post="/ui/rules" hx-target="#rule-list" hx-swap="innerHTML"

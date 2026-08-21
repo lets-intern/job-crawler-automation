@@ -3,9 +3,9 @@
 <tr><td colspan="10">{{ message }}</td></tr>
 {% else %}
 <tr id="workflow-row-{{ item.id }}">
-  <td>{{ item.id }}</td>
-  <td>{{ item.name }}</td>
-  <td>{{ item.list_url }}</td>
+  <td class="num">{{ item.id }}</td>
+  <td class="cell-text">{{ item.name }}</td>
+  <td class="cell-url">{{ item.list_url }}</td>
   <td>
     <form hx-patch="/ui/workflows/{{ item.id }}" hx-target="closest tr" hx-swap="outerHTML"
           hx-disabled-elt="find button">
@@ -24,9 +24,9 @@
     {% elif item.last_run_status == "timeout" %}시간 초과
     {% else %}기록 없음{% endif %}
   </td>
-  <td>{{ item.success_count }}</td>
-  <td>{{ item.fail_count }}</td>
-  <td>{{ threshold_state }}</td>
+  <td class="num">{{ item.success_count }}</td>
+  <td class="num">{{ item.fail_count }}</td>
+  <td class="cell-text">{{ threshold_state }}</td>
   <td>
     {% if item.status == "active" %}
     <button type="button" hx-patch="/ui/workflows/{{ item.id }}"

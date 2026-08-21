@@ -1,9 +1,10 @@
 {# 실행 대상 목록. 실행 뒤에는 크롤러 상태(draft -> tested)가 바뀌므로 OOB 로 다시 들어온다 #}
-<table>
+<div class="table-scroll">
+<table class="data-table">
   <caption>실행할 크롤러</caption>
   <thead>
     <tr>
-      <th scope="col">번호</th>
+      <th scope="col" class="num">번호</th>
       <th scope="col">이름</th>
       <th scope="col">상태</th>
       <th scope="col">리스트 URL</th>
@@ -13,10 +14,10 @@
   <tbody>
     {% for crawler in crawlers %}
     <tr>
-      <td>{{ crawler.id }}</td>
-      <td>{{ crawler.name }}</td>
+      <td class="num">{{ crawler.id }}</td>
+      <td class="cell-text">{{ crawler.name }}</td>
       <td>{{ crawler.status }}</td>
-      <td>{{ crawler.list_url }}</td>
+      <td class="cell-url">{{ crawler.list_url }}</td>
       <td>
         {# 실행은 사이트를 실제로 가져오므로 오래 걸린다. 버튼을 잠가 같은 실행이 두 번 나가지
            않게 하고, 이 자리와 결과 영역 두 곳에 기다리는 중임을 적는다 #}
@@ -38,3 +39,4 @@
     {% endfor %}
   </tbody>
 </table>
+</div>

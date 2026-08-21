@@ -1,9 +1,10 @@
 {# 등록된 크롤러 표. 페이지 로드 때 한 번, 등록·저장 뒤 OOB 로 다시 들어온다 #}
-<table>
+<div class="table-scroll">
+<table class="data-table">
   <caption>등록된 크롤러</caption>
   <thead>
     <tr>
-      <th scope="col">번호</th>
+      <th scope="col" class="num">번호</th>
       <th scope="col">이름</th>
       <th scope="col">상태</th>
       <th scope="col">렌더</th>
@@ -15,8 +16,8 @@
   <tbody>
     {% for crawler in crawlers %}
     <tr>
-      <td>{{ crawler.id }}</td>
-      <td>{{ crawler.name }}</td>
+      <td class="num">{{ crawler.id }}</td>
+      <td class="cell-text">{{ crawler.name }}</td>
       <td>{{ crawler.status }}</td>
       <td>
         {{ crawler.render_mode }}
@@ -33,7 +34,7 @@
         </form>
       </td>
       <td>{{ crawler.default_company or "안 적음" }}</td>
-      <td>{{ crawler.list_url }}</td>
+      <td class="cell-url">{{ crawler.list_url }}</td>
       <td>
         <button type="button"
                 hx-get="/ui/crawlers/{{ crawler.id }}/editor"
@@ -48,3 +49,4 @@
     {% endfor %}
   </tbody>
 </table>
+</div>

@@ -14,19 +14,21 @@
 
 {% if generation %}
 <h3>생성 결과</h3>
-<table>
+<div class="table-scroll">
+<table class="data-table">
   <caption>필드별 매칭 수 (생성 시점 HTML 기준)</caption>
-  <thead><tr><th scope="col">필드</th><th scope="col">매칭</th><th scope="col">판정</th></tr></thead>
+  <thead><tr><th scope="col">필드</th><th scope="col" class="num">매칭</th><th scope="col">판정</th></tr></thead>
   <tbody>
     {% for field, count in generation.matches.items() %}
     <tr>
       <td>{{ field }}</td>
-      <td>{{ count }}</td>
+      <td class="num">{{ count }}</td>
       <td>{% if field in generation.failed_fields %}실패{% else %}성공{% endif %}</td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
+</div>
 {% if generation.failed_fields %}
 <p>손으로 고쳐야 하는 필드: {{ generation.failed_fields | join(", ") }}</p>
 {% else %}
