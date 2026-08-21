@@ -1,0 +1,43 @@
+{# 공통 레이아웃. CSS 를 두지 않는다 — 스타일시트도, style 블록도, 인라인 style 도 없다.
+   구조는 시맨틱 태그와 제목 레벨로만 만든다 (2026-08-22 결정, Push 6 선행 조건).
+   HTMX 는 CDN 에서 받는다. 서빙할 자산이 없어 정적 파일 마운트를 만들지 않았다. #}
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}크롤링 자동화{% endblock %}</title>
+  <script src="https://unpkg.com/htmx.org@2.0.7/dist/htmx.min.js"
+          integrity="sha384-ZBXiYtYQ6hJ2Y0ZNoYuI+Nq5MqWBr+chMrS/RkXpNzQCApHEhOt2aY8EJgqwHLkJ"
+          crossorigin="anonymous"></script>
+</head>
+<body>
+  <header>
+    <h1>크롤링 자동화 운영 화면</h1>
+    <nav>
+      <ul>
+        {% for path, label in nav %}
+        <li>
+          {% if path == active %}
+          <strong><a href="{{ path }}" aria-current="page">{{ label }}</a></strong>
+          {% else %}
+          <a href="{{ path }}">{{ label }}</a>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </nav>
+  </header>
+
+  <main>
+    <h2>{% block heading %}{% endblock %}</h2>
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer>
+    <hr>
+    {# HTMX 가 붙었는지 화면에서 바로 보이는 자리. 로드되면 이 문장이 갈린다 #}
+    <p id="health" hx-get="/ui/health" hx-trigger="load" hx-swap="innerHTML">연결 상태: 확인 전</p>
+  </footer>
+</body>
+</html>

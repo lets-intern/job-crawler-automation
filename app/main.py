@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app import db
-from app.api import crawlers, rules, settings, workflows
+from app.api import crawlers, rules, settings, ui, workflows
 from app.crawler.fetcher import close_fetcher
 from app.scheduler import get_scheduler, shutdown_scheduler
 
@@ -31,6 +31,8 @@ app.include_router(crawlers.router)
 app.include_router(workflows.router)
 app.include_router(settings.router)
 app.include_router(rules.router)
+# 화면. API 라우터 뒤에 붙인다 — `/api/...` 가 먼저 잡힌다
+app.include_router(ui.router)
 
 
 @app.get("/health")
