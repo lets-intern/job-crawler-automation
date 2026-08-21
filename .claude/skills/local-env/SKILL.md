@@ -31,7 +31,7 @@ docker compose ps 2>/dev/null
 
 ```bash
 # start
-uv run uvicorn app.main:app --reload --port 8000
+.venv/bin/python -m uvicorn app.main:app --reload --port 8000
 
 # docker
 docker compose up -d --build
@@ -59,6 +59,6 @@ docker compose up -d --build
 
 ## 실패했을 때
 
-포트 점유면 무엇이 잡고 있는지부터 본다. 임포트 에러면 `uv sync` 를 먼저 확인한다.
-`.env` 에 `ANTHROPIC_API_KEY` 가 없으면 서버는 뜨지만 셀렉터 생성만 실패한다 — 서버 문제로
+포트 점유면 무엇이 잡고 있는지부터 본다. 임포트 에러면 `.venv` 에 의존성이 깔렸는지부터 확인한다 (`.venv/bin/pip install -e .`).
+`.env` 에 `GEMINI_API_KEY` 가 없으면 서버는 뜨지만 셀렉터 생성만 실패한다 — 서버 문제로
 오진하기 쉬운 지점이다.
