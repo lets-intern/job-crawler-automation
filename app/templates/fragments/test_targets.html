@@ -3,12 +3,11 @@
    모드는 두 자리로 갈린다. "저장 모드" 열은 `crawlers.render_mode` 를 바꾸고, 실행 폼의
    "가져오는 방식" 은 이번 실행 한 번만 다른 경로로 돈다. 비교가 이 화면의 일이라 시험할
    때마다 저장값이 따라 바뀌면 안 된다 (`app/api/ui_tests.py`). #}
-{% if notice is defined and notice %}
-<p class="just-changed rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-700">{{ notice }}</p>
-{% endif %}
 <div class="table-scroll">
 <table class="data-table">
-  <caption>실행할 크롤러</caption>
+  {# 방금 한 일은 캡션 자리에 적는다. 표 위에 문단으로 끼워 넣으면 그 높이만큼 표가 내려가고,
+     그것이 13.3 에서 고친 "표가 밀린다" 와 같은 문제다. 캡션은 늘 있는 줄이라 안 밀린다 #}
+  <caption>실행할 크롤러{% if notice is defined and notice %} — <span class="just-changed font-medium text-slate-700">{{ notice }}</span>{% endif %}</caption>
   <thead>
     <tr>
       <th scope="col" class="num">번호</th>
