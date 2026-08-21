@@ -434,7 +434,12 @@ async def test_run(
     async with open_source(row["render_mode"], fetcher) as source:
         result = await run_once(
             conn,
-            RunTarget(list_url=row["list_url"], selectors=selectors, crawler_id=crawler_id),
+            RunTarget(
+                list_url=row["list_url"],
+                selectors=selectors,
+                crawler_id=crawler_id,
+                render_mode=row["render_mode"],
+            ),
             fetcher=source,
             limit=limit,
         )

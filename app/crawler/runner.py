@@ -41,8 +41,9 @@ from app.crawler.failures import (
 )
 from app.crawler.fetcher import FetchPolicy, PageSource, get_fetcher
 from app.crawler.hashing import content_hash
-from app.crawler.parser import ListItem, parse_detail, parse_list
-from app.crawler.playwright import open_source
+from app.crawler.parser import ListItem, SelectorMissError, parse_detail, parse_list
+from app.crawler.playwright import STATIC, open_source
+from app.crawler.shell import promotion_hint
 from app.normalize.engine import NormalizeError, insert_normalized, load_rules
 from app.normalize.rules import Rule
 from app.selector.schema import SelectorSchemaError, SelectorSet, validate_selectors
@@ -63,6 +64,8 @@ class RunTarget:
     selectors: SelectorSet
     workflow_id: int | None = None
     crawler_id: int | None = None
+    # 어느 경로로 가져왔는가. 0개 매칭의 사유를 어떻게 적을지가 이 값에 갈린다
+    render_mode: str = STATIC
 
     def __post_init__(self) -> None:
         if self.workflow_id is None and self.crawler_id is None:
@@ -158,6 +161,7 @@ async def run_workflow(
                 list_url=row["list_url"],
                 selectors=selectors,
                 workflow_id=workflow_id,
+                render_mode=row["render_mode"],
             ),
             fetcher=source,
             limit=limit,
@@ -304,7 +308,15 @@ async def _crawl(
 ) -> None:
     rules, rules_error = _load_rules(conn)
     page = await fetcher.fetch(target.list_url)
-    parsed = parse_list(page.text, target.selectors.list, page.url)
+    try:
+        parsed = parse_list(page.text, target.selectors.list, page.url)
+    except SelectorMissError as exc:
+        # 0개 매칭이 마크업 변경인지 JS 렌더인지를 사유에 적는다. 승격은 운영자가 정하므로
+        # 여기서 render_mode 를 바꾸지 않는다 (`app/crawler/shell.py`).
+        hint = promotion_hint(page.text, target.render_mode)
+        if hint is None:
+            raise
+        raise SelectorMissError(f"{exc}. {hint}") from exc
 
     result.matched = parsed.matched
     for miss in parsed.failures:
