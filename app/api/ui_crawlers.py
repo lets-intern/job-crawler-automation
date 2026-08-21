@@ -42,7 +42,8 @@ def error_detail(exc: HTTPException) -> dict[str, str]:
     return {"reason": str(exc.status_code), "message": str(detail)}
 
 
-def _crawler_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+def crawler_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """등록된 크롤러 전부. 테스트 실행 화면도 같은 목록을 쓴다."""
     return list(conn.execute(_LIST_QUERY).fetchall())
 
 
@@ -75,7 +76,7 @@ def _result(
         notice=notice,
         error=error,
         generation=generation,
-        crawlers=_crawler_rows(conn) if conn is not None else None,
+        crawlers=crawler_rows(conn) if conn is not None else None,
     )
 
 
@@ -85,7 +86,7 @@ def crawler_list_fragment(
     conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
 ) -> HTMLResponse:
     """등록된 크롤러 표. 페이지가 로드될 때와 등록 직후에 갈린다."""
-    return render(request, "fragments/crawler_list.html", crawlers=_crawler_rows(conn))
+    return render(request, "fragments/crawler_list.html", crawlers=crawler_rows(conn))
 
 
 @router.post("/ui/crawlers", response_class=HTMLResponse)

@@ -1,0 +1,35 @@
+{# 실행 대상 목록. 실행 뒤에는 크롤러 상태(draft -> tested)가 바뀌므로 OOB 로 다시 들어온다 #}
+<table>
+  <caption>실행할 크롤러</caption>
+  <thead>
+    <tr>
+      <th scope="col">번호</th>
+      <th scope="col">이름</th>
+      <th scope="col">상태</th>
+      <th scope="col">리스트 URL</th>
+      <th scope="col">동작</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for crawler in crawlers %}
+    <tr>
+      <td>{{ crawler.id }}</td>
+      <td>{{ crawler.name }}</td>
+      <td>{{ crawler.status }}</td>
+      <td>{{ crawler.list_url }}</td>
+      <td>
+        <form hx-post="/ui/crawlers/{{ crawler.id }}/test-run"
+              hx-target="#test-result"
+              hx-swap="innerHTML">
+          <label for="limit-{{ crawler.id }}">상세 건수</label>
+          <input id="limit-{{ crawler.id }}" name="limit" type="number" value="3" min="1" max="20"
+                 size="3">
+          <button type="submit">테스트 실행</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5">등록된 크롤러가 없다</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
