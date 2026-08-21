@@ -159,9 +159,7 @@ async def test_failed_fields_change_and_working_fields_stay() -> None:
 
 async def test_a_model_answer_that_rewrites_a_working_field_is_discarded() -> None:
     """모델이 맞던 필드를 다른 값으로 내놔도 버린다. 프롬프트가 아니라 코드가 보장한다."""
-    outcome, _ = await repair(
-        response(detail={"title": "h1", "body": "body", "deadline": "span"})
-    )
+    outcome, _ = await repair(response(detail={"title": "h1", "body": "body", "deadline": "span"}))
 
     assert outcome.selectors.detail.title == "h2.view-title"
     assert outcome.selectors.detail.body == "div.view-body"

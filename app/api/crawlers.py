@@ -185,6 +185,9 @@ class RepairOut(BaseModel):
     targets: list[str]
     repaired: list[str]
     unresolved: list[str]
+    # 고친 뒤에도 실패로 남은 필드 전부. `unresolved` 는 이번에 고치려 한 것만이라, 대상이
+    # 아니었던 실패(상세 HTML 이 없어 판정을 건너뛴 것 말고)가 여기서만 보인다
+    failed_fields: list[str]
     skipped_fields: list[str]
     changes: list[SelectorChangeOut]
     notes: list[str]
@@ -622,6 +625,7 @@ async def repair_selectors(
         targets=outcome.targets,
         repaired=outcome.repaired,
         unresolved=outcome.unresolved,
+        failed_fields=[name for name in outcome.after.failed if name not in skipped],
         skipped_fields=skipped,
         changes=[SelectorChangeOut(**vars(change)) for change in outcome.changes],
         notes=outcome.notes,

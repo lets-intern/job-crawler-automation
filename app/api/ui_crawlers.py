@@ -68,6 +68,7 @@ def _result(
     notice: str = "",
     error: dict[str, str] | None = None,
     generation: dict[str, Any] | None = None,
+    repair: dict[str, Any] | None = None,
 ) -> HTMLResponse:
     """결과 영역 하나를 렌더한다. `conn` 을 주면 크롤러 목록도 함께 갱신한다(OOB)."""
     return render(
@@ -79,6 +80,7 @@ def _result(
         notice=notice,
         error=error,
         generation=generation,
+        repair=repair,
         crawlers=crawler_rows(conn) if conn is not None else None,
     )
 
@@ -150,6 +152,73 @@ async def create_crawler_fragment(
             "usage": created.usage,
         },
     )
+
+
+@router.post("/ui/crawlers/{crawler_id}/repair", response_class=HTMLResponse)
+async def repair_selectors_fragment(
+    request: Request,
+    crawler_id: int,
+    conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
+    repair: Annotated[crawlers.RepairFn, Depends(crawlers.get_repairer)],
+) -> HTMLResponse:
+    """AI 수정 버튼. 실패한 필드만 모델에게 다시 고르게 한다.
+
+    저장하지 않는다. 고치기 전과 후를 나란히 보여주고, 고친 셀렉터를 편집기에 올려 둘 뿐이다.
+    반영하는 것은 운영자가 누르는 "셀렉터 저장" 이고, 그 버튼이 `.claude/rules/llm.md` 가
+    말하는 "요청" 이다. 누르기 전까지 `crawlers.selectors_json` 은 그대로다.
+
+    실패하면 사유가 결과 영역에 남는다. Gemini 한도 초과(429)도 메시지에 코드가 들어 있어
+    화면에 그대로 보인다.
+    """
+    try:
+        result = await crawlers.repair_selectors(crawler_id, conn, repair)
+    except HTTPException as exc:
+        # 편집기를 유지하려면 지금 저장된 셀렉터를 다시 올려야 한다. 실패했다고 편집기가
+        # 사라지면 운영자는 손으로 고칠 자리를 잃는다
+        row = conn.execute(
+            "SELECT status, selectors_json FROM crawlers WHERE id = ?", (crawler_id,)
+        ).fetchone()
+        return _result(
+            request,
+            crawler_id=crawler_id if row is not None else None,
+            status=str(row["status"]) if row is not None else "",
+            selectors_json=_pretty(row["selectors_json"] or "") if row is not None else "",
+            error=error_detail(exc),
+        )
+
+    return _result(
+        request,
+        crawler_id=result.id,
+        status=result.status,
+        # 고친 셀렉터를 편집기에 올린다. 저장은 아직이다
+        selectors_json=json.dumps(result.selectors.model_dump(), ensure_ascii=False, indent=2),
+        notice=_repair_notice(result),
+        repair={
+            "before_matches": result.before_matches,
+            "after_matches": result.after_matches,
+            "targets": result.targets,
+            "repaired": result.repaired,
+            "unresolved": result.unresolved,
+            "failed_fields": result.failed_fields,
+            "skipped_fields": result.skipped_fields,
+            "changes": result.changes,
+            "notes": result.notes,
+            "usage": result.usage,
+        },
+    )
+
+
+def _repair_notice(result: crawlers.RepairOut) -> str:
+    """무엇을 고쳤고 무엇이 남았는지. 저장 전이라는 사실을 매번 적는다."""
+    parts = [f"크롤러 {result.id} 의 실패한 필드 {len(result.targets)}개를 모델에게 다시 물었다."]
+    if result.repaired:
+        parts.append(f"고쳐진 필드: {', '.join(result.repaired)}.")
+    if result.unresolved:
+        parts.append(f"고친 뒤에도 실패로 남은 필드: {', '.join(result.unresolved)}.")
+    if not result.changes:
+        parts.append("모델이 바꾼 셀렉터가 없다.")
+    parts.append("아직 저장하지 않았다. 반영하려면 아래에서 셀렉터 저장을 누른다.")
+    return " ".join(parts)
 
 
 @router.put("/ui/crawlers/{crawler_id}/render-mode", response_class=HTMLResponse)
