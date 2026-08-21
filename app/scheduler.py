@@ -128,20 +128,10 @@ def get_gate() -> RunGate:
     return _gate
 
 
-async def _run(workflow_id: int) -> None:
-    """잡 하나의 기본 실행 경로. 상한을 얻은 뒤에 연결을 연다."""
-    async with get_gate().slot():
-        conn = db.connect()
-        try:
-            await run_workflow(conn, workflow_id)
-        finally:
-            conn.close()
-
-
 class WorkflowScheduler:
     """`workflows` 를 APScheduler 잡으로 옮기는 얇은 층.
 
-    `runner` 는 테스트가 갈아끼운다. 운영에서는 `_run` 이다.
+    `runner` 는 테스트가 갈아끼운다. 운영에서는 `_execute` 다.
     """
 
     def __init__(
@@ -151,8 +141,22 @@ class WorkflowScheduler:
         runner: RunFn | None = None,
     ) -> None:
         self._scheduler = scheduler or AsyncIOScheduler(timezone="UTC")
-        self._runner = runner or _run
+        self._runner = runner or self._execute
         self._scheduler.add_listener(_log_skipped_tick, EVENT_JOB_MAX_INSTANCES)
+
+    async def _execute(self, workflow_id: int) -> None:
+        """잡 하나의 기본 실행 경로. 상한을 얻은 뒤에 연결을 연다.
+
+        끝나고 다시 `sync()` 한다. 연속 실패로 자동 중지된 워크플로우는 테이블에서 `paused` 가
+        되는데, 그 사실이 잡 목록까지 오지 않으면 멈춘 워크플로우가 계속 깨어난다.
+        """
+        async with get_gate().slot():
+            conn = db.connect()
+            try:
+                await run_workflow(conn, workflow_id)
+            finally:
+                self.sync(conn)
+                conn.close()
 
     @property
     def scheduler(self) -> AsyncIOScheduler:

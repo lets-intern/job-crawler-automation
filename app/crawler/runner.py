@@ -26,7 +26,14 @@ import sqlite3
 from dataclasses import dataclass, field
 
 from app.config import get_settings
-from app.crawler.failures import FAILED, ZERO_ITEM_MESSAGE, Failure, classify, run_status
+from app.crawler.failures import (
+    FAILED,
+    SUCCESS,
+    ZERO_ITEM_MESSAGE,
+    Failure,
+    classify,
+    run_status,
+)
 from app.crawler.fetcher import Fetcher, get_fetcher
 from app.crawler.hashing import content_hash
 from app.crawler.parser import ListItem, parse_detail, parse_list
@@ -126,16 +133,86 @@ async def run_workflow(
     except (json.JSONDecodeError, SelectorSchemaError) as exc:
         # 저장된 셀렉터가 실행할 수 있는 상태가 아니다. transport·selector_miss·parse 중
         # 어느 것도 아니므로 error_class 는 비워 두고 사유만 남긴다.
-        return _config_failure(conn, workflow_id, f"셀렉터를 읽을 수 없다: {exc}")
+        result = _config_failure(conn, workflow_id, f"셀렉터를 읽을 수 없다: {exc}")
+        _record_outcome(conn, workflow_id, result)
+        return result
 
     bound = timeout_seconds if timeout_seconds is not None else get_settings().run_timeout_seconds
-    return await run_once(
+    result = await run_once(
         conn,
         RunTarget(list_url=row["list_url"], selectors=selectors, workflow_id=workflow_id),
         fetcher=fetcher,
         limit=limit,
         timeout_seconds=bound,
     )
+    _record_outcome(conn, workflow_id, result)
+    return result
+
+
+def _record_outcome(conn: sqlite3.Connection, workflow_id: int, result: RunResult) -> None:
+    """실행 결과를 `workflows` 에 반영한다. 연속 실패가 임계치에 닿으면 자동으로 멈춘다.
+
+    `success_count` 와 `fail_count` 는 실행 횟수다. 항목 수는 `crawl_runs` 가 이미 들고 있고,
+    화면 배지가 물어보는 것은 "이 워크플로우가 몇 번 실패했나" 이기 때문이다.
+
+    성공이 아닌 것은 전부 실패로 센다. `timeout` 도 마찬가지다 — 끝나지 못한 실행을 성공으로
+    세면 자동 중지가 영원히 걸리지 않는다.
+
+    연속 실패 횟수는 따로 저장하지 않고 `crawl_runs` 에서 센다. 세는 곳과 기록하는 곳이 갈리면
+    둘이 어긋나고, 어긋난 쪽을 믿을 근거가 없다.
+    """
+    succeeded = result.status == SUCCESS
+    conn.execute(
+        """
+        UPDATE workflows
+           SET success_count = success_count + ?,
+               fail_count = fail_count + ?,
+               last_run_at = datetime('now')
+         WHERE id = ?
+        """,
+        (1 if succeeded else 0, 0 if succeeded else 1, workflow_id),
+    )
+    if succeeded:
+        return
+
+    row = conn.execute(
+        "SELECT status, auto_stop_threshold FROM workflows WHERE id = ?", (workflow_id,)
+    ).fetchone()
+    threshold = row["auto_stop_threshold"] if row is not None else None
+    # NULL 이면 자동 중지하지 않는다. 이미 멈춘 것을 다시 멈추지도 않는다
+    if threshold is None or row["status"] != "active":
+        return
+
+    streak = _consecutive_failures(conn, workflow_id, int(threshold))
+    if streak < threshold:
+        return
+
+    conn.execute("UPDATE workflows SET status = 'paused' WHERE id = ?", (workflow_id,))
+    logger.warning(
+        "workflow %s: 연속 %s회 실패로 자동 중지한다 (임계치 %s)", workflow_id, streak, threshold
+    )
+
+
+def _consecutive_failures(conn: sqlite3.Connection, workflow_id: int, limit: int) -> int:
+    """마지막 실행부터 거슬러 올라가며 성공이 나올 때까지 센다.
+
+    아직 끝나지 않은 실행(`status` 가 NULL)은 성공도 실패도 아니라 세지 않는다.
+    """
+    rows = conn.execute(
+        """
+        SELECT status FROM crawl_runs
+         WHERE workflow_id = ? AND status IS NOT NULL
+         ORDER BY id DESC LIMIT ?
+        """,
+        (workflow_id, limit),
+    ).fetchall()
+
+    streak = 0
+    for row in rows:
+        if row["status"] == SUCCESS:
+            break
+        streak += 1
+    return streak
 
 
 def _config_failure(conn: sqlite3.Connection, workflow_id: int, message: str) -> RunResult:

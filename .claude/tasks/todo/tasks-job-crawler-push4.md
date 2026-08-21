@@ -62,10 +62,10 @@
         - 모든 실행을 `RUN_TIMEOUT_SECONDS` 로 감싼다. 죽어도 `crawl_runs` 행은 `status=timeout` 으로 남는다
         - [x] 4.5.V 검증: 픽스처 기반 pytest 작성 및 통과 — 응답을 지연시키는 스텁으로 실행해 `crawl_runs` 에 `timeout` 행이 남는지 확인
 
-    - [ ] 4.6 실패 임계치와 자동 중지
+    - [x] 4.6 실패 임계치와 자동 중지
         - 실행 결과로 `success_count`·`fail_count`·`last_run_at` 을 갱신한다
         - 연속 실패가 `auto_stop_threshold` 를 넘으면 `paused` 로 바꾼다. NULL 이면 자동 중지하지 않는다
-        - [ ] 4.6.V 검증: 픽스처 기반 pytest 작성 및 통과 — 임계치 3에서 연속 3회 실패 후 `paused`, 중간에 성공이 끼면 유지
+        - [x] 4.6.V 검증: 픽스처 기반 pytest 작성 및 통과 — 임계치 3에서 연속 3회 실패 후 `paused`, 중간에 성공이 끼면 유지
 
     - [ ] 4.7 워크플로우 CRUD API
         - 목록(이름, 대상, 주기, 최근 실행, 누적 성공·실패), 주기 변경, 수동 중지·재개

@@ -30,9 +30,14 @@ SQLite 파일 하나. 경로는 `DATABASE_PATH` 가 정하고 Docker named volum
 | id, crawler_id, name | |
 | interval_minutes | 기본은 느리게. 360분이 대부분에 충분하다 |
 | status | `active` / `paused` |
-| success_count, fail_count | 누적. 화면 배지가 읽는 값 |
-| last_run_at | |
-| auto_stop_threshold | 연속 실패 이 값을 넘으면 자동 `paused`. NULL 이면 자동 중지 안 함 |
+| success_count, fail_count | 누적 실행 횟수. 항목 수가 아니다. 화면 배지가 읽는 값 |
+| last_run_at | 마지막으로 끝난 실행의 시각 |
+| auto_stop_threshold | 연속 실패가 이 값에 닿으면 자동 `paused`. NULL 이면 자동 중지 안 함 |
+
+성공이 아닌 종료는 전부 실패로 센다. `timeout` 도 마찬가지다.
+
+연속 실패 횟수는 컬럼으로 두지 않고 `crawl_runs` 를 마지막부터 거슬러 세어 구한다. 세는 곳과
+기록하는 곳이 갈리면 둘이 어긋나고, 어긋난 쪽을 믿을 근거가 없다.
 
 ### crawl_runs
 
