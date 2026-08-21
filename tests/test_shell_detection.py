@@ -97,6 +97,21 @@ def test_a_shell_page_is_measured_as_a_shell() -> None:
     assert verdict.is_shell is True
 
 
+def test_empty_repeated_elements_are_not_a_list() -> None:
+    """스크립트가 채울 빈 껍데기가 반복되는 사이트가 있다(한화 실측 10개).
+
+    글자 없는 반복을 목록으로 세면 본문 3자짜리 페이지가 목록 있는 페이지로 판정된다.
+    """
+    skeleton = (
+        "<html><body><div id='wrap'>" + "<div class='item'></div>" * 10 + "로딩</div></body></html>"
+    )
+
+    verdict = inspect_static_html(skeleton)
+
+    assert verdict.repeating_items == 0
+    assert verdict.is_shell is True
+
+
 def test_a_real_list_page_is_not_a_shell() -> None:
     verdict = inspect_static_html(LIST_HTML)
 

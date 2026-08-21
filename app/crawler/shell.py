@@ -91,13 +91,17 @@ def _max_repeats(soup: BeautifulSoup) -> int:
 
     혼자 있는 요소는 반복이 아니라 0으로 센다. 어느 페이지에나 요소는 하나쯤 있어서, 그것을
     1로 세면 빈 페이지와 항목 하나짜리 목록이 같은 값이 된다.
+
+    글자가 없는 요소도 세지 않는다. JS 로 그리는 사이트의 정적 HTML 에는 스크립트가 채울
+    빈 껍데기가 여러 개 반복되는 경우가 흔하고(한화 실측 10개), 그것을 목록으로 세면 본문이
+    3자인 페이지가 목록 있는 페이지로 판정된다.
     """
     best = 0
     for parent in soup.find_all(True):
         signatures = Counter(
             (child.name, tuple(_classes(child)))
             for child in parent.find_all(recursive=False)
-            if isinstance(child, Tag)
+            if isinstance(child, Tag) and child.get_text(strip=True)
         )
         if signatures:
             best = max(best, signatures.most_common(1)[0][1])
