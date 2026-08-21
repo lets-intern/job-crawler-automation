@@ -8,6 +8,10 @@
 | `selector_miss` | 가져왔는데 item 이 0개 매칭 | 재시도 금지. 셀렉터 재작성 |
 | `parse` | 매칭은 됐는데 필드를 못 읽었다 | 그 필드 셀렉터만 보정 |
 
+실행 전체가 `RUN_TIMEOUT_SECONDS` 를 넘긴 경우는 종료 상태 `timeout` 으로 따로 남긴다.
+느린 사이트일 수도, 목록이 갑자기 길어진 것일 수도 있어 셋 중 하나로 단정하지 않는다 —
+`error_class` 는 비우고 사유만 적는다.
+
 분류를 모르는 예외는 `parse` 로 밀어 넣지 않는다. `error_class` 를 NULL 로 두고 예외 이름을
 `error_message` 에 남긴다 — 모르는 실패를 아는 실패로 위장하면 그 사이트를 계속 잘못 고치게 된다.
 
@@ -27,6 +31,7 @@ ERROR_CLASSES: tuple[str, ...] = ("transport", "selector_miss", "parse")
 
 SUCCESS = "success"
 FAILED = "failed"
+TIMEOUT = "timeout"
 
 ZERO_ITEM_MESSAGE = "정상 파싱된 항목이 0건이다. 신규 0건인 정상 실행이 아니라 실패다"
 
@@ -46,8 +51,14 @@ def classify(exc: BaseException) -> Failure:
     return Failure(error_class=None, message=f"분류되지 않은 실패({type(exc).__name__}): {exc}")
 
 
-def run_status(success_count: int, failure: Failure | None = None) -> str:
-    """실행 하나의 종료 상태. 실패가 있거나 정상 파싱이 0건이면 `failed` 다."""
+def run_status(success_count: int, failure: Failure | None = None, timed_out: bool = False) -> str:
+    """실행 하나의 종료 상태. 실패가 있거나 정상 파싱이 0건이면 `failed` 다.
+
+    시간 제한에 걸린 실행은 `failed` 가 아니라 `timeout` 이다. 둘을 합치면 "셀렉터가 깨졌다" 와
+    "사이트가 느리다" 가 같은 값으로 남아 조치가 갈리지 않는다.
+    """
+    if timed_out:
+        return TIMEOUT
     if failure is not None or success_count == 0:
         return FAILED
     return SUCCESS

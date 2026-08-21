@@ -58,9 +58,9 @@
           `scheduled_run_times` (복수)다. 리스너가 AttributeError 로 죽어 스킵이 기록되지
           않았다. 리스너와 테스트를 실제 사건 타입으로 고쳤다
 
-    - [ ] 4.5 실행 타임아웃
+    - [x] 4.5 실행 타임아웃
         - 모든 실행을 `RUN_TIMEOUT_SECONDS` 로 감싼다. 죽어도 `crawl_runs` 행은 `status=timeout` 으로 남는다
-        - [ ] 4.5.V 검증: 픽스처 기반 pytest 작성 및 통과 — 응답을 지연시키는 스텁으로 실행해 `crawl_runs` 에 `timeout` 행이 남는지 확인
+        - [x] 4.5.V 검증: 픽스처 기반 pytest 작성 및 통과 — 응답을 지연시키는 스텁으로 실행해 `crawl_runs` 에 `timeout` 행이 남는지 확인
 
     - [ ] 4.6 실패 임계치와 자동 중지
         - 실행 결과로 `success_count`·`fail_count`·`last_run_at` 을 갱신한다

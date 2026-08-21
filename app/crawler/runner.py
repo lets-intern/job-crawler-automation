@@ -19,11 +19,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import sqlite3
 from dataclasses import dataclass, field
 
+from app.config import get_settings
 from app.crawler.failures import FAILED, ZERO_ITEM_MESSAGE, Failure, classify, run_status
 from app.crawler.fetcher import Fetcher, get_fetcher
 from app.crawler.hashing import content_hash
@@ -94,11 +96,15 @@ async def run_workflow(
     *,
     fetcher: Fetcher | None = None,
     limit: int | None = None,
+    timeout_seconds: float | None = None,
 ) -> RunResult:
     """스케줄러가 부르는 진입점. 무엇을 실행할지는 매번 테이블에서 다시 읽는다.
 
     `workflows` 와 `crawlers` 가 진실이다. 잡을 등록할 때의 값을 스케줄러가 들고 있다가
     쓰지 않는다 (`.claude/rules/crawling.md`).
+
+    실행은 `RUN_TIMEOUT_SECONDS` 로 감싼다. 끝나지 않는 실행 하나가 동시 실행 자리를 영원히
+    붙들고 있으면 나머지 워크플로우가 전부 멈춘다.
 
     셀렉터가 없거나 스키마에 맞지 않으면 실행하지 못하지만, 그것도 종료 경로다.
     `crawl_runs` 행을 실패로 남긴다.
@@ -122,11 +128,13 @@ async def run_workflow(
         # 어느 것도 아니므로 error_class 는 비워 두고 사유만 남긴다.
         return _config_failure(conn, workflow_id, f"셀렉터를 읽을 수 없다: {exc}")
 
+    bound = timeout_seconds if timeout_seconds is not None else get_settings().run_timeout_seconds
     return await run_once(
         conn,
         RunTarget(list_url=row["list_url"], selectors=selectors, workflow_id=workflow_id),
         fetcher=fetcher,
         limit=limit,
+        timeout_seconds=bound,
     )
 
 
@@ -146,15 +154,38 @@ async def run_once(
     *,
     fetcher: Fetcher | None = None,
     limit: int | None = None,
+    timeout_seconds: float | None = None,
 ) -> RunResult:
-    """1회 실행. 예외를 밖으로 던지지 않고 실패한 `RunResult` 로 돌려준다."""
+    """1회 실행. 예외를 밖으로 던지지 않고 실패한 `RunResult` 로 돌려준다.
+
+    `timeout_seconds` 가 있으면 그 시간을 넘긴 실행은 중단되고 `status=timeout` 으로 남는다.
+    None 이면 시간 제한을 걸지 않는다 — 항목 수를 정해 놓고 도는 테스트 실행이 그렇다.
+
+    시간 제한에 걸려도 그때까지 적재한 `raw_jobs` 는 지우지 않는다. append-only 라 되돌리지
+    않고, 다음 실행이 같은 공고를 다시 넣지도 않는다 (`.claude/rules/data-safety.md`).
+    """
     client = fetcher or get_fetcher()
     run_id = _start_run(conn, target)
     result = RunResult(run_id=run_id, status="")
     failure: Failure | None = None
+    timed_out = False
 
     try:
-        await _crawl(conn, target, client, limit, result)
+        # asyncio.timeout 은 안쪽의 취소를 경계에서 TimeoutError 로 바꿔 준다. 그래서 아래
+        # BaseException 절(밖에서 온 취소)과 시간 제한이 섞이지 않는다
+        async with asyncio.timeout(timeout_seconds) as bound:
+            await _crawl(conn, target, client, limit, result)
+    except TimeoutError as exc:
+        # 제한을 넘겨서 끊긴 것인지, 안쪽에서 올라온 TimeoutError 인지 구분한다.
+        # 후자를 timeout 으로 적으면 사이트 문제를 실행 시간 문제로 잘못 읽게 된다
+        if not bound.expired():
+            failure = classify(exc)
+        else:
+            timed_out = True
+            failure = Failure(
+                error_class=None,
+                message=f"실행이 시간 제한 {timeout_seconds}초를 넘겨 중단됐다",
+            )
     except Exception as exc:
         failure = classify(exc)
     except BaseException as exc:
@@ -162,7 +193,7 @@ async def run_once(
         _finish_run(conn, result, classify(exc))
         raise
 
-    _finish_run(conn, result, failure)
+    _finish_run(conn, result, failure, timed_out=timed_out)
     return result
 
 
@@ -278,9 +309,15 @@ def _start_run(conn: sqlite3.Connection, target: RunTarget) -> int:
     return int(cursor.lastrowid or 0)
 
 
-def _finish_run(conn: sqlite3.Connection, result: RunResult, failure: Failure | None) -> None:
+def _finish_run(
+    conn: sqlite3.Connection,
+    result: RunResult,
+    failure: Failure | None,
+    *,
+    timed_out: bool = False,
+) -> None:
     """종료 상태와 카운트를 확정한다. 정상 파싱 0건은 실패다."""
-    result.status = run_status(result.success_count, failure)
+    result.status = run_status(result.success_count, failure, timed_out=timed_out)
     if failure is not None:
         result.error_class = failure.error_class
         result.error_message = failure.message
