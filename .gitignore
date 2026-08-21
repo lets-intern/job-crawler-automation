@@ -1,0 +1,23 @@
+# 환경
+.env
+.venv/
+__pycache__/
+*.pyc
+
+# 수집 데이터 (커밋 금지)
+*.db
+*.sqlite3
+data/
+debug_snapshots/
+
+# 도구
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.playwright/
+
+# Claude Code 세션 상태
+.claude/.task-running
+
+# OS
+.DS_Store
