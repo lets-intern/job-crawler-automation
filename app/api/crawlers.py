@@ -53,6 +53,7 @@ from app.selector.generator import (
     generate_for_urls,
     generate_from_html,
 )
+from app.selector.repair import RepairOutcome, SelectorRepairError, repair_for_urls
 from app.selector.schema import SelectorSchemaError, SelectorSet, validate_selectors
 
 router = APIRouter(prefix="/api/crawlers", tags=["crawlers"])
@@ -65,6 +66,10 @@ DEFAULT_RENDER_MODE = STATIC
 # 인자는 리스트 URL, 상세 URL, render_mode 다. 어느 경로로 가져올지는 크롤러마다 다르므로
 # 생성 함수가 매번 받는다.
 GenerateFn = Callable[[str, str, str], Awaitable[GenerationResult]]
+
+# 인자는 리스트 URL, 상세 URL, render_mode, 지금 저장된 셀렉터다. 고치기는 저장된 셀렉터를
+# 기준으로만 돈다 — 무엇이 이미 맞는지 알아야 그것을 피해 고른다.
+RepairFn = Callable[[str, str, str, SelectorSet], Awaitable[RepairOutcome]]
 
 
 class CrawlerCreate(BaseModel):
@@ -151,6 +156,41 @@ class SelectorsOut(BaseModel):
     selectors: SelectorSet
 
 
+class SelectorChangeOut(BaseModel):
+    """필드 하나가 어떻게 바뀌었는지. 화면이 전/후를 나란히 적는 데 쓴다."""
+
+    name: str
+    before: str
+    after: str
+
+
+class RepairOut(BaseModel):
+    """AI 수정 결과. **저장하지 않는다.**
+
+    `saved` 가 늘 거짓인 것은 자리를 채우려는 필드가 아니다. 이 응답을 읽는 쪽이 "고쳤으니
+    반영됐겠지"로 넘어가지 않게 하려는 것이다. `crawlers.selectors_json` 을 바꾸는 경로는
+    지금까지처럼 `PUT /api/crawlers/{id}/selectors` 하나뿐이고, 운영자가 전/후를 보고 저장을
+    누른다 (`.claude/rules/llm.md`).
+
+    `before_matches` 와 `after_matches` 는 **같은 HTML** 에 돌린 판정이다. 그래야 매칭
+    개수의 차이가 셀렉터 변화 때문이라고 말할 수 있다.
+    """
+
+    id: int
+    status: str
+    saved: bool
+    selectors: SelectorSet
+    before_matches: dict[str, int]
+    after_matches: dict[str, int]
+    targets: list[str]
+    repaired: list[str]
+    unresolved: list[str]
+    skipped_fields: list[str]
+    changes: list[SelectorChangeOut]
+    notes: list[str]
+    usage: UsageOut
+
+
 class PreviewItem(BaseModel):
     """추출된 값 그대로. 정제 전이라 공백과 줄바꿈이 섞여 있는 것이 정상이다."""
 
@@ -215,6 +255,23 @@ def get_generator() -> GenerateFn:
             return await generate_for_urls(list_url, detail_url, source=source)
 
     return generate
+
+
+def get_repairer() -> RepairFn:
+    """기본 고치기 경로. 테스트는 이 의존성을 갈아끼운다.
+
+    가져오기는 생성과 같은 경로다. HTML 은 어디에도 보관하지 않으므로 고칠 때 다시 가져오고,
+    그 요청도 공용 fetch 클라이언트의 딜레이와 robots 아래에서 돈다
+    (`.claude/rules/crawling.md`).
+    """
+
+    async def repair(
+        list_url: str, detail_url: str, render_mode: str, selectors: SelectorSet
+    ) -> RepairOutcome:
+        async with open_source(render_mode, get_fetcher()) as source:
+            return await repair_for_urls(list_url, detail_url, selectors, source=source)
+
+    return repair
 
 
 @router.post("", response_model=CrawlerOut, status_code=201)
@@ -483,6 +540,93 @@ def update_selectors(
         (selectors.to_json(), crawler_id),
     )
     return SelectorsOut(id=crawler_id, status=row["status"], selectors=selectors)
+
+
+@router.post("/{crawler_id}/repair", response_model=RepairOut)
+async def repair_selectors(
+    crawler_id: int,
+    conn: Annotated[sqlite3.Connection, Depends(get_connection)],
+    repair: Annotated[RepairFn, Depends(get_repairer)],
+) -> RepairOut:
+    """실패한 필드만 모델에게 다시 고르게 한다. **저장하지 않는다.**
+
+    저장된 셀렉터를 기준으로, 저장된 URL 을 지금 다시 가져와 판정하고, 그 자리에서 실패한
+    필드만 고친다. 고친 셀렉터도 같은 HTML 에 다시 돌려 필드별 매칭 개수를 낸다 — 전과 후가
+    같은 HTML 에서 나온 숫자여야 차이가 셀렉터 때문이라고 말할 수 있다.
+
+    결과는 응답으로만 나간다. `crawlers.selectors_json` 은 이 호출로 바뀌지 않는다. 운영자가
+    전/후를 보고 "셀렉터 저장" 을 누르는 것이 `.claude/rules/llm.md` 가 말하는 그 요청이고,
+    누르기 전까지 DB 는 그대로다.
+
+    고친 뒤에도 실패가 남으면 `unresolved` 에 그대로 적는다. 억지로 성공으로 만들지 않는다.
+    """
+    row = conn.execute(
+        "SELECT list_url, detail_url, selectors_json, status, render_mode "
+        "FROM crawlers WHERE id = ?",
+        (crawler_id,),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail={"message": f"크롤러 {crawler_id} 가 없다"})
+    if not row["selectors_json"]:
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": "no_selectors", "message": "셀렉터가 없는 크롤러는 고칠 수 없다"},
+        )
+
+    try:
+        selectors = validate_selectors(json.loads(row["selectors_json"]))
+    except (json.JSONDecodeError, SelectorSchemaError) as exc:
+        # 저장된 셀렉터가 스키마에 맞지 않는다. 추측해서 고치지 않고 그대로 알린다
+        raise HTTPException(
+            status_code=409, detail={"reason": "invalid_selectors", "message": str(exc)}
+        ) from exc
+
+    detail_url = str(row["detail_url"] or "")
+    try:
+        outcome = await repair(str(row["list_url"]), detail_url, str(row["render_mode"]), selectors)
+    except RobotsDisallowedError as exc:
+        raise HTTPException(
+            status_code=400, detail={"reason": "robots", "message": str(exc)}
+        ) from exc
+    except FetchError as exc:
+        raise HTTPException(
+            status_code=502, detail={"reason": exc.error_class, "message": str(exc)}
+        ) from exc
+    except SelectorRepairError as exc:
+        # 고칠 것이 없는 것은 서버 실패가 아니라 상태다. 나머지는 생성과 같은 사유로 갈린다
+        status = 409 if exc.reason == "nothing_to_repair" else 502
+        raise HTTPException(
+            status_code=status, detail={"reason": exc.reason, "message": str(exc)}
+        ) from exc
+    except SelectorGenerationError as exc:
+        # 호출 경로를 생성과 공유하므로 호출 실패도 같은 예외로 온다. Gemini 한도 초과(429)가
+        # 여기로 오고, 그 코드와 메시지가 그대로 화면까지 간다
+        status = 500 if exc.reason == "no_api_key" else 502
+        raise HTTPException(
+            status_code=status, detail={"reason": exc.reason, "message": str(exc)}
+        ) from exc
+
+    after_matches = outcome.after.summary()
+    unverified = _skipped_detail_fields(after_matches, detail_url or None)
+    absent = [name for name in outcome.after.skipped if name not in unverified]
+    skipped = [name for name in after_matches if name in unverified or name in absent]
+
+    return RepairOut(
+        id=crawler_id,
+        status=str(row["status"]),
+        # 이 호출은 저장하지 않는다. 읽는 쪽이 반영됐다고 넘겨짚지 않게 응답에 적어 둔다
+        saved=False,
+        selectors=outcome.selectors,
+        before_matches=outcome.before.summary(),
+        after_matches=after_matches,
+        targets=outcome.targets,
+        repaired=outcome.repaired,
+        unresolved=outcome.unresolved,
+        skipped_fields=skipped,
+        changes=[SelectorChangeOut(**vars(change)) for change in outcome.changes],
+        notes=outcome.notes,
+        usage=UsageOut(**vars(outcome.usage)),
+    )
 
 
 @router.post("/{crawler_id}/test-run", response_model=TestRunOut)
