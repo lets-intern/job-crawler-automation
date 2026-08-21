@@ -46,7 +46,7 @@ from app.crawler.playwright import STATIC, open_source
 from app.crawler.shell import promotion_hint
 from app.normalize.engine import NormalizeError, insert_normalized, load_rules
 from app.normalize.rules import Rule
-from app.selector.schema import SelectorSchemaError, SelectorSet, validate_selectors
+from app.selector.schema import DETAIL_FIELDS, SelectorSchemaError, SelectorSet, validate_selectors
 
 logger = logging.getLogger(__name__)
 
@@ -356,12 +356,18 @@ async def _collect(
     conn: sqlite3.Connection, target: RunTarget, item: ListItem, fetcher: PageSource
 ) -> ItemResult:
     """항목 하나를 처리한다. 아는 공고면 상세를 가져오지 않는다."""
-    if _is_known(conn, target.workflow_id, "source_url", item.link):
-        return ItemResult(source_url=item.link, state=KNOWN, fields={})
+    if item.detail_absent:
+        # 상세로 갈 길이 없는 사이트다. 목록에서 읽은 것만으로 항목을 만든다.
+        # 같은 주소를 여러 항목이 공유하므로 `source_url` 로는 중복을 가릴 수 없고,
+        # content_hash 가 title·deadline 으로 가른다.
+        record = _record(item, dict.fromkeys(DETAIL_FIELDS, ""))
+    else:
+        if _is_known(conn, target.workflow_id, "source_url", item.link):
+            return ItemResult(source_url=item.link, state=KNOWN, fields={})
 
-    page = await fetcher.fetch(item.link)
-    detail = parse_detail(page.text, target.selectors.detail)
-    record = _record(item, detail.fields)
+        page = await fetcher.fetch(item.link)
+        detail = parse_detail(page.text, target.selectors.detail)
+        record = _record(item, detail.fields)
     digest = content_hash(record)
 
     if target.workflow_id is None:

@@ -79,6 +79,8 @@ class ListItem:
     date: str
     # 셀렉터가 없거나 못 찾으면 빈 문자열이다. 회사명이 없는 사이트가 흔하다
     company: str = ""
+    # 상세 페이지가 없는 사이트다. 실행이 상세를 따라가지 않는다
+    detail_absent: bool = False
 
 
 @dataclass(frozen=True)
@@ -96,8 +98,24 @@ class DetailParseResult:
     missing: list[str]
 
 
+def list_only(selectors: ListSelectors) -> bool:
+    """상세로 갈 길이 아예 없는 사이트인가.
+
+    `link` 와 `link_template` 이 둘 다 비어 있으면 모델이 "이 목록에는 상세 링크가 없다" 고
+    답한 것이다. 삼성처럼 상세를 JS 로 그려 별도 주소가 없는 사이트가 그렇다.
+
+    셀렉터가 비어 있는 것과, 셀렉터가 있는데 0개 매칭인 것은 다르다. 앞의 것은 없는 것이고
+    뒤의 것은 실패다 — 화면의 `건너뜀` / `실패` 구분과 같은 기준이다.
+    """
+    return not selectors.link.strip() and not selectors.link_template.strip()
+
+
 def parse_list(html: str, selectors: ListSelectors, base_url: str) -> ListParseResult:
-    """목록 페이지에서 항목을 뽑는다. 0개 매칭은 `SelectorMissError` 다."""
+    """목록 페이지에서 항목을 뽑는다. 0개 매칭은 `SelectorMissError` 다.
+
+    상세 링크가 없는 사이트는 목록에서 읽은 것만으로 항목을 만든다. `link` 는 목록 페이지
+    주소가 되고, 상세는 따라가지 않는다.
+    """
     soup = BeautifulSoup(html, "html.parser")
     nodes = _select(soup, selectors.item, "list.item")
     if not nodes:
@@ -107,6 +125,7 @@ def parse_list(html: str, selectors: ListSelectors, base_url: str) -> ListParseR
 
     items: list[ListItem] = []
     failures: list[FieldFailure] = []
+    link_absent = list_only(selectors)
 
     for index, node in enumerate(nodes):
         title = _text(node, selectors.title, f"list.title[{index}]")
@@ -123,7 +142,7 @@ def parse_list(html: str, selectors: ListSelectors, base_url: str) -> ListParseR
                     index=index, field="title", message="셀렉터가 항목 안에서 값을 찾지 못했다"
                 )
             )
-        if not link.ok:
+        if not link.ok and not link_absent:
             # 링크는 왜 못 뽑았는지가 조치를 가른다. href 가 없는 것과 속성이 없는 것은
             # 다른 문제다 (`app/selector/link.py`)
             problems.append(FieldFailure(index=index, field="link", message=link.reason))
@@ -135,9 +154,12 @@ def parse_list(html: str, selectors: ListSelectors, base_url: str) -> ListParseR
             ListItem(
                 index=index,
                 title=title,
-                link=urljoin(base_url, link.url),
+                # 상세로 갈 길이 없으면 목록 주소를 남긴다. 공고를 가리키는 주소는 그것뿐이고,
+                # 같은 값이어도 content_hash 는 title·deadline·body 로 공고를 가른다
+                link=base_url if link_absent else urljoin(base_url, link.url),
                 date=date,
                 company=company,
+                detail_absent=link_absent,
             )
         )
 
