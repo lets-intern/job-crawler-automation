@@ -36,16 +36,28 @@
 확인하는 자리다. 실행하는 것은 스케줄러가 부르는 것과 같은 `run_workflow()` 이고, 무엇을
 가져올지는 여기서도 테이블이 정한다 — 화면 전용 실행 경로는 만들지 않는다.
 
+**응답은 실행을 기다리지 않는다.** 시작만 하고 바로 돌아온다. 2026-08-22 QA 에서 현대자동차
+1회 실행이 응답까지 1분 56초 걸렸고 브라우저 클릭이 30초에 끊겼다. 실행은 끝났는데 화면은
+실패로 보이는 것이 그 상태다.
+
+그래서 요청 안에서 실행하지 않는다. 라우트는 진행 중 표시를 단 카드를 즉시 돌려주고, 실제
+실행은 자기 연결을 연 백그라운드 작업이 끝까지 간다 — `WorkflowScheduler._execute` 가 잡
+하나를 돌리는 방식과 같다. 요청 연결은 응답과 함께 닫히므로 그 연결을 물려주지 않는다.
+
+진행 상황은 그 카드가 스스로 물어본다. 실행 중인 카드에만 `hx-trigger="every 2s"` 가 붙고,
+끝나면 폴링이 없는 카드가 들어와 그 자리에서 멈춘다. 멈추는 것을 서버가 정하는 이유는 브라우저가
+"끝났는지" 를 알 방법이 없기 때문이다.
+
 스케줄러가 지키는 두 가지를 이 경로도 그대로 지킨다 (`.claude/rules/crawling.md`).
 
 | 지키는 것 | 여기서 어떻게 |
 |---|---|
-| 한 워크플로우에 실행 둘이 동시에 뜨지 않는다 | 진행 중이면 시작하지 않고 그 사실을 줄에 적는다 |
-| 동시 실행 상한 | `RunGate` 로 자리를 얻고, 자리가 없으면 기다리지 않고 건너뛴다 |
+| 한 워크플로우에 실행 둘이 동시에 뜨지 않는다 | 진행 중이면 시작하지 않고 그 사실을 카드에 적는다 |
+| 동시 실행 상한 | 시작 전에 자리를 보고, 자리가 없으면 기다리지 않고 건너뛴다 |
 
 상한에 걸렸을 때 기다리지 않는 것은 화면이기 때문이다. 자리가 날 때까지 문 앞에서 기다리면
-버튼을 누른 사람은 몇 분 동안 아무 대답도 못 받는다. 스케줄러의 tick 스킵과 같은 판단을 하고,
-건너뛴 사실을 그 자리에 적는다.
+버튼을 누른 사람은 진행 중이라는 표시만 보고 몇 분을 보낸다. 스케줄러의 tick 스킵과 같은 판단을
+하고, 건너뛴 사실을 그 자리에 적는다.
 
 실행이 끝나면 `sync()` 한다. 연속 실패로 자동 중지된 워크플로우가 테이블에서는 `paused` 인데
 잡이 남아 있으면 멈춘 워크플로우가 계속 깨어난다.
@@ -53,22 +65,29 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import sqlite3
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import ValidationError
 
+from app import db
 from app.api import crawlers, workflows
 from app.api.ui import render
 from app.api.ui_crawlers import crawler_rows, error_detail
 from app.api.ui_tests import mode_word
+from app.config import get_settings
 from app.crawler.failures import SUCCESS
 from app.crawler.fetcher import FetchPolicy
-from app.crawler.runner import RunResult, consecutive_failures, run_workflow
+from app.crawler.runner import consecutive_failures, run_workflow
 from app.scheduler import RunGate, WorkflowScheduler, get_gate
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["ui"], include_in_schema=False)
 
@@ -81,6 +100,9 @@ RUN_WORDS: dict[str, str] = {SUCCESS: "성공", "timeout": "시간 초과", "fai
 # 이 프로세스가 지금 화면에서 돌리고 있는 워크플로우. `crawl_runs` 행은 브라우저를 띄우고 나서야
 # 생기므로, 그전에 두 번째로 누른 요청을 이것이 막는다
 _running: set[int] = set()
+
+# 실행이 도는 동안 카드에 적는 문구. 시작한 자리와 폴링이 같은 말을 해야 한다
+RUNNING_MESSAGE = "수집이 도는 중이다. 이 카드가 몇 초마다 스스로 갱신하고, 끝나면 결과로 바뀐다"
 
 # 임계치가 없는 워크플로우의 연속 실패를 어디까지 거슬러 세는가. 임계치가 있으면 그 값까지만
 # 세는 것(자동 중지가 보는 것과 같은 값)과 달리, 여기서는 화면에 적을 숫자를 만들 뿐이라
@@ -107,6 +129,10 @@ class CardView:
     reason: str
     # 운영자가 방금 누른 조작의 결과
     message: str
+    # 지금 이 워크플로우의 실행이 돌고 있는가. 카드가 스스로 폴링할지가 여기서 갈린다
+    running: bool = False
+    # 폴링하던 카드가 방금 끝난 실행으로 갈리는 순간인가. 그 한 번만 강조한다
+    settled: bool = False
 
 
 def _streak(conn: sqlite3.Connection, item: workflows.WorkflowItem) -> int:
@@ -136,16 +162,23 @@ def _attention(item: workflows.WorkflowItem, streak: int) -> tuple[str, str]:
     return "", ""
 
 
-def _last_failure(conn: sqlite3.Connection, workflow_id: int) -> str:
-    """가장 최근에 끝난 실행이 실패였으면 그 사유. 성공으로 끝났으면 빈 문자열이다."""
-    row = conn.execute(
+def _last_run(conn: sqlite3.Connection, workflow_id: int) -> sqlite3.Row | None:
+    """가장 최근에 끝난 실행 한 행. 아직 도는 중인 실행은 끝난 실행이 아니다."""
+    row: sqlite3.Row | None = conn.execute(
         """
-        SELECT id, status, error_class, error_message FROM crawl_runs
+        SELECT id, status, success_count, new_count, fail_count, error_class, error_message
+          FROM crawl_runs
          WHERE workflow_id = ? AND status IS NOT NULL
          ORDER BY id DESC LIMIT 1
         """,
         (workflow_id,),
     ).fetchone()
+    return row
+
+
+def _last_failure(conn: sqlite3.Connection, workflow_id: int) -> str:
+    """가장 최근에 끝난 실행이 실패였으면 그 사유. 성공으로 끝났으면 빈 문자열이다."""
+    row = _last_run(conn, workflow_id)
     if row is None or row["status"] == SUCCESS:
         return ""
     word = RUN_WORDS.get(row["status"], row["status"])
@@ -153,10 +186,31 @@ def _last_failure(conn: sqlite3.Connection, workflow_id: int) -> str:
     return f"실행 {row['id']} {word} / {row['error_class'] or '분류 없음'}: {reason}"
 
 
+def _finished_message(conn: sqlite3.Connection, workflow_id: int) -> str:
+    """폴링하던 카드가 결과로 갈릴 때 그 자리에 적는 한 줄.
+
+    실패 사유는 여기서 되풀이하지 않는다. 카드에 이미 `최근 실패 사유` 줄이 있고, 같은 내용을
+    두 번 적으면 어느 쪽이 지금 것인지 읽는 사람이 판단해야 한다 (`.claude/rules/writing.md`).
+    """
+    row = _last_run(conn, workflow_id)
+    if row is None:
+        return "실행이 끝났는데 기록이 없다. 서버 로그를 본다"
+    word = RUN_WORDS.get(row["status"], row["status"] or "알 수 없음")
+    if row["status"] != SUCCESS:
+        return f"실행 {row['id']} 이 {word}로 끝났다. 사유는 아래 최근 실패 사유에 있다"
+    return (
+        f"실행 {row['id']} 이 {word}으로 끝났다 — 정상 {row['success_count']}건, "
+        f"신규 {row['new_count']}건, 실패 {row['fail_count']}건"
+    )
+
+
 def _view(
     conn: sqlite3.Connection,
     item: workflows.WorkflowItem,
     message: str = "",
+    *,
+    running: bool | None = None,
+    settled: bool = False,
 ) -> CardView:
     streak = _streak(conn, item)
     tone, attention = _attention(item, streak)
@@ -167,6 +221,8 @@ def _view(
         attention=attention,
         reason=_last_failure(conn, item.id),
         message=message,
+        running=_in_flight(conn, item.id) if running is None else running,
+        settled=settled,
     )
 
 
@@ -175,8 +231,15 @@ def _card(
     conn: sqlite3.Connection,
     item: workflows.WorkflowItem,
     message: str = "",
+    *,
+    running: bool | None = None,
+    settled: bool = False,
 ) -> HTMLResponse:
-    return render(request, "fragments/workflow_card.html", card=_view(conn, item, message))
+    return render(
+        request,
+        "fragments/workflow_card.html",
+        card=_view(conn, item, message, running=running, settled=settled),
+    )
 
 
 def _missing(request: Request, workflow_id: int) -> HTMLResponse:
@@ -208,29 +271,74 @@ def _targets(
 
 
 def _in_flight(conn: sqlite3.Connection, workflow_id: int) -> bool:
-    """아직 끝나지 않은 실행이 있는가. 스케줄러가 돌리는 중인 것도 여기서 보인다."""
+    """아직 끝나지 않은 실행이 있는가. 스케줄러가 돌리는 중인 것도 여기서 보인다.
+
+    시작한 지 `RUN_TIMEOUT_SECONDS` 를 넘긴 행은 세지 않는다. 모든 실행은 그 시간으로 감싸여
+    있으므로 그보다 오래된 미완 행은 도는 실행이 아니라 프로세스가 죽으면서 남긴 자국이다.
+    그것을 진행 중으로 읽으면 카드가 영원히 폴링하고 1회 실행이 영영 막힌다.
+    """
+    stale_after = get_settings().run_timeout_seconds + 60
     row = conn.execute(
         """
         SELECT 1 FROM crawl_runs
          WHERE workflow_id = ? AND status IS NULL AND finished_at IS NULL
+           AND started_at > datetime('now', ?)
          LIMIT 1
         """,
-        (workflow_id,),
+        (workflow_id, f"-{stale_after} seconds"),
     ).fetchone()
     return row is not None
 
 
-def _run_message(result: RunResult) -> str:
-    """실행 하나를 한 줄로. 실패하면 분류와 사유까지 적는다."""
-    word = RUN_WORDS.get(result.status, result.status or "알 수 없음")
-    line = (
-        f"1회 실행 {result.run_id}: {word} — 목록 {result.matched}건, "
-        f"정상 {result.success_count}건, 신규 {result.new_count}건, 실패 {result.fail_count}건"
-    )
-    if result.status == SUCCESS:
-        return line
-    reason = result.error_message or "사유가 기록되지 않았다"
-    return f"{line} / {result.error_class or '분류 없음'}: {reason}"
+# 백그라운드 실행에 대한 강한 참조. 놓으면 파이썬이 도는 도중에 태스크를 거둬 갈 수 있다
+_tasks: set[asyncio.Task[None]] = set()
+
+Launcher = Callable[[Coroutine[Any, Any, None]], None]
+Connect = Callable[[], sqlite3.Connection]
+
+
+def _launch(coro: Coroutine[Any, Any, None]) -> None:
+    """실행을 시작만 하고 돌아온다. 요청은 이것을 기다리지 않는다."""
+    task = asyncio.get_running_loop().create_task(coro)
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
+
+
+def get_run_launcher() -> Launcher:
+    """백그라운드로 보내는 방법. 테스트는 이 의존성을 갈아끼워 그 자리에서 돌린다."""
+    return _launch
+
+
+def get_run_connect() -> Connect:
+    """백그라운드 실행이 쓸 연결을 여는 방법. 테스트는 이것을 임시 DB 로 갈아끼운다."""
+    return db.connect
+
+
+async def _execute_run(
+    workflow_id: int,
+    *,
+    fetcher: FetchPolicy,
+    scheduler: WorkflowScheduler,
+    gate: RunGate,
+    connect: Connect,
+) -> None:
+    """요청이 끝난 뒤에도 끝까지 가는 실행 하나.
+
+    연결을 여기서 새로 연다. 요청의 연결은 응답과 함께 닫히므로 물려받을 수 없다.
+    스케줄러의 `_execute` 가 잡 하나를 돌리는 방식과 같다 (`app/scheduler.py`).
+    """
+    conn = connect()
+    try:
+        async with gate.slot():
+            await run_workflow(conn, workflow_id, fetcher=fetcher)
+    except Exception:
+        # 백그라운드에서 터진 예외는 아무도 보지 못한다. 로그에는 남긴다
+        logger.exception("workflow %s: 화면에서 시작한 1회 실행이 예외로 끝났다", workflow_id)
+    finally:
+        _running.discard(workflow_id)
+        # 연속 실패로 자동 중지됐을 수 있다. 그 사실이 잡까지 가야 실제로 멈춘다
+        scheduler.sync(conn)
+        conn.close()
 
 
 def _find(conn: sqlite3.Connection, workflow_id: int) -> workflows.WorkflowItem | None:
@@ -336,6 +444,30 @@ def update_workflow_fragment(
     return _card(request, conn, updated, message=message)
 
 
+@router.get("/ui/workflows/{workflow_id}/card", response_class=HTMLResponse)
+def workflow_card_fragment(
+    request: Request,
+    workflow_id: int,
+    conn: Annotated[sqlite3.Connection, Depends(workflows.get_connection)],
+    polled: bool = False,
+) -> HTMLResponse:
+    """카드 하나를 지금 상태로 다시 그린다. 실행 중인 카드가 몇 초마다 부르는 자리다.
+
+    실행이 끝나 있으면 폴링이 붙지 않은 카드가 나가고, 그것으로 폴링이 멈춘다. 끝났는지를
+    브라우저가 알 방법이 없으므로 멈추는 판단은 서버가 한다.
+    """
+    item = _find(conn, workflow_id)
+    if item is None:
+        return _missing(request, workflow_id)
+
+    running = workflow_id in _running or _in_flight(conn, workflow_id)
+    if running:
+        return _card(request, conn, item, message=RUNNING_MESSAGE, running=True)
+    # 폴링하던 카드가 결과로 갈리는 순간이다. 그 한 번만 결과를 적고 강조한다
+    message = _finished_message(conn, workflow_id) if polled else ""
+    return _card(request, conn, item, message=message, running=False, settled=polled)
+
+
 @router.post("/ui/workflows/{workflow_id}/run", response_class=HTMLResponse)
 async def run_now_fragment(
     request: Request,
@@ -344,11 +476,14 @@ async def run_now_fragment(
     scheduler: Annotated[WorkflowScheduler, Depends(workflows.get_workflow_scheduler)],
     fetcher: Annotated[FetchPolicy, Depends(crawlers.get_crawl_fetcher)],
     gate: Annotated[RunGate, Depends(get_run_gate)],
+    launch: Annotated[Launcher, Depends(get_run_launcher)],
+    connect: Annotated[Connect, Depends(get_run_connect)],
 ) -> HTMLResponse:
     """다음 주기를 기다리지 않고 지금 1회 실행한다. 갈리는 것은 이 워크플로우 하나다.
 
-    실제 사이트를 가져오므로 `RUN_TIMEOUT_SECONDS` 까지 걸릴 수 있다. 그동안 버튼은 잠겨
-    있고, 끝나면 최근 실행·최근 결과·누적 카운트가 이 줄과 함께 갱신된다.
+    시작만 하고 바로 돌아온다. 실제 사이트를 가져오는 데 몇 분이 걸리는 워크플로우가 있고,
+    그것을 요청 안에서 기다리면 브라우저가 먼저 끊는다. 진행 상황은 돌려준 카드가 스스로
+    물어본다.
     """
     current = _find(conn, workflow_id)
     if current is None:
@@ -360,7 +495,8 @@ async def run_now_fragment(
             request,
             conn,
             current,
-            message="이미 실행 중이다. 새로 시작하지 않았다. 끝나면 이 줄이 갱신된다",
+            message="이미 실행 중이다. 새로 시작하지 않았다. 끝나면 이 카드가 갱신된다",
+            running=True,
         )
 
     if gate.active >= gate.limit():
@@ -372,18 +508,13 @@ async def run_now_fragment(
                 f"동시 실행 상한({gate.limit()})에 걸렸다. 진행 중 {gate.active}건이 "
                 "끝난 뒤 다시 누른다"
             ),
+            running=False,
         )
 
+    # `crawl_runs` 행은 실행이 시작되고 나서야 생긴다. 그 사이에 두 번째로 누른 요청은
+    # 이 표시가 막는다
     _running.add(workflow_id)
-    try:
-        async with gate.slot():
-            result = await run_workflow(conn, workflow_id, fetcher=fetcher)
-    finally:
-        _running.discard(workflow_id)
-        # 연속 실패로 자동 중지됐을 수 있다. 그 사실이 잡까지 가야 실제로 멈춘다
-        scheduler.sync(conn)
-
-    updated = _find(conn, workflow_id)
-    if updated is None:
-        return _card(request, conn, current, message=_run_message(result))
-    return _card(request, conn, updated, message=_run_message(result))
+    launch(
+        _execute_run(workflow_id, fetcher=fetcher, scheduler=scheduler, gate=gate, connect=connect)
+    )
+    return _card(request, conn, current, message=RUNNING_MESSAGE, running=True)
