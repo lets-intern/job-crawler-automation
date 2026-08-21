@@ -62,6 +62,18 @@ class JobPage(BaseModel):
     has_more: bool
 
 
+class DeliveredRequest(BaseModel):
+    ids: list[int]
+
+
+class DeliveredOut(BaseModel):
+    """무엇이 실제로 찍혔는지. 계약은 응답 모양을 정하지 않아 진단에 필요한 것만 담는다."""
+
+    marked: int
+    already_delivered: int
+    missing: list[int]
+
+
 def get_connection() -> Iterator[sqlite3.Connection]:
     conn = db.connect()
     try:
@@ -177,3 +189,46 @@ def list_jobs(
         last = page[-1]
         next_cursor = encode_cursor(str(last["normalized_at"]), int(last["id"]))
     return JobPage(items=[_out(row) for row in page], next_cursor=next_cursor, has_more=has_more)
+
+
+@router.post("/delivered", response_model=DeliveredOut)
+def mark_delivered(
+    payload: DeliveredRequest,
+    conn: Annotated[sqlite3.Connection, Depends(get_connection)],
+) -> DeliveredOut:
+    """소비 측이 가져간 건에 `delivered_at` 을 찍는다.
+
+    **이 경로만 `delivered_at` 을 쓴다** (`.claude/rules/data-safety.md`). 크롤링·재정규화·수동
+    수정은 이 컬럼을 건드리지 않는다.
+
+    이미 찍힌 건은 덮어쓰지 않는다. 시각을 다시 쓰면 "언제 넘어갔는가" 가 마지막 폴링 시각으로
+    밀려서, 재전송 여부를 이 값으로 판단할 수 없게 된다. `WHERE delivered_at IS NULL` 이
+    그것을 막는다.
+
+    시각은 SQLite `datetime('now')` 로 찍는다. 다른 테이블의 시각과 형식이 같아야 한다.
+    """
+    unique = sorted(set(payload.ids))
+    if not unique:
+        return DeliveredOut(marked=0, already_delivered=0, missing=[])
+
+    placeholders = ",".join("?" * len(unique))
+    rows = conn.execute(
+        f"SELECT id, delivered_at FROM normalized_jobs WHERE id IN ({placeholders})",
+        unique,
+    ).fetchall()
+    found = {int(row["id"]): row["delivered_at"] for row in rows}
+    already = sum(1 for value in found.values() if value is not None)
+
+    cursor = conn.execute(
+        f"""
+        UPDATE normalized_jobs
+           SET delivered_at = datetime('now')
+         WHERE id IN ({placeholders}) AND delivered_at IS NULL
+        """,
+        unique,
+    )
+    return DeliveredOut(
+        marked=int(cursor.rowcount),
+        already_delivered=already,
+        missing=[job_id for job_id in unique if job_id not in found],
+    )

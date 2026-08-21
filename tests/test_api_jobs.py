@@ -272,3 +272,95 @@ def test_updated_after_accepts_offset_and_naive_forms(
 def test_broken_updated_after_is_rejected(client: TestClient) -> None:
     response = client.get("/api/jobs", params={"updated_after": "어제"})
     assert response.status_code == 422
+
+
+# --- 8.3 전달 확인 ---
+
+
+def delivered_values(conn: sqlite3.Connection) -> dict[int, str | None]:
+    rows = conn.execute("SELECT id, delivered_at FROM normalized_jobs ORDER BY id").fetchall()
+    return {int(row["id"]): row["delivered_at"] for row in rows}
+
+
+def test_delivered_marks_the_given_ids(client: TestClient, conn: sqlite3.Connection) -> None:
+    ids = seed(conn, 3)
+    payload = client.post("/api/jobs/delivered", json={"ids": ids[:2]}).json()
+    assert payload == {"marked": 2, "already_delivered": 0, "missing": []}
+
+    stored = delivered_values(conn)
+    assert stored[ids[0]] is not None
+    assert stored[ids[1]] is not None
+    assert stored[ids[2]] is None  # 보내지 않은 건은 그대로다
+
+
+def test_second_call_keeps_the_first_timestamp(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """같은 id 로 두 번 불러도 첫 번째 시각이 남는다.
+
+    두 호출이 같은 초에 들어가면 값이 같아 덮어써도 통과하는 허수 검증이 된다. 그래서 첫 호출
+    뒤 값을 눈에 띄게 과거로 바꿔 두고, 두 번째 호출이 그 값을 그대로 두는지 본다.
+    """
+    ids = seed(conn, 1)
+    job_id = ids[0]
+
+    first = client.post("/api/jobs/delivered", json={"ids": [job_id]}).json()
+    assert first["marked"] == 1
+    assert delivered_values(conn)[job_id] is not None
+
+    # 오래 전에 전달된 상태로 만든다. 덮어쓰면 값이 오늘로 바뀌어 바로 드러난다
+    long_ago = "2020-01-01 00:00:00"
+    conn.execute("UPDATE normalized_jobs SET delivered_at = ? WHERE id = ?", (long_ago, job_id))
+
+    second = client.post("/api/jobs/delivered", json={"ids": [job_id]}).json()
+    assert second == {"marked": 0, "already_delivered": 1, "missing": []}
+    assert delivered_values(conn)[job_id] == long_ago
+
+
+def test_mixed_batch_marks_only_the_undelivered(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """이미 찍힌 건과 아직인 건이 섞여 와도 찍힌 쪽은 그대로다."""
+    ids = seed(conn, 2)
+    long_ago = "2020-01-01 00:00:00"
+    conn.execute("UPDATE normalized_jobs SET delivered_at = ? WHERE id = ?", (long_ago, ids[0]))
+
+    payload = client.post("/api/jobs/delivered", json={"ids": ids}).json()
+    assert payload == {"marked": 1, "already_delivered": 1, "missing": []}
+
+    stored = delivered_values(conn)
+    assert stored[ids[0]] == long_ago
+    assert stored[ids[1]] is not None
+
+
+def test_unknown_id_is_reported_not_fatal(client: TestClient, conn: sqlite3.Connection) -> None:
+    """없는 id 하나 때문에 배치 전체가 실패하면 소비 측이 나머지를 다시 받는다."""
+    ids = seed(conn, 1)
+    payload = client.post("/api/jobs/delivered", json={"ids": [ids[0], 9999]}).json()
+    assert payload == {"marked": 1, "already_delivered": 0, "missing": [9999]}
+
+
+def test_empty_ids_changes_nothing(client: TestClient, conn: sqlite3.Connection) -> None:
+    seed(conn, 2)
+    payload = client.post("/api/jobs/delivered", json={"ids": []}).json()
+    assert payload == {"marked": 0, "already_delivered": 0, "missing": []}
+    assert set(delivered_values(conn).values()) == {None}
+
+
+def test_duplicate_ids_in_one_request_count_once(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    ids = seed(conn, 1)
+    payload = client.post("/api/jobs/delivered", json={"ids": [ids[0], ids[0]]}).json()
+    assert payload == {"marked": 1, "already_delivered": 0, "missing": []}
+
+
+def test_delivered_does_not_touch_normalized_at(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """전달 표시가 normalized_at 을 밀면 소비 측 커서가 같은 건을 다시 받는다."""
+    ids = seed(conn, 1)
+    before = conn.execute("SELECT normalized_at FROM normalized_jobs").fetchone()["normalized_at"]
+    client.post("/api/jobs/delivered", json={"ids": ids})
+    after = conn.execute("SELECT normalized_at FROM normalized_jobs").fetchone()["normalized_at"]
+    assert after == before
