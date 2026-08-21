@@ -2,7 +2,7 @@
 
 > PRD: `.claude/tasks/todo/prd-job-crawler.md`
 > Push 범위: 크롤링 실행 — 파서, 실패 분류, 재시도, 1회 실행과 `crawl_runs` 기록, 테스트 실행 API
-> 상태: 진행 중
+> 상태: 완료
 
 ## 관련 파일
 
@@ -19,7 +19,7 @@
 
 ## 작업
 
-- [ ] 3.0 크롤링 실행 (Push 범위)
+- [x] 3.0 크롤링 실행 (Push 범위)
 
     - [x] 3.1 셀렉터 적용 파서
         - `app/crawler/parser.py`. 리스트 페이지에서 아이템 목록, 상세 페이지에서 필드를 뽑는다
@@ -61,5 +61,12 @@
         - 통과 시 `crawlers.status` 를 `tested` 로 올린다. 실패한 실행은 상태를 건드리지 않는다
         - 워크플로우가 없는 실행이라 `raw_jobs` 에 적재하지 않는다. `crawl_runs` 행과 응답의
           미리보기만 남고, 그 실행의 `new_count` 는 0 이다
-        - [ ] 3.5.V 검증: 실사이트 1회 실행 후 `crawl_runs` 행과 카운트 확인 (`.claude/skills/crawl-test/SKILL.md`).
+        - [x] 3.5.V 검증: 실사이트 1회 실행 후 `crawl_runs` 행과 카운트 확인 (`.claude/skills/crawl-test/SKILL.md`).
           이 Push 에서 실사이트를 때리는 검증은 이것 하나다 (`.claude/rules/crawling.md`)
+            - 2026-08-22, python.org 채용 페이지. 크롤러 등록(POST /api/crawlers)으로 셀렉터를
+              생성하고 `POST /api/crawlers/1/test-run?limit=3` 을 1회 실행했다
+            - `crawl_runs` 1행: `status=success`, `success_count=3`, `new_count=0`, `fail_count=0`,
+              `error_class` NULL, `crawler_id=1`, `workflow_id` NULL
+            - 적재하지 않는 실행이라 `new_count` 는 0 이고 `raw_jobs` 도 0행이다
+            - `crawlers.status` 가 `draft` 에서 `tested` 로 올라갔다
+            - 요청 4건(목록 1 + 상세 3)에 9초. `CRAWL_DELAY_SECONDS=3` 이 실제로 지켜졌다
