@@ -1,4 +1,6 @@
 {# 공고 한 건. 원문 링크는 수집한 값 그대로다 #}
+{# 회사명이 어디서 왔는지. 상태는 단어로 적는다 (`.claude/rules/writing.md`) #}
+{% set company_source_label = {"parsed": "파싱", "operator": "입력"} %}
 {% if job is none %}
 <p>공고 {{ job_id }} 가 없다.</p>
 {% else %}
@@ -7,6 +9,8 @@
   <tbody>
     <tr><th scope="row">번호</th><td>{{ job.id }}</td></tr>
     <tr><th scope="row">회사</th><td>{{ job.company or "값 없음" }}</td></tr>
+    <tr><th scope="row">회사명 출처</th>
+        <td>{{ company_source_label.get(job.company_source, "값 없음") }}</td></tr>
     <tr><th scope="row">부서</th><td>{{ job.department or "값 없음" }}</td></tr>
     <tr><th scope="row">마감</th><td>{{ job.deadline or "값 없음" }}</td></tr>
     <tr><th scope="row">워크플로우</th><td>{{ job.workflow_id }} - {{ job.workflow_name }}</td></tr>

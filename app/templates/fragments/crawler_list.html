@@ -6,6 +6,7 @@
       <th scope="col">번호</th>
       <th scope="col">이름</th>
       <th scope="col">상태</th>
+      <th scope="col">회사명</th>
       <th scope="col">리스트 URL</th>
       <th scope="col">동작</th>
     </tr>
@@ -16,6 +17,7 @@
       <td>{{ crawler.id }}</td>
       <td>{{ crawler.name }}</td>
       <td>{{ crawler.status }}</td>
+      <td>{{ crawler.default_company or "안 적음" }}</td>
       <td>{{ crawler.list_url }}</td>
       <td>
         <button type="button"
@@ -25,7 +27,7 @@
       </td>
     </tr>
     {% else %}
-    <tr><td colspan="5">등록된 크롤러가 없다</td></tr>
+    <tr><td colspan="6">등록된 크롤러가 없다</td></tr>
     {% endfor %}
   </tbody>
 </table>

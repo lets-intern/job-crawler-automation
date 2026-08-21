@@ -1,4 +1,6 @@
 {# 수집 공고 표. 필터·검색·정렬이 이 조각만 갈아 끼운다 #}
+{# 회사명이 어디서 왔는지. 상태는 단어로 적는다 (`.claude/rules/writing.md`) #}
+{% set company_source_label = {"parsed": "파싱", "operator": "입력"} %}
 <p>{{ total }}건 중 {{ shown }}건을 보여준다 (한 번에 최대 {{ row_limit }}건).</p>
 <table>
   <caption>수집된 공고</caption>
@@ -6,6 +8,7 @@
     <tr>
       <th scope="col">번호</th>
       <th scope="col">회사</th>
+      <th scope="col">회사명 출처</th>
       <th scope="col">제목</th>
       <th scope="col">부서</th>
       <th scope="col">마감</th>
@@ -21,6 +24,7 @@
     <tr>
       <td>{{ job.id }}</td>
       <td>{{ job.company or "값 없음" }}</td>
+      <td>{{ company_source_label.get(job.company_source, "값 없음") }}</td>
       <td>{{ job.title or "값 없음" }}</td>
       <td>{{ job.department or "값 없음" }}</td>
       <td>{{ job.deadline or "값 없음" }}</td>
@@ -34,7 +38,7 @@
       </td>
     </tr>
     {% else %}
-    <tr><td colspan="10">조건에 맞는 공고가 없다</td></tr>
+    <tr><td colspan="11">조건에 맞는 공고가 없다</td></tr>
     {% endfor %}
   </tbody>
 </table>

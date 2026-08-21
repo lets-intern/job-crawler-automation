@@ -36,16 +36,17 @@ ORDERS: dict[str, str] = {"desc": "DESC", "asc": "ASC"}
 ROW_LIMIT = 100
 
 _BASE = """
-    SELECT n.id            AS id,
-           n.company       AS company,
-           n.title         AS title,
-           n.department    AS department,
-           n.deadline      AS deadline,
-           n.source_url    AS source_url,
-           n.normalized_at AS normalized_at,
-           n.delivered_at  AS delivered_at,
-           r.workflow_id   AS workflow_id,
-           w.name          AS workflow_name
+    SELECT n.id             AS id,
+           n.company         AS company,
+           n.company_source  AS company_source,
+           n.title           AS title,
+           n.department      AS department,
+           n.deadline        AS deadline,
+           n.source_url      AS source_url,
+           n.normalized_at   AS normalized_at,
+           n.delivered_at    AS delivered_at,
+           r.workflow_id     AS workflow_id,
+           w.name            AS workflow_name
       FROM normalized_jobs n
       JOIN raw_jobs r ON r.id = n.raw_job_id
       JOIN workflows w ON w.id = r.workflow_id

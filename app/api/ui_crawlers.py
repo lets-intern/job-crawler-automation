@@ -26,7 +26,9 @@ from fastapi.responses import HTMLResponse
 from app.api import crawlers
 from app.api.ui import render
 
-_LIST_QUERY = "SELECT id, name, status, list_url, detail_url FROM crawlers ORDER BY id DESC"
+_LIST_QUERY = (
+    "SELECT id, name, status, list_url, detail_url, default_company FROM crawlers ORDER BY id DESC"
+)
 
 router = APIRouter(tags=["ui"], include_in_schema=False)
 
@@ -80,6 +82,13 @@ def _result(
     )
 
 
+def _created_notice(created: crawlers.CrawlerOut) -> str:
+    notice = f"크롤러 {created.id}({created.name}) 를 등록했다."
+    if created.default_company:
+        return f"{notice} 회사명 {created.default_company} 를 함께 저장했다."
+    return notice
+
+
 @router.get("/ui/crawlers", response_class=HTMLResponse)
 def crawler_list_fragment(
     request: Request,
@@ -97,9 +106,18 @@ async def create_crawler_fragment(
     conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
     generate: Annotated[crawlers.GenerateFn, Depends(crawlers.get_generator)],
     name: Annotated[str, Form()] = "",
+    default_company: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
-    """생성 요청. 성공하면 결과 요약과 편집기가, 실패하면 사유가 결과 영역에 들어간다."""
-    payload = crawlers.CrawlerCreate(list_url=list_url, detail_url=detail_url, name=name)
+    """생성 요청. 성공하면 결과 요약과 편집기가, 실패하면 사유가 결과 영역에 들어간다.
+
+    `default_company` 는 선택이다. 비워 두면 회사명은 공고에서 뽑은 값만 쓰인다.
+    """
+    payload = crawlers.CrawlerCreate(
+        list_url=list_url,
+        detail_url=detail_url,
+        name=name,
+        default_company=default_company,
+    )
     try:
         created = await crawlers.create_crawler(payload, conn, generate)
     except HTTPException as exc:
@@ -111,7 +129,7 @@ async def create_crawler_fragment(
         crawler_id=created.id,
         status=created.status,
         selectors_json=json.dumps(created.selectors.model_dump(), ensure_ascii=False, indent=2),
-        notice=f"크롤러 {created.id}({created.name}) 를 등록했다.",
+        notice=_created_notice(created),
         generation={
             "matches": created.matches,
             "failed_fields": created.failed_fields,
