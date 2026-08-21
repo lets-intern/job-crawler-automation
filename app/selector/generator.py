@@ -167,7 +167,7 @@ async def generate_from_html(
     last_error: SelectorSchemaError | None = None
     last_text: str | None = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
-        text, usage = await _call(resolved_client, model, prompt, attempt)
+        text, usage = await call_model(resolved_client, model, prompt, attempt)
         last_text = text
         try:
             selectors = parse_selectors(text)
@@ -256,8 +256,14 @@ def build_prompt(
     )
 
 
-async def _call(client: Any, model: str, prompt: str, attempt: int) -> tuple[str, Usage]:
-    """생성 1회. 모델 ID·토큰·지연을 남긴다."""
+async def call_model(
+    client: Any, model: str, prompt: str, attempt: int, kind: str = "생성"
+) -> tuple[str, Usage]:
+    """호출 1회. 모델 ID·토큰·지연을 남긴다.
+
+    생성과 고치기가 같은 함수를 쓴다. 두 번째 API 경로를 만들면 로그도 재시도 규칙도 두 벌이
+    되고, 한쪽만 고쳐진 채로 남는다. `kind` 는 로그에서 둘을 가르는 이름일 뿐이다.
+    """
     started = time.monotonic()
     try:
         response = await client.aio.models.generate_content(
@@ -279,8 +285,9 @@ async def _call(client: Any, model: str, prompt: str, attempt: int) -> tuple[str
     latency_ms = int((time.monotonic() - started) * 1000)
     usage = _usage(model, response, latency_ms)
     logger.info(
-        "셀렉터 생성 model=%s attempt=%d input_tokens=%d output_tokens=%d "
+        "셀렉터 %s model=%s attempt=%d input_tokens=%d output_tokens=%d "
         "total_tokens=%d latency_ms=%d finish_reason=%s",
+        kind,
         usage.model,
         attempt,
         usage.input_tokens,
