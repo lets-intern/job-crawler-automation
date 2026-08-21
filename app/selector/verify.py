@@ -9,6 +9,10 @@
 
 여기서 하는 것은 "그 셀렉터가 노드를 잡는가"까지다. 잡은 값이 깨끗한지는 정규화의 몫이고,
 공백이나 광고 문구가 섞였다고 셀렉터를 바꾸지 않는다.
+
+`list.link` 만 예외다. 이 필드는 노드 수가 아니라 **따라갈 수 있는 URL 이 나오는지**로
+판정한다. 노드 수만 세면 `href` 가 없는 요소를 골라도 통과하고, 통과한 셀렉터로 실행하면
+링크가 없어 실패한다. 판정은 파서와 같은 `app/selector/link.py` 를 쓴다.
 """
 
 from __future__ import annotations
@@ -16,13 +20,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from bs4 import BeautifulSoup
+from bs4.element import Tag
 from soupsieve import SelectorSyntaxError
 
+from app.selector.link import resolve_link
 from app.selector.schema import (
     DETAIL_FIELDS,
     LIST_FIELDS,
     OPTIONAL_DETAIL_FIELDS,
     OPTIONAL_LIST_FIELDS,
+    ListSelectors,
     SelectorSet,
 )
 
@@ -130,6 +137,10 @@ def _verify_list(selectors: SelectorSet, html: str) -> list[FieldMatch]:
     for name in LIST_FIELDS:
         if name == "item":
             continue
+        if name == "link":
+            # 노드 수가 아니라 따라갈 수 있는 URL 이 나오는지로 본다
+            results.append(_verify_link(selectors.list, items))
+            continue
         selector = getattr(selectors.list, name)
         if not selector and name in OPTIONAL_LIST_FIELDS:
             # 목록에 그 항목이 없다는 응답이다. 셀렉터가 없으니 실패도 성공도 아니다.
@@ -158,6 +169,33 @@ def _verify_list(selectors: SelectorSet, html: str) -> list[FieldMatch]:
             )
         )
     return results
+
+
+def _verify_link(selectors: ListSelectors, items: list[Tag]) -> FieldMatch:
+    """`list.link` 판정. 매칭 개수는 상세로 따라갈 수 있는 항목의 수다.
+
+    한 건도 안 나오면 첫 항목의 사유를 그대로 붙인다. 운영자가 `href` 가 없는 것인지
+    `javascript:` 인 것인지를 보고 바로 다음 수단을 고를 수 있어야 한다.
+    """
+    try:
+        resolved = [resolve_link(item, selectors) for item in items]
+    except SelectorSyntaxError as exc:
+        return _syntax_error("list.link", selectors.link, exc)
+
+    usable = sum(1 for result in resolved if result.ok)
+    reasons = [result.reason for result in resolved if not result.ok]
+    message = ""
+    if not usable:
+        message = f"항목 {len(items)}건 중 따라갈 수 있는 상세 URL 이 0건이다"
+        if reasons:
+            message = f"{message}: {reasons[0]}"
+    return FieldMatch(
+        name="list.link",
+        selector=selectors.link,
+        matches=usable,
+        status=OK if usable else FAILED,
+        message=message,
+    )
 
 
 def _verify_detail(selectors: SelectorSet, html: str) -> list[FieldMatch]:
