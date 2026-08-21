@@ -28,7 +28,7 @@ from app.crawler.failures import FAILED, ZERO_ITEM_MESSAGE, Failure, classify, r
 from app.crawler.fetcher import Fetcher, get_fetcher
 from app.crawler.hashing import content_hash
 from app.crawler.parser import ListItem, parse_detail, parse_list
-from app.selector.schema import SelectorSet
+from app.selector.schema import SelectorSchemaError, SelectorSet, validate_selectors
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +82,62 @@ class RunResult:
     error_message: str = ""
     items: list[ItemResult] = field(default_factory=list)
     failures: list[ItemFailure] = field(default_factory=list)
+
+
+class WorkflowMissingError(LookupError):
+    """워크플로우 행이 없다. `crawl_runs` 행을 만들 수 없어 기록도 남지 않는다."""
+
+
+async def run_workflow(
+    conn: sqlite3.Connection,
+    workflow_id: int,
+    *,
+    fetcher: Fetcher | None = None,
+    limit: int | None = None,
+) -> RunResult:
+    """스케줄러가 부르는 진입점. 무엇을 실행할지는 매번 테이블에서 다시 읽는다.
+
+    `workflows` 와 `crawlers` 가 진실이다. 잡을 등록할 때의 값을 스케줄러가 들고 있다가
+    쓰지 않는다 (`.claude/rules/crawling.md`).
+
+    셀렉터가 없거나 스키마에 맞지 않으면 실행하지 못하지만, 그것도 종료 경로다.
+    `crawl_runs` 행을 실패로 남긴다.
+    """
+    row = conn.execute(
+        """
+        SELECT c.list_url AS list_url, c.selectors_json AS selectors_json
+          FROM workflows w
+          JOIN crawlers c ON c.id = w.crawler_id
+         WHERE w.id = ?
+        """,
+        (workflow_id,),
+    ).fetchone()
+    if row is None:
+        raise WorkflowMissingError(f"워크플로우 {workflow_id} 가 없다")
+
+    try:
+        selectors = validate_selectors(json.loads(row["selectors_json"] or "null"))
+    except (json.JSONDecodeError, SelectorSchemaError) as exc:
+        # 저장된 셀렉터가 실행할 수 있는 상태가 아니다. transport·selector_miss·parse 중
+        # 어느 것도 아니므로 error_class 는 비워 두고 사유만 남긴다.
+        return _config_failure(conn, workflow_id, f"셀렉터를 읽을 수 없다: {exc}")
+
+    return await run_once(
+        conn,
+        RunTarget(list_url=row["list_url"], selectors=selectors, workflow_id=workflow_id),
+        fetcher=fetcher,
+        limit=limit,
+    )
+
+
+def _config_failure(conn: sqlite3.Connection, workflow_id: int, message: str) -> RunResult:
+    cursor = conn.execute(
+        "INSERT INTO crawl_runs (workflow_id) VALUES (?)",
+        (workflow_id,),
+    )
+    result = RunResult(run_id=int(cursor.lastrowid or 0), status="")
+    _finish_run(conn, result, Failure(error_class=None, message=message))
+    return result
 
 
 async def run_once(
