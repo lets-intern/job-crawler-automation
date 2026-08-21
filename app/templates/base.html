@@ -24,10 +24,15 @@
     @layer components {
       /* 요청이 도는 동안만 보이는 대기 문구. HTMX 가 hx-indicator 대상에 htmx-request 를 붙인다.
          아이콘을 쓰지 않는다 — 문구와 점멸로만 만든다 (`.claude/rules/writing.md`) */
-      .wait-note { @apply hidden; }
+      /* 자리를 미리 잡아 둔다. display 를 켜고 끄면 문구가 들어올 때 배치가 밀린다 */
+      .wait-note {
+        @apply invisible inline-flex items-center text-sm font-medium text-slate-600;
+      }
       .htmx-request .wait-note,
-      .wait-note.htmx-request {
-        @apply inline-flex animate-pulse items-center text-sm font-medium text-slate-600;
+      .wait-note.htmx-request { @apply visible animate-pulse; }
+      /* 표 안에서는 자리를 잡아 두면 그 칸이 늘 넓어진다. 흐름에서 빼서 열 폭을 건드리지 않는다 */
+      .data-table .wait-note {
+        @apply absolute bottom-0 left-3 z-10 whitespace-nowrap rounded bg-white/90 px-1 text-xs;
       }
       /* 기다리는 동안의 대상 영역. 이전 결과가 새 결과처럼 읽히지 않게 흐린다 */
       .wait-note.htmx-request + .wait-dim { @apply opacity-40; }
@@ -55,12 +60,15 @@
       }
       /* 기본은 줄바꿈 없음이다. 한글은 글자 단위로 끊겨서, 좁아진 열에 두면 한 줄에 한 글자씩
          쌓인다. 넘치는 폭은 .table-scroll 이 받는다 */
-      .data-table td { @apply whitespace-nowrap border-b border-slate-100 px-3 py-2 align-top; }
+      .data-table td {
+        @apply relative whitespace-nowrap border-b border-slate-100 px-3 py-2 align-top;
+      }
       /* URL 처럼 길고 끊어도 되는 값. 폭을 정해 두고 그 안에서만 접는다 */
       /* 최소 폭을 함께 준다. 표가 폭을 나눌 때 접히는 열부터 짜부라뜨리기 때문이다 */
-      .data-table td.cell-url {
-        @apply min-w-[11rem] max-w-xs whitespace-normal break-all text-xs;
-      }
+      .data-table td.cell-url { @apply text-xs; }
+      /* 긴 URL 은 폭 상한과 말줄임으로 막는다. 세 줄로 접히면 그 열이 표를 밀어낸다.
+         전체 값은 title 속성으로 본다 */
+      .cell-url-value { @apply block max-w-[18rem] truncate; }
       /* 표 안의 숫자 입력은 좁게. 넓으면 그 열 하나가 표를 화면 밖으로 밀어낸다 */
       .data-table input[type="number"] { @apply w-20; }
       /* 사람이 읽는 긴 문장. 낱말 단위로만 접는다 */

@@ -22,7 +22,9 @@
         {% else %}<span class="badge badge-idle">초안</span>{% endif %}
         <span class="text-xs text-slate-500">({{ crawler.status }})</span>
       </td>
-      <td class="cell-url">{{ crawler.list_url }}</td>
+      <td class="cell-url">
+        <span class="cell-url-value" title="{{ crawler.list_url }}">{{ crawler.list_url }}</span>
+      </td>
       <td>
         {# 실행은 사이트를 실제로 가져오므로 오래 걸린다. 버튼을 잠가 같은 실행이 두 번 나가지
            않게 하고, 이 자리와 결과 영역 두 곳에 기다리는 중임을 적는다 #}
@@ -35,7 +37,7 @@
           <input id="limit-{{ crawler.id }}" name="limit" type="number" value="3" min="1" max="20"
                  size="3">
           <button type="submit">테스트 실행</button>
-          <span class="wait-note">사이트를 가져와 셀렉터를 적용하는 중. 건수만큼 상세도 따라간다</span>
+          <span class="wait-note">실행 중</span>
         </form>
       </td>
     </tr>

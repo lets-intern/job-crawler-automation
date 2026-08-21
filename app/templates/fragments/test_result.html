@@ -81,7 +81,10 @@
         {% else %}<span class="state-idle">미리보기</span>{% endif %}
         <span class="text-xs text-slate-500">({{ item.state }})</span>
       </td>
-      <td class="cell-url"><a href="{{ item.source_url }}" target="_blank" rel="noreferrer">{{ item.source_url }}</a></td>
+      <td class="cell-url">
+        <a class="cell-url-value" href="{{ item.source_url }}" target="_blank"
+           rel="noreferrer" title="{{ item.source_url }}">{{ item.source_url }}</a>
+      </td>
       {% for key, path in fields %}
       {% set value = item.fields.get(key, "") %}
       <td class="cell-text">{{ value[:preview_limit] }}{% if value|length > preview_limit %} ... (이하 생략){% endif %}</td>
@@ -105,7 +108,9 @@
   <tbody>
     {% for failure in result.failures %}
     <tr>
-      <td class="cell-url">{{ failure.source_url }}</td>
+      <td class="cell-url">
+        <span class="cell-url-value" title="{{ failure.source_url }}">{{ failure.source_url }}</span>
+      </td>
       <td><span class="state-bad">{{ failure.error_class or "분류 없음" }}</span></td>
       <td class="cell-text">{{ failure.message }}</td>
     </tr>

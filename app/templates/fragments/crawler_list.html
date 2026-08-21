@@ -39,7 +39,9 @@
         </form>
       </td>
       <td>{{ crawler.default_company or "안 적음" }}</td>
-      <td class="cell-url">{{ crawler.list_url }}</td>
+      <td class="cell-url">
+        <span class="cell-url-value" title="{{ crawler.list_url }}">{{ crawler.list_url }}</span>
+      </td>
       <td>
         <button type="button"
                 hx-get="/ui/crawlers/{{ crawler.id }}/editor"

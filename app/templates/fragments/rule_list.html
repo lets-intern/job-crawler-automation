@@ -1,12 +1,14 @@
 {# 규칙 목록과 편집 폼. 추가·수정·삭제·토글이 모두 이 조각으로 돌아온다.
    이 조각의 어떤 동작도 재정규화를 부르지 않는다 — 그 버튼은 다른 영역에 있다 #}
 {% if error %}
-<p>저장하지 못했다. 사유: {{ error.reason }}</p>
-<p>{{ error.message }}</p>
-{% if next_step(error.reason) %}<p>다음: {{ next_step(error.reason) }}</p>{% endif %}
+<div class="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
+  <p><span class="font-semibold">저장하지 못했다</span> — 사유: {{ error.reason }}</p>
+  <p class="mt-1">{{ error.message }}</p>
+  {% if next_step(error.reason) %}<p class="mt-1">다음: {{ next_step(error.reason) }}</p>{% endif %}
+</div>
 {% endif %}
 {% if message %}
-<p>{{ message }}</p>
+<p class="font-medium text-slate-700">{{ message }}</p>
 {% endif %}
 
 <div class="table-scroll">
