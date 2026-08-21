@@ -99,6 +99,20 @@
       }
       textarea { @apply font-mono text-xs leading-5; }
 
+      /* 넓은 요소들. 셀렉터 JSON 편집기, 본문 미리보기, 재정규화 진행 표시 */
+      pre {
+        @apply overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-slate-50 p-3
+               text-xs leading-5 text-slate-700;
+      }
+      code { @apply rounded bg-slate-100 px-1 py-0.5 text-xs text-slate-700; }
+      details { @apply my-3 rounded-md border border-slate-200 p-3; }
+      summary { @apply cursor-pointer text-sm font-medium text-slate-700; }
+      dt { @apply mt-2 text-sm font-semibold text-slate-700; }
+      dd { @apply text-sm text-slate-600; }
+      progress { @apply h-2 w-full appearance-none overflow-hidden rounded-full; }
+      progress::-webkit-progress-bar { @apply rounded-full bg-slate-200; }
+      progress::-webkit-progress-value { @apply rounded-full bg-slate-700; }
+
       /* 버튼. 제출은 채운 버튼, 나머지는 테두리 버튼, 삭제는 빨강. 태그와 속성으로 갈린다 */
       button {
         @apply mt-1 inline-flex items-center rounded-md border border-slate-300 bg-white px-2.5

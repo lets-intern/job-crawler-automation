@@ -3,20 +3,20 @@
 <div id="renormalize-panel"
      {% if progress.running %}hx-get="/ui/renormalize" hx-trigger="every 2s" hx-target="this" hx-swap="outerHTML"{% endif %}>
   {% if error %}
-  <p>시작하지 못했다: {{ error }}</p>
+  <p class="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-red-800"><span class="font-semibold">시작하지 못했다</span>: {{ error }}</p>
   {% endif %}
 
   <p>대상: <code>raw_jobs</code> {{ target_count }}건. 지금 규칙으로 다시 정규화한다.</p>
 
   {% if progress.running %}
-  <p>상태: 실행 중 (시작 {{ progress.started_at }})</p>
+  <p>상태: <span class="state-warn">실행 중</span> <span class="text-xs text-slate-500">(시작 {{ progress.started_at }})</span></p>
   <p>진행: 처리 {{ progress.processed }}건, 실패 {{ progress.failed }}건 / 대상 {{ progress.total }}건</p>
-  <progress value="{{ progress.processed + progress.failed }}" max="{{ progress.total or 1 }}"></progress>
+  <progress class="max-w-md" value="{{ progress.processed + progress.failed }}" max="{{ progress.total or 1 }}"></progress>
   {% elif progress.started_at %}
-  <p>상태: 종료 (시작 {{ progress.started_at }}, 종료 {{ progress.finished_at }})</p>
+  <p>상태: <span class="state-ok">종료</span> <span class="text-xs text-slate-500">(시작 {{ progress.started_at }}, 종료 {{ progress.finished_at }})</span></p>
   <p>결과: 대상 {{ progress.total }}건 중 처리 {{ progress.processed }}건, 실패 {{ progress.failed }}건</p>
   {% else %}
-  <p>상태: 실행한 적 없음</p>
+  <p>상태: <span class="state-idle">실행한 적 없음</span></p>
   {% endif %}
 
   {% if progress.errors %}

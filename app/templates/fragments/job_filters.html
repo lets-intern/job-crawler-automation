@@ -3,7 +3,7 @@
       hx-disabled-elt="find button">
   <fieldset>
     <legend>조회 조건</legend>
-    <p>
+    <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
       <label for="filter-workflow">워크플로우</label>
       <select id="filter-workflow" name="workflow_id">
         <option value="">전체</option>
@@ -20,7 +20,7 @@
         {% endfor %}
       </select>
     </p>
-    <p>
+    <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
       <label for="filter-q">검색 (제목·회사·부서)</label>
       <input id="filter-q" name="q" type="search" size="40">
 
