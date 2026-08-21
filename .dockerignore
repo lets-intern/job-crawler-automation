@@ -1,0 +1,23 @@
+# 비밀값과 수집 데이터는 이미지에 들어가지 않는다 (.claude/rules/git-safety.md)
+.env
+data/
+*.db
+*.sqlite3
+debug_snapshots/
+
+# 런타임에 필요 없는 것
+.git/
+.github/
+.claude/
+.venv/
+tests/
+.history/
+
+# 캐시
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.playwright/
+.DS_Store

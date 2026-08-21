@@ -1,0 +1,27 @@
+# api 컨테이너 하나가 API·화면·스케줄러·크롤링 워커를 전부 담는다.
+# Redis·Celery·별도 web 컨테이너·nginx 는 두지 않는다 (.claude/docs/tech-stack.md).
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      # 볼륨 마운트 지점과 같은 경로여야 한다.
+      DATABASE_PATH: /data/jobs.db
+      # 키가 없어도 컨테이너는 뜬다. 셀렉터 생성만 실패한다.
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      # 값 없이 이름만 적으면 호스트 환경이나 .env 에 있을 때만 전달된다.
+      # 없으면 app/config.py 의 보수적인 기본값을 쓴다. 여기에 값을 적지 않는다.
+      CRAWL_USER_AGENT:
+      CRAWL_DELAY_SECONDS:
+      CRAWL_TIMEOUT_SECONDS:
+      CRAWL_MAX_RETRIES:
+      MAX_CONCURRENT_RUNS:
+      RUN_TIMEOUT_SECONDS:
+    volumes:
+      # named volume. 실제 수집 데이터가 여기 남는다 (.claude/rules/data-safety.md).
+      - jobs-data:/data
+    restart: unless-stopped
+
+volumes:
+  jobs-data:
