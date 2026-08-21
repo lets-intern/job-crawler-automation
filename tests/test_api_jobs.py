@@ -184,3 +184,91 @@ def test_broken_cursor_is_rejected(client: TestClient, conn: sqlite3.Connection)
     """망가진 커서를 처음부터로 돌리면 소비 측이 같은 데이터를 다시 받는다."""
     seed(conn, 3)
     assert client.get("/api/jobs", params={"cursor": "!!not-base64!!"}).status_code == 400
+
+
+# --- 8.2 updated_after 와 limit ---
+
+
+def test_limit_slices_pages_and_cursor_covers_all(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """limit 을 줄여도 커서로 이어 받으면 누락·중복이 없다."""
+    expected = seed(conn, 7)
+
+    first = client.get("/api/jobs", params={"limit": 3}).json()
+    assert [item["id"] for item in first["items"]] == sorted(expected)[:3]
+    assert first["has_more"] is True
+
+    second = client.get("/api/jobs", params={"limit": 3, "cursor": first["next_cursor"]}).json()
+    assert [item["id"] for item in second["items"]] == sorted(expected)[3:6]
+    assert second["has_more"] is True
+
+    walked = collect(client, {"limit": 3})
+    assert walked == sorted(expected)
+    assert len(set(walked)) == len(expected)
+
+
+def test_limit_over_cap_is_clipped_to_500(client: TestClient, conn: sqlite3.Connection) -> None:
+    """limit=1000 은 500 으로 잘린다. 거절이 아니라 절삭이고, 나머지는 커서로 이어 받는다."""
+    seed(conn, jobs_api.MAX_LIMIT + 20)
+
+    payload = client.get("/api/jobs", params={"limit": 1000}).json()
+    assert len(payload["items"]) == jobs_api.MAX_LIMIT
+    assert payload["has_more"] is True
+
+    rest = client.get("/api/jobs", params={"limit": 1000, "cursor": payload["next_cursor"]}).json()
+    assert len(rest["items"]) == 20
+    assert rest["has_more"] is False
+
+
+def test_default_limit_is_100(client: TestClient, conn: sqlite3.Connection) -> None:
+    seed(conn, 120)
+    payload = client.get("/api/jobs").json()
+    assert len(payload["items"]) == jobs_api.DEFAULT_LIMIT
+
+
+def test_updated_after_boundary_excludes_the_instant_itself(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """경계값 앞뒤. 경계 시각과 같은 건은 오지 않고, 그 뒤만 온다."""
+    before = seed(conn, 2, normalized_at="2026-08-21 09:59:59")
+    at = seed(conn, 2, normalized_at="2026-08-21 10:00:00")
+    after = seed(conn, 2, normalized_at="2026-08-21 10:00:01")
+
+    received = collect(client, {"updated_after": "2026-08-21T10:00:00Z"})
+    assert set(received) == set(after)
+    assert not set(received) & (set(before) | set(at))
+
+    everything = collect(client, {"updated_after": "2026-08-21T09:00:00Z"})
+    assert set(everything) == set(before) | set(at) | set(after)
+
+
+def test_updated_after_uses_normalized_at_not_crawled_at(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """수집은 옛날에 했어도 정규화가 최근이면 온다. 커서가 걸린 값은 normalized_at 이다."""
+    kept = seed(conn, 1, normalized_at="2026-08-21 10:00:05")
+    conn.execute("UPDATE raw_jobs SET crawled_at = '2020-01-01 00:00:00'")
+
+    received = collect(client, {"updated_after": "2026-08-21T10:00:00Z"})
+    assert received == kept
+
+
+def test_updated_after_accepts_offset_and_naive_forms(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """+09:00 은 UTC 로 옮겨 비교한다. 로컬 시각으로 해석하면 시차만큼 못 받는 구간이 생긴다."""
+    seed(conn, 1, normalized_at="2026-08-21 02:00:00")
+    late = seed(conn, 1, normalized_at="2026-08-21 04:00:00")
+
+    # 2026-08-21T12:00:00+09:00 == 2026-08-21T03:00:00Z
+    by_offset = collect(client, {"updated_after": "2026-08-21T12:00:00+09:00"})
+    assert by_offset == late
+    # 타임존이 없으면 UTC 로 본다
+    by_naive = collect(client, {"updated_after": "2026-08-21T03:00:00"})
+    assert by_naive == late
+
+
+def test_broken_updated_after_is_rejected(client: TestClient) -> None:
+    response = client.get("/api/jobs", params={"updated_after": "어제"})
+    assert response.status_code == 422

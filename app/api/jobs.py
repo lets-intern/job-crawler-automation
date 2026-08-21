@@ -19,6 +19,7 @@ import binascii
 import json
 import sqlite3
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -30,6 +31,9 @@ router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
 # 계약이 정한 한 번에 가져갈 건수
 DEFAULT_LIMIT = 100
+MAX_LIMIT = 500
+# `normalized_at` 의 저장 형식. SQLite `datetime('now')` 가 만드는 UTC 초 단위 문자열이다
+STORED_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 _SELECT = """
     SELECT id, company, title, department, deadline, body, requirements,
@@ -85,6 +89,32 @@ def decode_cursor(cursor: str) -> tuple[str, int]:
         ) from exc
 
 
+def parse_updated_after(value: str) -> str:
+    """ISO8601 을 저장 형식으로 옮긴다. 비교는 문자열로 한다 — 형식이 고정폭이라 순서가 같다.
+
+    타임존이 없으면 UTC 로 본다. 저장된 값이 UTC 라, 로컬 시각으로 해석하면 소비 측이 시차만큼
+    받지 못한 구간이 생긴다.
+    """
+    try:
+        parsed = datetime.fromisoformat(value.strip())
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "reason": "invalid_updated_after",
+                "message": f"ISO8601 시각이 아니다: {value}",
+            },
+        ) from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC).strftime(STORED_FORMAT)
+
+
+def clamp_limit(value: int) -> int:
+    """계약의 상한 500 을 넘는 요청은 거절이 아니라 절삭이다. 커서가 있어 나머지는 이어 받는다."""
+    return max(1, min(value, MAX_LIMIT))
+
+
 def _iso(stored: str) -> str:
     """저장 형식(`YYYY-MM-DD HH:MM:SS`, UTC)을 계약의 ISO8601 모양으로 옮긴다."""
     text = stored.strip().replace(" ", "T")
@@ -110,15 +140,24 @@ def _out(row: sqlite3.Row) -> JobOut:
 @router.get("", response_model=JobPage)
 def list_jobs(
     conn: Annotated[sqlite3.Connection, Depends(get_connection)],
+    updated_after: Annotated[str | None, Query()] = None,
+    limit: Annotated[int, Query()] = DEFAULT_LIMIT,
     cursor: Annotated[str | None, Query()] = None,
 ) -> JobPage:
     """정규화된 공고를 `normalized_at` 오름차순으로 준다.
 
+    `updated_after` 는 `normalized_at` 기준이고 그 시각을 포함하지 않는다. 소비 측이 마지막으로
+    받은 시각을 그대로 넣으면 같은 건이 다시 오지 않는다.
+
     `next_cursor` 는 항목이 있으면 항상 돌려준다. 마지막 페이지에서 비워 보내면 소비 측이 읽은
     위치를 잃고, 다음 폴링에서 처음부터 다시 받는다. 더 받을 것이 있는지는 `has_more` 가 말한다.
     """
+    size = clamp_limit(limit)
     clauses: list[str] = []
     params: list[Any] = []
+    if updated_after is not None:
+        clauses.append("normalized_at > ?")
+        params.append(parse_updated_after(updated_after))
     if cursor is not None:
         last_at, last_id = decode_cursor(cursor)
         clauses.append("(normalized_at > ? OR (normalized_at = ? AND id > ?))")
@@ -128,11 +167,11 @@ def list_jobs(
     # 한 건 더 읽어 다음 페이지가 있는지를 별도 count 없이 판정한다
     rows = conn.execute(
         f"{_SELECT}{where} ORDER BY normalized_at, id LIMIT ?",
-        [*params, DEFAULT_LIMIT + 1],
+        [*params, size + 1],
     ).fetchall()
 
-    has_more = len(rows) > DEFAULT_LIMIT
-    page = rows[:DEFAULT_LIMIT]
+    has_more = len(rows) > size
+    page = rows[:size]
     next_cursor: str | None = cursor
     if page:
         last = page[-1]
