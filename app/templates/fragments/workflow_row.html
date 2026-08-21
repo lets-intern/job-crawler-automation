@@ -1,0 +1,41 @@
+{# 행 하나. 중지·재개와 주기 변경이 이 행만 갈아 끼운다 #}
+{% if item is none %}
+<tr><td colspan="10">{{ message }}</td></tr>
+{% else %}
+<tr id="workflow-row-{{ item.id }}">
+  <td>{{ item.id }}</td>
+  <td>{{ item.name }}</td>
+  <td>{{ item.list_url }}</td>
+  <td>
+    <form hx-patch="/ui/workflows/{{ item.id }}" hx-target="closest tr" hx-swap="outerHTML">
+      <label for="interval-{{ item.id }}">분</label>
+      <input id="interval-{{ item.id }}" name="interval_minutes" type="number"
+             value="{{ item.interval_minutes }}" min="1" size="5">
+      <button type="submit">주기 저장</button>
+    </form>
+  </td>
+  <td>{% if item.status == "active" %}실행 중{% else %}중지됨{% endif %} ({{ item.status }})</td>
+  <td>{{ item.last_run_at or "실행 기록 없음" }}</td>
+  <td>
+    {% if item.last_run_status == "success" %}성공
+    {% elif item.last_run_status == "failed" %}실패
+    {% elif item.last_run_status == "timeout" %}시간 초과
+    {% else %}기록 없음{% endif %}
+  </td>
+  <td>{{ item.success_count }}</td>
+  <td>{{ item.fail_count }}</td>
+  <td>{{ threshold_state }}</td>
+  <td>
+    {% if item.status == "active" %}
+    <button type="button" hx-patch="/ui/workflows/{{ item.id }}"
+            hx-vals='{"status": "paused"}'
+            hx-target="closest tr" hx-swap="outerHTML">중지</button>
+    {% else %}
+    <button type="button" hx-patch="/ui/workflows/{{ item.id }}"
+            hx-vals='{"status": "active"}'
+            hx-target="closest tr" hx-swap="outerHTML">재개</button>
+    {% endif %}
+  </td>
+  <td>{{ message or "" }}</td>
+</tr>
+{% endif %}

@@ -1,0 +1,27 @@
+{# 목록 전체. 페이지 로드 때 한 번만 들어오고, 이후에는 행 단위로 갈린다 #}
+<table>
+  <caption>등록된 워크플로우</caption>
+  <thead>
+    <tr>
+      <th scope="col">번호</th>
+      <th scope="col">이름</th>
+      <th scope="col">대상 사이트</th>
+      <th scope="col">주기</th>
+      <th scope="col">상태</th>
+      <th scope="col">최근 실행</th>
+      <th scope="col">최근 결과</th>
+      <th scope="col">누적 성공</th>
+      <th scope="col">누적 실패</th>
+      <th scope="col">임계치</th>
+      <th scope="col">중지·재개</th>
+      <th scope="col">알림</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item, threshold_state in rows %}
+    {% with message = "" %}{% include "fragments/workflow_row.html" %}{% endwith %}
+    {% else %}
+    <tr><td colspan="12">등록된 워크플로우가 없다</td></tr>
+    {% endfor %}
+  </tbody>
+</table>

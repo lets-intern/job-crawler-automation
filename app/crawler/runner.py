@@ -192,7 +192,7 @@ def _record_outcome(conn: sqlite3.Connection, workflow_id: int, result: RunResul
     if threshold is None or row["status"] != "active":
         return
 
-    streak = _consecutive_failures(conn, workflow_id, int(threshold))
+    streak = consecutive_failures(conn, workflow_id, int(threshold))
     if streak < threshold:
         return
 
@@ -202,8 +202,11 @@ def _record_outcome(conn: sqlite3.Connection, workflow_id: int, result: RunResul
     )
 
 
-def _consecutive_failures(conn: sqlite3.Connection, workflow_id: int, limit: int) -> int:
+def consecutive_failures(conn: sqlite3.Connection, workflow_id: int, limit: int) -> int:
     """마지막 실행부터 거슬러 올라가며 성공이 나올 때까지 센다.
+
+    자동 중지 판정과 화면의 임계치 표시가 같은 값을 봐야 해서 공개해 둔다. 세는 곳이 둘이면
+    화면이 말하는 연속 실패와 실제로 중지되는 시점이 어긋난다.
 
     아직 끝나지 않은 실행(`status` 가 NULL)은 성공도 실패도 아니라 세지 않는다.
     """
