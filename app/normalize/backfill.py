@@ -10,7 +10,7 @@
 
 `raw_jobs` 는 읽기만 한다. `delivered_at` 도 그대로 둔다 — 소비 측이 이미 가져간 표시를
 지우면 같은 데이터가 다시 넘어간다 (`.claude/rules/data-safety.md`). 아래 UPDATE 문이
-규칙이 만드는 컬럼과 `normalized_at` 만 적는 것이 그 보장이다.
+규칙이 만드는 컬럼과 `company_source`, `normalized_at` 만 적는 것이 그 보장이다.
 
 `crawl_runs` 에도 쓰지 않는다. 재정규화는 크롤링 실행이 아니고, 섞어 쓰면 워크플로우의
 성공·실패 통계가 크롤링과 무관한 이유로 움직인다.
@@ -35,11 +35,13 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from app.normalize.engine import (
+    COMPANY_SOURCE,
     NormalizeError,
     RawJobMissingError,
     insert_normalized,
     load_rules,
     normalize_fields,
+    read_default_company,
     read_raw,
 )
 from app.normalize.rules import Rule
@@ -172,20 +174,25 @@ def renormalize(conn: sqlite3.Connection, progress: BackfillProgress) -> Backfil
 def _rewrite(conn: sqlite3.Connection, raw_job_id: int, rules: list[Rule]) -> None:
     """한 건을 다시 정규화한다. 행이 없으면 새로 넣는다.
 
-    UPDATE 가 적는 컬럼은 규칙이 만드는 여섯 개와 `normalized_at` 뿐이다. `delivered_at` 은
-    목록에 없고, 그래서 소비 측이 가져간 표시는 재정규화를 몇 번 돌려도 그대로다.
+    UPDATE 가 적는 컬럼은 규칙이 만드는 여섯 개와 `company_source`, `normalized_at` 뿐이다.
+    `delivered_at` 은 목록에 없고, 그래서 소비 측이 가져간 표시는 재정규화를 몇 번 돌려도
+    그대로다.
+
+    운영자가 `crawlers.default_company` 를 고쳤으면 그 값이 이 경로로 반영된다. 회사명을
+    파싱값으로 확정한 행은 운영자값을 고쳐도 같은 파싱값이 다시 이겨서 바뀌지 않는다.
     """
     _, data = read_raw(conn, raw_job_id)
-    fields = normalize_fields(data, rules)
+    fields = normalize_fields(data, rules, read_default_company(conn, raw_job_id))
     cursor = conn.execute(
         """
         UPDATE normalized_jobs
-           SET company = ?, title = ?, department = ?, deadline = ?, body = ?,
-               requirements = ?, normalized_at = datetime('now')
+           SET company = ?, company_source = ?, title = ?, department = ?, deadline = ?,
+               body = ?, requirements = ?, normalized_at = datetime('now')
          WHERE raw_job_id = ?
         """,
         (
             fields["company"],
+            fields[COMPANY_SOURCE],
             fields["title"],
             fields["department"],
             fields["deadline"],

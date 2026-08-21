@@ -13,6 +13,18 @@
 정렬과 `enabled` 판정은 규칙을 어디서 받았든 이 파일에서 다시 한다. DB 의 ORDER BY 에만
 맡기면 규칙 목록을 손으로 만들어 넣는 경로에서 조용히 순서가 뒤집힌다.
 
+## 회사명은 두 출처에서 하나를 고른다
+
+`raw_data_json.company` 가 비어 있지 않으면 그 값을 쓰고 `company_source='parsed'` 다.
+비어 있으면 그 크롤러의 `crawlers.default_company` 를 쓰고 `company_source='operator'` 다.
+둘 다 없으면 둘 다 NULL 이다 — 빈 문자열로 채우지 않는다.
+
+파싱값이 이기는 이유는 공고 단위가 사이트 단위보다 구체적이기 때문이다. 삼성 채용 사이트
+하나에 삼성SDS 와 삼성전기 공고가 섞여 들어오고, 그 둘을 구분하는 것은 파싱값뿐이다.
+
+고른 값에도 다른 필드와 똑같이 규칙이 적용된다. "삼성전기(주)" 를 "삼성전기" 로 맞추는 것은
+`mapping` 규칙의 일이지 이 해결 단계의 일이 아니다.
+
 ## 빈 값에는 규칙을 적용하지 않는다
 
 셀렉터가 아무것도 못 뽑은 필드는 정규화할 것이 없다. 규칙을 태우지 않고 NULL 로 둔다.
@@ -45,6 +57,13 @@ from app.normalize.rules import (
 )
 
 _WHITESPACE = re.compile(r"\s+")
+
+# `normalized_jobs.company_source` 의 CHECK 제약과 같은 값이어야 한다.
+PARSED = "parsed"
+OPERATOR = "operator"
+
+# 규칙이 만드는 필드가 아니라 해결 단계가 정하는 값이다. `NORMALIZED_FIELDS` 에 넣지 않는다.
+COMPANY_SOURCE = "company_source"
 
 
 class NormalizeError(RuntimeError):
@@ -82,12 +101,38 @@ def load_rules(conn: sqlite3.Connection) -> list[Rule]:
     return [_rule_from_row(row) for row in rows]
 
 
-def normalize_fields(raw: Mapping[str, object], rules: Sequence[Rule]) -> dict[str, str | None]:
-    """원문 필드에서 `normalized_jobs` 의 값들을 만든다. 값이 없는 필드는 None 이다."""
+def resolve_company(
+    raw: Mapping[str, object], default_company: str | None
+) -> tuple[str, str | None]:
+    """쓸 회사명과 그 출처. 파싱값이 이기고, 둘 다 없으면 ("", None) 이다.
+
+    규칙을 태우기 전의 값을 그대로 돌려준다. 앞뒤 공백을 여기서 깎으면 `trim` 규칙이 하는 일을
+    두 곳에서 하게 된다. 비었는지 판정할 때만 공백을 무시한다.
+    """
+    parsed = raw.get("company")
+    if isinstance(parsed, str) and parsed.strip():
+        return parsed, PARSED
+    if default_company and default_company.strip():
+        return default_company, OPERATOR
+    return "", None
+
+
+def normalize_fields(
+    raw: Mapping[str, object],
+    rules: Sequence[Rule],
+    default_company: str | None = None,
+) -> dict[str, str | None]:
+    """원문 필드에서 `normalized_jobs` 의 값들을 만든다. 값이 없는 필드는 None 이다.
+
+    `company` 만 원문 그대로가 아니라 해결된 값에서 출발하고, 그 출처가 `company_source` 로
+    함께 나온다. 규칙이 값을 지워 버리면 출처도 NULL 이다 — 남은 값이 없는데 어디서 왔는지만
+    적혀 있으면 그 행은 읽는 쪽을 헷갈리게 한다.
+    """
     ordered = _by_field(rules)
+    resolved, source = resolve_company(raw, default_company)
     result: dict[str, str | None] = {}
     for field_name in NORMALIZED_FIELDS:
-        raw_value = raw.get(field_name)
+        raw_value = resolved if field_name == "company" else raw.get(field_name)
         value = raw_value if isinstance(raw_value, str) else ""
         if not value:
             result[field_name] = None
@@ -95,7 +140,26 @@ def normalize_fields(raw: Mapping[str, object], rules: Sequence[Rule]) -> dict[s
         for rule in ordered.get(field_name, ()):
             value = _apply(value, rule)
         result[field_name] = value or None
+    result[COMPANY_SOURCE] = source if result["company"] else None
     return result
+
+
+def read_default_company(conn: sqlite3.Connection, raw_job_id: int) -> str | None:
+    """그 건을 수집한 크롤러에 운영자가 적어 둔 회사명. 없으면 None 이다. 읽기 전용이다."""
+    row = conn.execute(
+        """
+        SELECT c.default_company AS default_company
+          FROM raw_jobs r
+          JOIN workflows w ON w.id = r.workflow_id
+          JOIN crawlers c ON c.id = w.crawler_id
+         WHERE r.id = ?
+        """,
+        (raw_job_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    value = row["default_company"]
+    return str(value) if value is not None else None
 
 
 def read_raw(conn: sqlite3.Connection, raw_job_id: int) -> tuple[str, dict[str, object]]:
@@ -124,16 +188,18 @@ def insert_normalized(conn: sqlite3.Connection, raw_job_id: int, rules: Sequence
     `delivered_at` 은 쓰지 않는다. 제공 API 경로만 쓴다 (`.claude/rules/data-safety.md`).
     """
     source_url, data = read_raw(conn, raw_job_id)
-    fields = normalize_fields(data, rules)
+    fields = normalize_fields(data, rules, read_default_company(conn, raw_job_id))
     cursor = conn.execute(
         """
         INSERT INTO normalized_jobs
-               (raw_job_id, company, title, department, deadline, body, requirements, source_url)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+               (raw_job_id, company, company_source, title, department, deadline, body,
+                requirements, source_url)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             raw_job_id,
             fields["company"],
+            fields[COMPANY_SOURCE],
             fields["title"],
             fields["department"],
             fields["deadline"],

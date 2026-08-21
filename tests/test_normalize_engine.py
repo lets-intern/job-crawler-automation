@@ -101,6 +101,7 @@ def test_trim_collapses_whitespace() -> None:
         "deadline": None,
         "body": None,
         "requirements": None,
+        "company_source": None,
     }
 
 
