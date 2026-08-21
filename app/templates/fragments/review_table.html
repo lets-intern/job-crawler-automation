@@ -15,6 +15,8 @@
   <thead>
     <tr>
       <th scope="col" class="num">번호</th>
+      <th scope="col">전달</th>
+      <th scope="col">보정</th>
       {% for field in fields %}<th scope="col">{{ labels[field] }}</th>{% endfor %}
       <th scope="col">워크플로우</th>
       <th scope="col">수집 시각</th>
@@ -26,6 +28,21 @@
     {% set job = item.job %}
     <tr>
       <td class="num">{{ job.id }}</td>
+      <td>
+        {% if job.delivered_at %}
+        <span class="badge badge-idle">전달됨</span>
+        <span class="mt-0.5 block text-xs text-slate-500">{{ job.delivered_at | as_time }}</span>
+        {% if item.override_count %}
+        {# 전달 뒤에 고친 값이다. 소비 측은 전달 시점의 값을 그대로 갖고 있다 #}
+        <span class="mt-0.5 block whitespace-normal text-xs text-amber-700">보정 {{ item.override_count }}개는 소비 측에 가지 않았다</span>
+        {% endif %}
+        {% else %}
+        <span class="badge badge-warn">미전달</span>
+        {% endif %}
+      </td>
+      <td class="num">
+        {% if item.override_count %}{{ item.override_count }}개 필드{% else %}없음{% endif %}
+      </td>
       {% for cell in item.cells %}{{ review_cell(cell) }}{% endfor %}
       <td>{{ job.workflow_id }} - {{ job.workflow_name }}</td>
       <td>{{ job.crawled_at | as_time }}</td>
@@ -35,7 +52,7 @@
       </td>
     </tr>
     {% else %}
-    <tr><td colspan="10" class="cell-text text-slate-600">조건에 맞는 공고가 없다. 조회 조건을 넓히거나, 워크플로우가 한 번이라도 실행됐는지 <a class="font-medium underline" href="/workflows">워크플로우</a> 화면에서 확인한다</td></tr>
+    <tr><td colspan="12" class="cell-text text-slate-600">조건에 맞는 공고가 없다. 조회 조건을 넓히거나, 워크플로우가 한 번이라도 실행됐는지 <a class="font-medium underline" href="/workflows">워크플로우</a> 화면에서 확인한다</td></tr>
     {% endfor %}
   </tbody>
 </table>
