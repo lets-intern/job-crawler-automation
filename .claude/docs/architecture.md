@@ -58,7 +58,7 @@ app/
 │   └── playwright.py   JS 렌더링이 필요한 사이트 전용
 ├── selector/
 │   ├── cleaner.py      HTML 정제·샘플링
-│   ├── generator.py    Anthropic API 호출
+│   ├── generator.py    Gemini API 호출
 │   └── schema.py       셀렉터 JSON 스키마와 검증
 ├── scheduler.py        APScheduler 등록·갱신·동시성 상한
 ├── normalize/

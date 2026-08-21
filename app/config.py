@@ -15,7 +15,8 @@ class Settings(BaseSettings):
     )
 
     # 셀렉터 생성. 없어도 임포트와 서버 기동은 성공한다 — 셀렉터 생성만 실패한다
-    anthropic_api_key: str = ""
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.5-flash"
 
     # 저장
     database_path: str = "./data/jobs.db"

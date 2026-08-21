@@ -7,7 +7,8 @@ import pytest
 from app.config import Settings, get_settings
 
 ENV_NAMES = [
-    "ANTHROPIC_API_KEY",
+    "GEMINI_API_KEY",
+    "GEMINI_MODEL",
     "DATABASE_PATH",
     "CRAWL_USER_AGENT",
     "CRAWL_DELAY_SECONDS",
@@ -54,7 +55,8 @@ def test_loads_without_api_key(clean_env: None) -> None:
     """키가 없어도 설정 로딩은 성공한다. 실패하는 것은 셀렉터 생성뿐이다."""
     settings = Settings()
 
-    assert settings.anthropic_api_key == ""
+    assert settings.gemini_api_key == ""
+    assert settings.gemini_model == "gemini-3.5-flash"
 
 
 def test_get_settings_is_cached() -> None:

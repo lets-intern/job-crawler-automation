@@ -24,16 +24,18 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
 # 값이 비어 있어도 실패로 보지 않는 상세 필드. 사이트에 그 항목 자체가 없을 수 있다.
 OPTIONAL_DETAIL_FIELDS: frozenset[str] = frozenset({"requirements", "deadline", "department"})
 
+# 아래 모델은 Gemini 의 response_schema 로 그대로 나간다. `extra="forbid"` 를 걸면
+# `additionalProperties: false` 로 변환되는데 Gemini 가 그 필드를 모르고 400 을 낸다.
+# 스키마에 없는 필드명을 거르는 일은 `validate_selectors()` 가 받은 뒤에 한다.
+
 
 class ListSelectors(BaseModel):
     """목록 페이지. `item` 이 반복 단위고 나머지는 그 안에서 찾는다."""
-
-    model_config = ConfigDict(extra="forbid")
 
     item: str
     title: str
@@ -44,8 +46,6 @@ class ListSelectors(BaseModel):
 class DetailSelectors(BaseModel):
     """상세 페이지. 사이트에 없는 항목은 빈 문자열로 온다."""
 
-    model_config = ConfigDict(extra="forbid")
-
     title: str
     body: str
     requirements: str
@@ -55,8 +55,6 @@ class DetailSelectors(BaseModel):
 
 class SelectorSet(BaseModel):
     """`crawlers.selectors_json` 에 그대로 들어가는 모양."""
-
-    model_config = ConfigDict(extra="forbid")
 
     list: ListSelectors
     detail: DetailSelectors

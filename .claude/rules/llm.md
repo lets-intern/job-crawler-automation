@@ -1,6 +1,6 @@
 # LLM Rules
 
-Applies to selector generation and any other Anthropic API call.
+Applies to selector generation and any other Gemini API call.
 
 ## The model is a proposer, never an authority
 
@@ -35,8 +35,12 @@ decision — hand-write the selector or drop the site.
 
 ## API usage
 
-Read the `claude-api` skill before writing or changing an API call. Model IDs, pricing, caching and
-parameter shapes change; do not write them from memory.
+The provider is the Gemini API through the `google-genai` Python SDK. Do not add an adapter layer
+for a second provider.
+
+Check the current Gemini documentation before writing or changing an API call. Model IDs, pricing
+and parameter shapes change; do not write them from memory. The model ID lives in `GEMINI_MODEL`,
+not in a source file.
 
 The API key comes from the environment and never from a source file, a template, a log line or a
 committed `.env`. `.env.example` documents the name only.
