@@ -23,6 +23,7 @@ import sqlite3
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from apscheduler.events import EVENT_JOB_MAX_INSTANCES, JobSubmissionEvent
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -215,6 +216,23 @@ class WorkflowScheduler:
             workflow_id = workflow_id_of(job.id)
             if workflow_id is not None:
                 found[workflow_id] = _interval_minutes(job)
+        return found
+
+    def next_run_times(self) -> dict[int, datetime]:
+        """등록된 (워크플로우 id -> 다음 실행 예정 시각). 화면이 "언제 도는가" 에 답하는 값이다.
+
+        잡이 없거나 예정 시각이 아직 정해지지 않은 워크플로우는 빠진다. 마지막 실행에 주기를
+        더해 대신 계산하지 않는다 — 잡의 tick 은 잡이 등록된 시점부터 세므로 프로세스가 다시
+        뜬 뒤에는 그 계산이 틀린다. 모르는 것은 모른다고 적는 편이 틀린 시각보다 낫다.
+
+        기동 전 스케줄러의 잡에는 `next_run_time` 속성 자체가 없다. 그래서 getattr 로 읽는다.
+        """
+        found: dict[int, datetime] = {}
+        for job in self._scheduler.get_jobs():
+            workflow_id = workflow_id_of(job.id)
+            when = getattr(job, "next_run_time", None)
+            if workflow_id is not None and when is not None:
+                found[workflow_id] = when
         return found
 
     def _add(self, workflow_id: int, minutes: int) -> None:

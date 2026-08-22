@@ -70,6 +70,7 @@ import logging
 import sqlite3
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -78,13 +79,19 @@ from pydantic import ValidationError
 
 from app import db
 from app.api import crawlers, workflows
-from app.api.ui import render
+from app.api.ui import format_time, render
 from app.api.ui_crawlers import crawler_rows, error_detail
 from app.api.ui_tests import mode_word
 from app.config import get_settings
 from app.crawler.failures import SUCCESS
 from app.crawler.fetcher import FetchPolicy
-from app.crawler.runner import MANUAL, consecutive_failures, run_workflow
+from app.crawler.runner import (
+    MANUAL,
+    SCHEDULE,
+    TEST,
+    consecutive_failures,
+    run_workflow,
+)
 from app.scheduler import RunGate, WorkflowScheduler, get_gate
 
 logger = logging.getLogger(__name__)
@@ -96,6 +103,11 @@ STATUSES: dict[str, Literal["active", "paused"]] = {"active": "active", "paused"
 
 # 종료 상태를 사람이 읽는 단어로. 저장값은 그대로 영어다 (`.claude/rules/writing.md`)
 RUN_WORDS: dict[str, str] = {SUCCESS: "성공", "timeout": "시간 초과", "failed": "실패"}
+
+# 실행 출처를 사람이 읽는 단어로. `crawl_runs.trigger` 가 NULL 인 옛 행은 `알 수 없음` 이다 —
+# 그 실행이 어디서 왔는지는 기록되지 않았고, 추측해서 적으면 없는 사실을 만드는 것이다
+TRIGGER_WORDS: dict[str, str] = {SCHEDULE: "주기 실행", MANUAL: "수동 1회", TEST: "테스트"}
+UNKNOWN_TRIGGER = "알 수 없음"
 
 # 이 프로세스가 지금 화면에서 돌리고 있는 워크플로우. `crawl_runs` 행은 브라우저를 띄우고 나서야
 # 생기므로, 그전에 두 번째로 누른 요청을 이것이 막는다
@@ -127,6 +139,10 @@ class CardView:
     attention: str
     # 최근 실행이 실패로 끝났을 때의 사유 한 줄
     reason: str
+    # 주기와 다음 실행 예정을 한 문장으로. 중지된 워크플로우는 다음 실행이 없다고 적는다
+    schedule: str
+    # 가장 최근에 끝난 실행을 무엇이 시작했는가. 실행 기록이 없으면 빈 문자열이다
+    last_trigger: str
     # 운영자가 방금 누른 조작의 결과
     message: str
     # 지금 이 워크플로우의 실행이 돌고 있는가. 카드가 스스로 폴링할지가 여기서 갈린다
@@ -162,11 +178,49 @@ def _attention(item: workflows.WorkflowItem, streak: int) -> tuple[str, str]:
     return "", ""
 
 
+def _remaining(when: datetime) -> str:
+    """지금부터 얼마나 남았는지. 시각만 적으면 화면을 보는 사람이 매번 뺄셈을 한다."""
+    moment = when if when.tzinfo is not None else when.replace(tzinfo=UTC)
+    seconds = (moment - datetime.now(UTC)).total_seconds()
+    if seconds < 0:
+        # 잡이 아직 깨어나지 않았거나 앞 실행이 끝나지 않아 tick 을 건너뛰는 중이다
+        return "예정 시각이 지났다"
+    minutes = int(seconds // 60)
+    if minutes < 1:
+        return "1분 안"
+    if minutes < 60:
+        return f"약 {minutes}분 뒤"
+    hours, rest = divmod(minutes, 60)
+    return f"약 {hours}시간 {rest}분 뒤"
+
+
+def _schedule(item: workflows.WorkflowItem, next_run_at: datetime | None) -> str:
+    """이 워크플로우가 언제 도는가. 한 문장으로 적는다.
+
+    중지된 워크플로우의 자리를 비워 두지 않는다. 빈 칸은 "다음 실행이 없다" 가 아니라 "아직
+    모른다" 로 읽히고, 그 둘은 운영자가 할 일이 정반대다.
+
+    예정 시각을 스케줄러에서 못 읽었으면 그렇다고 적는다. 마지막 실행에 주기를 더해 추측하지
+    않는다 (`app/scheduler.py` 의 `next_run_times`).
+    """
+    every = f"{item.interval_minutes}분마다 돈다"
+    if item.status != "active":
+        return f"중지됨. 다음 실행 없음 — 재개하면 {every}"
+    if next_run_at is None:
+        return f"{every}. 다음 실행 예정 시각을 스케줄러에서 읽지 못했다"
+    return f"{every}. 다음 실행 예정 {format_time(next_run_at)} ({_remaining(next_run_at)})"
+
+
+def _trigger_word(value: str | None) -> str:
+    return TRIGGER_WORDS.get(value or "", UNKNOWN_TRIGGER)
+
+
 def _last_run(conn: sqlite3.Connection, workflow_id: int) -> sqlite3.Row | None:
     """가장 최근에 끝난 실행 한 행. 아직 도는 중인 실행은 끝난 실행이 아니다."""
     row: sqlite3.Row | None = conn.execute(
         """
-        SELECT id, status, success_count, new_count, fail_count, error_class, error_message
+        SELECT id, status, success_count, new_count, fail_count, error_class, error_message,
+               trigger
           FROM crawl_runs
          WHERE workflow_id = ? AND status IS NOT NULL
          ORDER BY id DESC LIMIT 1
@@ -209,17 +263,21 @@ def _view(
     item: workflows.WorkflowItem,
     message: str = "",
     *,
+    next_run_at: datetime | None = None,
     running: bool | None = None,
     settled: bool = False,
 ) -> CardView:
     streak = _streak(conn, item)
     tone, attention = _attention(item, streak)
+    last = _last_run(conn, item.id)
     return CardView(
         item=item,
         threshold_state=_threshold_state(item, streak),
         tone=tone,
         attention=attention,
         reason=_last_failure(conn, item.id),
+        schedule=_schedule(item, next_run_at),
+        last_trigger="" if last is None else _trigger_word(last["trigger"]),
         message=message,
         running=_in_flight(conn, item.id) if running is None else running,
         settled=settled,
@@ -232,13 +290,21 @@ def _card(
     item: workflows.WorkflowItem,
     message: str = "",
     *,
+    scheduler: WorkflowScheduler,
     running: bool | None = None,
     settled: bool = False,
 ) -> HTMLResponse:
     return render(
         request,
         "fragments/workflow_card.html",
-        card=_view(conn, item, message, running=running, settled=settled),
+        card=_view(
+            conn,
+            item,
+            message,
+            next_run_at=scheduler.next_run_times().get(item.id),
+            running=running,
+            settled=settled,
+        ),
     )
 
 
@@ -389,12 +455,18 @@ def promote_fragment(
 def workflow_table_fragment(
     request: Request,
     conn: Annotated[sqlite3.Connection, Depends(workflows.get_connection)],
+    scheduler: Annotated[WorkflowScheduler, Depends(workflows.get_workflow_scheduler)],
 ) -> HTMLResponse:
     """목록 전체. 페이지 로드 때 한 번 들어온다."""
+    # 잡 목록은 한 번만 읽는다. 카드마다 물어보면 목록 하나를 그리는 동안 값이 갈릴 수 있다
+    next_runs = scheduler.next_run_times()
     return render(
         request,
         "fragments/workflow_list.html",
-        cards=[_view(conn, item) for item in workflows.list_workflows(conn)],
+        cards=[
+            _view(conn, item, next_run_at=next_runs.get(item.id))
+            for item in workflows.list_workflows(conn)
+        ],
     )
 
 
@@ -413,9 +485,11 @@ def update_workflow_fragment(
         return _missing(request, workflow_id)
 
     if status and status not in STATUSES:
-        return _card(request, conn, current, message=f"알 수 없는 상태다: {status}")
+        return _card(
+            request, conn, current, scheduler=scheduler, message=f"알 수 없는 상태다: {status}"
+        )
     if not status and not interval_minutes.strip():
-        return _card(request, conn, current, message="바꿀 값이 없다")
+        return _card(request, conn, current, scheduler=scheduler, message="바꿀 값이 없다")
 
     try:
         payload = workflows.WorkflowUpdate(
@@ -428,6 +502,7 @@ def update_workflow_fragment(
             request,
             conn,
             current,
+            scheduler=scheduler,
             message=f"주기는 1 이상의 정수여야 한다: {interval_minutes!r}",
         )
 
@@ -435,13 +510,13 @@ def update_workflow_fragment(
         updated = workflows.update_workflow(workflow_id, payload, conn, scheduler)
     except HTTPException as exc:
         detail = error_detail(exc)
-        return _card(request, conn, current, message=detail["message"])
+        return _card(request, conn, current, scheduler=scheduler, message=detail["message"])
 
     if payload.status is not None:
         message = "중지했다" if payload.status == "paused" else "재개했다"
     else:
         message = f"주기를 {payload.interval_minutes}분으로 바꿨다"
-    return _card(request, conn, updated, message=message)
+    return _card(request, conn, updated, scheduler=scheduler, message=message)
 
 
 @router.get("/ui/workflows/{workflow_id}/card", response_class=HTMLResponse)
@@ -449,6 +524,7 @@ def workflow_card_fragment(
     request: Request,
     workflow_id: int,
     conn: Annotated[sqlite3.Connection, Depends(workflows.get_connection)],
+    scheduler: Annotated[WorkflowScheduler, Depends(workflows.get_workflow_scheduler)],
     polled: bool = False,
 ) -> HTMLResponse:
     """카드 하나를 지금 상태로 다시 그린다. 실행 중인 카드가 몇 초마다 부르는 자리다.
@@ -462,10 +538,14 @@ def workflow_card_fragment(
 
     running = workflow_id in _running or _in_flight(conn, workflow_id)
     if running:
-        return _card(request, conn, item, message=RUNNING_MESSAGE, running=True)
+        return _card(
+            request, conn, item, scheduler=scheduler, message=RUNNING_MESSAGE, running=True
+        )
     # 폴링하던 카드가 결과로 갈리는 순간이다. 그 한 번만 결과를 적고 강조한다
     message = _finished_message(conn, workflow_id) if polled else ""
-    return _card(request, conn, item, message=message, running=False, settled=polled)
+    return _card(
+        request, conn, item, scheduler=scheduler, message=message, running=False, settled=polled
+    )
 
 
 @router.post("/ui/workflows/{workflow_id}/run", response_class=HTMLResponse)
@@ -495,6 +575,7 @@ async def run_now_fragment(
             request,
             conn,
             current,
+            scheduler=scheduler,
             message="이미 실행 중이다. 새로 시작하지 않았다. 끝나면 이 카드가 갱신된다",
             running=True,
         )
@@ -504,6 +585,7 @@ async def run_now_fragment(
             request,
             conn,
             current,
+            scheduler=scheduler,
             message=(
                 f"동시 실행 상한({gate.limit()})에 걸렸다. 진행 중 {gate.active}건이 "
                 "끝난 뒤 다시 누른다"
@@ -517,4 +599,4 @@ async def run_now_fragment(
     launch(
         _execute_run(workflow_id, fetcher=fetcher, scheduler=scheduler, gate=gate, connect=connect)
     )
-    return _card(request, conn, current, message=RUNNING_MESSAGE, running=True)
+    return _card(request, conn, current, scheduler=scheduler, message=RUNNING_MESSAGE, running=True)

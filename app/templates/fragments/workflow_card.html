@@ -46,11 +46,19 @@
   <p class="mt-1 truncate text-xs text-slate-500" title="{{ card.item.list_url }}">
     <a class="underline" href="{{ card.item.list_url }}" target="_blank" rel="noreferrer">{{ card.item.list_url }}</a>
   </p>
+  {# 주기와 다음 실행. 입력칸의 숫자만으로는 "몇 분마다 도는가" 도 "언제 도는가" 도 읽히지
+     않는다. 중지된 워크플로우는 다음 실행이 없다고 적는다 — 빈 칸은 "모른다" 로 읽힌다 #}
+  <p class="mt-2 break-keep text-sm {% if card.item.status == 'active' %}text-slate-700{% else %}font-medium text-slate-600{% endif %}">{{ card.schedule }}</p>
 
   <dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3 lg:grid-cols-5">
     <div>
       <dt class="mt-0 text-xs font-medium text-slate-500">최근 실행</dt>
       <dd class="text-sm text-slate-800">{{ card.item.last_run_at | as_time or "실행 기록 없음" }}</dd>
+      {# 사람이 누른 것인지 스케줄러가 깨운 것인지. 이것이 없으면 최근 실행이 있어도 주기가
+         실제로 도는지 알 수 없다 #}
+      {% if card.last_trigger %}
+      <dd class="text-xs text-slate-600">{{ card.last_trigger }}</dd>
+      {% endif %}
     </div>
     <div>
       <dt class="mt-0 text-xs font-medium text-slate-500">최근 결과</dt>
