@@ -52,6 +52,11 @@ RENDER_MODES: tuple[str, ...] = (STATIC, PLAYWRIGHT)
 # 로드가 끝난 뒤 XHR 이 잦아들기를 기다리는 시간. 이 시간이 지나도 조용해지지 않으면 그 시점의
 # DOM 을 그대로 쓴다 — 광고나 폴링 때문에 영영 조용해지지 않는 페이지가 있다.
 _SETTLE_SECONDS = 5.0
+# 목록을 XHR 로 채우는 사이트는 networkidle 이 잦아든 뒤에도 DOM 이 비어 있을 수 있다.
+# 현대자동차가 그랬다 — 같은 셀렉터가 어떤 실행에는 20건, 어떤 실행에는 0건이었다.
+# 반복 항목이 실제로 생길 때까지 한 번 더 기다린다.
+_ITEMS_SECONDS = 10.0
+_ITEM_HINTS = ("li[data-recucls]", "ul li", "ol li", "tbody tr", "article")
 
 
 class RenderError(FetchError):
@@ -153,9 +158,23 @@ class Renderer:
 
 
 async def _settle(page: Any) -> None:
-    """XHR 이 잦아들 때까지만 기다린다. 안 잦아들어도 실패로 보지 않는다."""
+    """XHR 이 잦아들고 반복 항목이 생길 때까지 기다린다. 안 되어도 실패로 보지 않는다.
+
+    `networkidle` 만 보면 목록을 늦게 채우는 사이트에서 빈 DOM 을 가져온다. 그 결과는
+    `selector_miss` 로 남는데, 셀렉터는 멀쩡하고 기다림이 짧았을 뿐이라 운영자가 엉뚱한
+    곳을 고치게 된다.
+
+    여기서 못 기다려도 실패로 만들지 않는다. 항목이 정말 없는 사이트도 있고, 그 판정은
+    셀렉터를 아는 파서의 몫이다.
+    """
     with suppress(Exception):
         await page.wait_for_load_state("networkidle", timeout=int(_SETTLE_SECONDS * 1000))
+    with suppress(Exception):
+        await page.wait_for_function(
+            "(hints) => hints.some((h) => document.querySelectorAll(h).length >= 3)",
+            arg=list(_ITEM_HINTS),
+            timeout=int(_ITEMS_SECONDS * 1000),
+        )
 
 
 def _status(response: Any) -> int:
