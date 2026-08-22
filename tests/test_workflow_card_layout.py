@@ -182,5 +182,7 @@ def test_성공으로_끝난_워크플로우에는_사유_줄이_없다(
     html = client.get("/ui/workflows").text
 
     assert "최근 실패 사유" not in html
-    assert "연속 실패" not in html
+    # 배지와 임계치 칸이 세는 값이다. 임계치 입력칸의 이름(18.3)에도 같은 말이 들어가므로
+    # 문구 조각이 아니라 실제로 세어진 횟수가 없는지를 본다
+    assert "연속 실패 1회" not in html
     assert "누적 실패" in html  # 누적은 남는다. 값을 지우지 않는다

@@ -122,6 +122,14 @@ RUNNING_MESSAGE = "수집이 도는 중이다. 이 카드가 몇 초마다 스�
 STREAK_LOOKBACK = 10
 
 
+def _at_least_one(text: str) -> int:
+    """화면에서 온 문자열을 1 이상의 정수로. 아니면 그 자리에서 거절한다."""
+    value = int(text)
+    if value < 1:
+        raise ValueError(f"1 이상이어야 한다: {value}")
+    return value
+
+
 def get_run_gate() -> RunGate:
     """동시 실행 상한을 지키는 문. 스케줄러가 쓰는 것과 같은 것이다."""
     return get_gate()
@@ -139,6 +147,8 @@ class CardView:
     attention: str
     # 최근 실행이 실패로 끝났을 때의 사유 한 줄
     reason: str
+    # 임계치를 넘겨 자동으로 멈춘 상태면 그 사실 한 줄. 아니면 빈 문자열이다
+    auto_stopped: str
     # 주기와 다음 실행 예정을 한 문장으로. 중지된 워크플로우는 다음 실행이 없다고 적는다
     schedule: str
     # 가장 최근에 끝난 실행을 무엇이 시작했는가. 실행 기록이 없으면 빈 문자열이다
@@ -165,6 +175,26 @@ def _threshold_state(item: workflows.WorkflowItem, streak: int) -> str:
         return "임계치 없음" if streak == 0 else f"임계치 없음 (연속 실패 {streak}회)"
     word = "초과" if streak >= item.auto_stop_threshold else "정상"
     return f"{word} (연속 실패 {streak}회 / 임계치 {item.auto_stop_threshold}회)"
+
+
+def _auto_stopped(item: workflows.WorkflowItem, streak: int) -> str:
+    """임계치를 넘겨 자동으로 멈춘 상태인가. 그렇다면 카드에 그 사실을 남긴다.
+
+    자동 중지를 따로 기록하는 컬럼은 없다. 대신 자동 중지가 걸리는 조건을 그대로 다시 본다 —
+    멈춰 있고, 임계치가 있고, 연속 실패가 그 임계치에 닿아 있다. 그 조건은 성공한 실행이 하나
+    나올 때까지 풀리지 않으므로 상태가 남는다.
+
+    손으로 멈춘 워크플로우가 같은 조건이면 같은 문장이 뜬다. 그때도 고쳐야 할 것과 재개하기 전에
+    확인할 것은 같으므로, 둘을 가르려고 컬럼을 늘리지 않는다.
+    """
+    if item.status == "active" or item.auto_stop_threshold is None:
+        return ""
+    if streak < item.auto_stop_threshold:
+        return ""
+    return (
+        f"연속 실패 {streak}회가 임계치 {item.auto_stop_threshold}회에 닿아 멈춘 상태다. "
+        "실패 사유를 고친 뒤 재개한다"
+    )
 
 
 def _attention(item: workflows.WorkflowItem, streak: int) -> tuple[str, str]:
@@ -276,6 +306,7 @@ def _view(
         tone=tone,
         attention=attention,
         reason=_last_failure(conn, item.id),
+        auto_stopped=_auto_stopped(item, streak),
         schedule=_schedule(item, next_run_at),
         last_trigger="" if last is None else _trigger_word(last["trigger"]),
         message=message,
@@ -494,7 +525,7 @@ def update_workflow_fragment(
     try:
         payload = workflows.WorkflowUpdate(
             status=STATUSES.get(status),
-            interval_minutes=int(interval_minutes) if interval_minutes.strip() else None,
+            interval_minutes=_at_least_one(interval_minutes) if interval_minutes.strip() else None,
         )
     except (ValidationError, ValueError):
         # 0, 음수, 정수가 아닌 값. 저장하지 않고 지금 값을 그대로 다시 그린다
@@ -516,6 +547,57 @@ def update_workflow_fragment(
         message = "중지했다" if payload.status == "paused" else "재개했다"
     else:
         message = f"주기를 {payload.interval_minutes}분으로 바꿨다"
+    return _card(request, conn, updated, scheduler=scheduler, message=message)
+
+
+@router.patch("/ui/workflows/{workflow_id}/threshold", response_class=HTMLResponse)
+def update_threshold_fragment(
+    request: Request,
+    workflow_id: int,
+    conn: Annotated[sqlite3.Connection, Depends(workflows.get_connection)],
+    scheduler: Annotated[WorkflowScheduler, Depends(workflows.get_workflow_scheduler)],
+    auto_stop_threshold: Annotated[str, Form()] = "",
+) -> HTMLResponse:
+    """자동 중지 임계치를 정하거나 지운다. 갈리는 것은 이 카드 하나다.
+
+    주기·중지·재개와 라우트를 나눈 이유는 빈 값의 뜻 때문이다. 임계치에서 빈 값은 "안 바꾼다" 가
+    아니라 "자동으로 멈추지 않는다" 이고, 그것이 자동 중지를 끄는 유일한 방법이다. FastAPI 는
+    폼의 빈 문자열을 기본값으로 되돌리므로 한 라우트 안에서는 "비워서 보냈다" 와 "안 보냈다" 를
+    가르지 못한다. 이 라우트로 왔다는 사실 자체가 임계치를 바꾸겠다는 뜻이다.
+
+    판정과 실제 중지는 여기서 하지 않는다. 실행이 끝날 때 `app/crawler/runner.py` 의
+    `_record_outcome` 이 같은 값을 보고 멈춘다.
+    """
+    current = _find(conn, workflow_id)
+    if current is None:
+        return _missing(request, workflow_id)
+
+    threshold: int | None = None
+    if auto_stop_threshold.strip():
+        try:
+            threshold = _at_least_one(auto_stop_threshold)
+        except ValueError:
+            # 0, 음수, 정수가 아닌 값. 저장하지 않고 지금 값을 그대로 다시 그린다
+            return _card(
+                request,
+                conn,
+                current,
+                scheduler=scheduler,
+                message=f"임계치는 1 이상의 정수여야 한다: {auto_stop_threshold!r}",
+            )
+
+    payload = workflows.WorkflowUpdate(auto_stop_threshold=threshold)
+    try:
+        updated = workflows.update_workflow(workflow_id, payload, conn, scheduler)
+    except HTTPException as exc:
+        detail = error_detail(exc)
+        return _card(request, conn, current, scheduler=scheduler, message=detail["message"])
+
+    message = (
+        f"임계치를 연속 실패 {threshold}회로 정했다"
+        if threshold is not None
+        else "임계치를 지웠다. 연속 실패가 쌓여도 자동으로 멈추지 않는다"
+    )
     return _card(request, conn, updated, scheduler=scheduler, message=message)
 
 

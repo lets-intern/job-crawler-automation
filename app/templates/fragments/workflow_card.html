@@ -92,6 +92,14 @@
   </p>
   {% endif %}
 
+  {# 임계치를 넘겨 멈춘 워크플로우. 왜 안 도는지가 카드에 없으면 중지 버튼을 누른 기억이 없는
+     운영자가 원인을 다른 데서 찾는다 #}
+  {% if card.auto_stopped %}
+  <p class="mt-3 break-keep rounded border border-red-200 bg-white px-3 py-2 text-sm text-red-800">
+    <span class="font-semibold">자동 중지됨</span> — {{ card.auto_stopped }}
+  </p>
+  {% endif %}
+
   <div class="mt-3 flex flex-wrap items-end gap-x-3 gap-y-2 border-t border-slate-200 pt-3">
     {% if card.running %}
     <p class="w-full text-sm font-medium text-amber-800">수집이 도는 동안에는 조작을 잠근다. 끝나면 풀린다</p>
@@ -127,6 +135,22 @@
       {% endif %}
       <span class="wait-note">상태를 바꾸는 중</span>
     </div>
+    {# 임계치는 비워 두는 것도 뜻이 있다 — 자동으로 멈추지 않는다. 그래서 라우트를 따로 쓴다.
+       이 폼으로 온 요청만 임계치를 바꾸고, 주기 저장과 중지·재개는 임계치를 건드리지 않는다 #}
+    <form class="flex items-end gap-2" hx-patch="/ui/workflows/{{ card.item.id }}/threshold"
+          hx-target="#workflow-row-{{ card.item.id }}" hx-swap="outerHTML"
+          hx-disabled-elt="find button">
+      <span>
+        <label for="threshold-{{ card.item.id }}" class="block text-xs font-medium text-slate-600">자동 중지 임계치(연속 실패 횟수)</label>
+        <input id="threshold-{{ card.item.id }}" name="auto_stop_threshold" type="number"
+               value="{{ card.item.auto_stop_threshold or '' }}" min="1" step="1"
+               placeholder="비우면 자동 중지 안 함" class="mt-0 w-52"
+               {% if card.running %}disabled{% endif %}>
+      </span>
+      <button type="submit" {% if card.running %}disabled{% endif %}
+              title="연속 실패가 이 횟수에 닿으면 워크플로우를 자동으로 멈춘다. 비우고 저장하면 자동 중지를 끈다">임계치 저장</button>
+      <span class="wait-note">저장하는 중</span>
+    </form>
     <div class="flex items-end gap-2">
       {# 주기가 360분이면 다음 실행까지 여섯 시간이다. 승격이 제대로 됐는지 지금 확인하는 자리 #}
       <button type="button" hx-post="/ui/workflows/{{ card.item.id }}/run"

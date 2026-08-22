@@ -49,15 +49,24 @@ class WorkflowOut(BaseModel):
 
 
 class WorkflowUpdate(BaseModel):
-    """주기 변경과 수동 중지·재개. 둘 다 비면 바꿀 것이 없다."""
+    """주기 변경, 수동 중지·재개, 자동 중지 임계치. 전부 비면 바꿀 것이 없다.
+
+    임계치만 `None` 이 뜻을 갖는다 — "자동으로 멈추지 않는다" 이고, 그것을 보내는 것 자체가
+    변경이다. 그래서 값이 `None` 인지가 아니라 **요청에 들어 있었는지**(`model_fields_set`)로
+    가른다. 값으로만 가르면 임계치를 지우는 요청과 임계치를 건드리지 않는 요청이 같아진다.
+    """
 
     interval_minutes: int | None = Field(default=None, ge=1)
     status: Literal["active", "paused"] | None = None
+    auto_stop_threshold: int | None = Field(default=None, ge=1)
+
+    def changes_threshold(self) -> bool:
+        return "auto_stop_threshold" in self.model_fields_set
 
     @model_validator(mode="after")
     def at_least_one(self) -> WorkflowUpdate:
-        if self.interval_minutes is None and self.status is None:
-            raise ValueError("interval_minutes 나 status 중 하나는 있어야 한다")
+        if self.interval_minutes is None and self.status is None and not self.changes_threshold():
+            raise ValueError("interval_minutes, status, auto_stop_threshold 중 하나는 있어야 한다")
         return self
 
 
@@ -178,7 +187,7 @@ def update_workflow(
     conn: Annotated[sqlite3.Connection, Depends(get_connection)],
     scheduler: Annotated[WorkflowScheduler, Depends(get_workflow_scheduler)],
 ) -> WorkflowItem:
-    """주기 변경과 수동 중지·재개. 바뀐 내용은 그대로 스케줄러 잡까지 간다."""
+    """주기 변경, 수동 중지·재개, 자동 중지 임계치. 바뀐 내용은 그대로 스케줄러 잡까지 간다."""
     row = conn.execute("SELECT id FROM workflows WHERE id = ?", (workflow_id,)).fetchone()
     if row is None:
         raise HTTPException(
@@ -192,6 +201,13 @@ def update_workflow(
         )
     if payload.status is not None:
         conn.execute("UPDATE workflows SET status = ? WHERE id = ?", (payload.status, workflow_id))
+    if payload.changes_threshold():
+        # NULL 이면 자동 중지하지 않는다. 판정과 중지는 실행 쪽이 한다
+        # (`app/crawler/runner.py` 의 `_record_outcome`)
+        conn.execute(
+            "UPDATE workflows SET auto_stop_threshold = ? WHERE id = ?",
+            (payload.auto_stop_threshold, workflow_id),
+        )
 
     scheduler.sync(conn)
 
