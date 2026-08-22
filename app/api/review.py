@@ -33,7 +33,7 @@ import sqlite3
 from typing import Annotated, Any
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 
 from app.api import crawlers
@@ -148,7 +148,6 @@ def _cell(
         "value": overrides[field] if overridden else rule_value,
         "overridden": overridden,
         "long": field in LONG_FIELDS,
-        "delivered": bool(job["delivered_at"]),
     }
 
 
@@ -175,56 +174,72 @@ def _read_job(conn: sqlite3.Connection, raw_job_id: int) -> sqlite3.Row | None:
     ).fetchone()
 
 
+def _text(value: Any) -> str:
+    """DB 값이든 폼 값이든 비교할 수 있는 한 가지 문자열로.
+
+    `NULL` 과 빈 문자열을 같은 것으로 본다. "값이 없다" 는 상태가 둘로 갈려 있으면, 아무것도
+    고치지 않은 필드에 빈 보정이 생긴다.
+
+    줄바꿈도 맞춘다. 브라우저는 `textarea` 를 CRLF 로 보내고 DB 에는 LF 로 들어 있어, 손대지
+    않은 본문이 그대로 돌아와도 다른 값으로 읽힌다 — 그러면 저장을 누를 때마다 본문·자격요건에
+    보정이 하나씩 생긴다.
+    """
+    if value is None:
+        return ""
+    return str(value).replace("\r\n", "\n").replace("\r", "\n")
+
+
 def _modal_response(
     request: Request,
     conn: sqlite3.Connection,
     raw_job_id: int,
-    field: str,
     *,
     saved: str = "",
     error: str = "",
-    draft: str | None = None,
+    note: str = "",
+    drafts: dict[str, str] | None = None,
+    focus_field: str = "",
+    changed_fields: tuple[str, ...] = (),
     swap_row: bool = False,
+    close: bool = False,
 ) -> HTMLResponse:
-    """모달 안의 내용. 저장·삭제 뒤에는 표의 그 칸도 같은 응답에 실어 보낸다.
+    """공고 한 건을 통째로 그리는 모달.
 
-    표를 다시 그리지 않는다. `swap_row` 가 켜지면 값 칸·보정 개수·전달 칸 세 자리만 OOB 로
-    갈린다. 모달을 닫았는데 표에 옛 값이 남아 있으면 운영자는 저장이 안 된 줄 안다.
+    필드 하나만 여는 경로는 두지 않는다. 값 하나만 보고는 그 값이 맞는지 판정할 수 없어서
+    운영자가 같은 건을 여섯 번 열게 된다 — 검수는 한 건을 통째로 보는 일이다.
+
+    저장·삭제 뒤에는 표의 그 행도 같은 응답에 실어 보낸다. 표를 다시 그리지 않는다.
+    `swap_row` 가 켜지면 그 행의 값 칸 여섯, 보정 개수, 전달 칸만 OOB 로 갈린다.
 
     실패도 이 조각으로 나간다. 고치다 실패했는데 표 전체가 오류 상자로 바뀌면 운영자는 방금
     어디를 고치고 있었는지부터 다시 찾아야 한다.
     """
-    if field not in OVERRIDABLE_FIELDS:
-        return render(
-            request,
-            "fragments/review_modal.html",
-            cell=None,
-            job=None,
-            message=f"고칠 수 없는 필드다: {field} (가능한 값: {', '.join(OVERRIDABLE_FIELDS)})",
-        )
     job = _read_job(conn, raw_job_id)
     if job is None:
         return render(
             request,
             "fragments/review_modal.html",
-            cell=None,
             job=None,
+            fields=[],
             message=f"수집 건 {raw_job_id} 의 정규화 행이 없다. 목록을 다시 불러 확인한다",
         )
     overrides = _read_overrides(conn, [raw_job_id]).get(raw_job_id, {})
     response = render(
         request,
         "fragments/review_modal.html",
-        cell=_cell(job, field, overrides),
         job=job,
+        fields=[_cell(job, field, overrides) for field in OVERRIDABLE_FIELDS],
         override_count=len(overrides),
+        drafts=drafts or {},
+        focus_field=focus_field,
+        changed_fields=changed_fields,
         saved=saved,
         error=error,
-        draft=draft,
+        note=note,
         swap_row=swap_row,
         message="",
     )
-    if swap_row:
+    if close:
         # 설정(settle)까지 끝난 뒤에 닫는다. 먼저 닫으면 표가 갈리기 전 화면이 드러난다
         response.headers["HX-Trigger-After-Settle"] = MODAL_DONE_EVENT
     return response
@@ -332,83 +347,131 @@ def review_filters_fragment(
     )
 
 
-@router.get("/ui/review/modal/{raw_job_id}/{field}", response_class=HTMLResponse)
+@router.get("/ui/review/modal/{raw_job_id}", response_class=HTMLResponse)
 def review_modal_fragment(
     request: Request,
     raw_job_id: int,
-    field: str,
     conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
 ) -> HTMLResponse:
-    """그 필드를 고치는 모달. 표 안에서 바로 고치는 경로는 두지 않는다.
+    """공고 한 건을 고치는 모달. 표 안에서 바로 고치는 경로는 두지 않는다.
 
     본문과 자격요건은 수백 자에 여러 줄인데, 표 칸 폭에 갇힌 입력에서는 고치는 값 전체가 한
     번에 보이지 않는다. 입구를 둘로 두면 어느 쪽이 저장된 값인지 화면에서 알 수 없어, 고치는
     자리를 이 모달 하나로 모은다.
     """
-    return _modal_response(request, conn, raw_job_id, field)
+    return _modal_response(request, conn, raw_job_id)
 
 
-@router.put("/ui/review/cells/{raw_job_id}/{field}", response_class=HTMLResponse)
-def save_review_cell_fragment(
+@router.put("/ui/review/jobs/{raw_job_id}", response_class=HTMLResponse)
+async def save_review_job_fragment(
     request: Request,
     raw_job_id: int,
-    field: str,
     conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
-    value: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
-    """사람이 정한 값을 `job_field_overrides` 에 쌓는다.
+    """모달에서 고친 값을 한 번에 `job_field_overrides` 에 쌓는다.
 
-    `normalized_jobs` 에 쓰지 않는다. 확정 값은 규칙과 보정에서 매번 다시 만들어지는 파생값이고,
-    파생값에 손으로 쓰면 다음 재정규화가 그것을 덮어쓴다. `delivered_at` 도 건드리지 않는다 —
-    수동 수정이 전달 표시를 되돌리면 소비 측에 같은 데이터가 다시 간다
+    고친 필드만 쌓인다. 지금 화면에 있던 값을 그대로 돌려보낸 필드에는 보정을 만들지 않는다 —
+    한 건을 열어 한 필드만 고쳤는데 여섯 개가 전부 사람 보정으로 굳으면, 다음 정규화에서
+    규칙이 고쳐 놓을 값까지 옛 값에 붙들린다.
+
+    `drop` 이 실려 오면 그 필드의 보정만 지우고 모달은 열어 둔다. 나머지 칸에 쳐 둔 값은
+    그대로 돌려준다 — 보정 하나를 지우려다 아직 저장하지 않은 다른 수정을 잃지 않게 한다.
+
+    `normalized_jobs` 에는 쓰지 않는다. 확정 값은 규칙과 보정에서 매번 다시 만들어지는
+    파생값이고, 파생값에 손으로 쓰면 다음 재정규화가 그것을 덮어쓴다. `delivered_at` 도
+    건드리지 않는다 — 수동 수정이 전달 표시를 되돌리면 소비 측에 같은 데이터가 다시 간다
     (`.claude/rules/data-safety.md`).
     """
-    if field not in OVERRIDABLE_FIELDS or _read_job(conn, raw_job_id) is None:
-        return _modal_response(request, conn, raw_job_id, field)
+    # 폼을 직접 읽는다. `Form()` 파라미터로 받으면 빈 칸이 기본값으로 바뀌어, 값을 지운
+    # 필드와 아예 오지 않은 필드가 같아진다 — 그러면 틀린 값을 비우는 수정이 저장되지 않는다
+    form = await request.form()
+    submitted = {
+        field: str(form[field]) for field in OVERRIDABLE_FIELDS if isinstance(form.get(field), str)
+    }
+    drop = str(form.get("drop") or "")
+    # 보낸 값은 어느 경로든 그대로 돌려준다. 실패해도 방금 친 것이 입력에 남아야 한다
+    drafts = {field: _text(value) for field, value in submitted.items()}
 
-    try:
+    job = _read_job(conn, raw_job_id)
+    if job is None:
+        return _modal_response(request, conn, raw_job_id)
+
+    if drop:
+        if drop not in OVERRIDABLE_FIELDS:
+            return _modal_response(
+                request,
+                conn,
+                raw_job_id,
+                error=f"고칠 수 없는 필드다: {drop} (가능한 값: {', '.join(OVERRIDABLE_FIELDS)})",
+                drafts=drafts,
+            )
         conn.execute(
-            """
-            INSERT INTO job_field_overrides (raw_job_id, field_name, value)
-                 VALUES (?, ?, ?)
-            ON CONFLICT (raw_job_id, field_name)
-              DO UPDATE SET value = excluded.value, updated_at = datetime('now')
-            """,
-            (raw_job_id, field, value),
+            "DELETE FROM job_field_overrides WHERE raw_job_id = ? AND field_name = ?",
+            (raw_job_id, drop),
         )
-    except sqlite3.DatabaseError as exc:
-        # 실패 사유를 모달 안에 그대로 보여준다. 모달은 닫지 않고 고쳐 쓴 값도 입력에 남긴다
-        return _modal_response(request, conn, raw_job_id, field, error=str(exc), draft=value)
+        # 지운 필드는 규칙이 만든 값으로 돌아간다. 쳐 둔 값을 그대로 두면 화면만 옛 값이다
+        drafts.pop(drop, None)
+        return _modal_response(
+            request,
+            conn,
+            raw_job_id,
+            saved=(
+                f"{FIELD_LABELS[drop]} 보정을 지웠다. 다음 정규화에서 규칙이 만든 값으로 돌아간다"
+            ),
+            drafts=drafts,
+            focus_field=drop,
+            changed_fields=(drop,),
+            swap_row=True,
+        )
 
+    overrides = _read_overrides(conn, [raw_job_id]).get(raw_job_id, {})
+    changed: list[str] = []
+    for field, value in submitted.items():
+        new = _text(value)
+        current = _text(overrides[field]) if field in overrides else _text(job[field])
+        if new == current:
+            continue
+        try:
+            conn.execute(
+                """
+                INSERT INTO job_field_overrides (raw_job_id, field_name, value)
+                     VALUES (?, ?, ?)
+                ON CONFLICT (raw_job_id, field_name)
+                  DO UPDATE SET value = excluded.value, updated_at = datetime('now')
+                """,
+                (raw_job_id, field, new),
+            )
+        except sqlite3.DatabaseError as exc:
+            # 실패 사유를 모달 안에 그대로 보여준다. 모달은 닫지 않고 고쳐 쓴 값도 입력에 남긴다
+            return _modal_response(
+                request,
+                conn,
+                raw_job_id,
+                error=f"{FIELD_LABELS[field]} 을 저장하지 못했다: {exc}",
+                drafts=drafts,
+                focus_field=field,
+                changed_fields=tuple(changed),
+                swap_row=bool(changed),
+            )
+        changed.append(field)
+
+    if not changed:
+        # 조용히 닫지 않는다. 닫히면 저장된 줄 알고, 아무 데도 남지 않은 수정을 찾게 된다
+        return _modal_response(
+            request,
+            conn,
+            raw_job_id,
+            note="고친 값이 없다. 보정은 만들지 않았다",
+            drafts=drafts,
+        )
+
+    labels = ", ".join(FIELD_LABELS[field] for field in changed)
     return _modal_response(
         request,
         conn,
         raw_job_id,
-        field,
-        saved=f"{FIELD_LABELS[field]} 보정을 저장했다",
+        saved=f"{len(changed)}개 필드 보정을 저장했다: {labels}",
+        changed_fields=tuple(changed),
         swap_row=True,
-    )
-
-
-@router.delete("/ui/review/cells/{raw_job_id}/{field}", response_class=HTMLResponse)
-def delete_review_cell_fragment(
-    request: Request,
-    raw_job_id: int,
-    field: str,
-    conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
-) -> HTMLResponse:
-    """보정을 지운다. 그 필드는 다음 정규화에서 규칙이 만든 값으로 돌아간다."""
-    if field not in OVERRIDABLE_FIELDS or _read_job(conn, raw_job_id) is None:
-        return _modal_response(request, conn, raw_job_id, field)
-    conn.execute(
-        "DELETE FROM job_field_overrides WHERE raw_job_id = ? AND field_name = ?",
-        (raw_job_id, field),
-    )
-    return _modal_response(
-        request,
-        conn,
-        raw_job_id,
-        field,
-        saved=f"{FIELD_LABELS[field]} 보정을 지웠다",
-        swap_row=True,
+        close=True,
     )

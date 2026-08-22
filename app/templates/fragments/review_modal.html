@@ -1,12 +1,21 @@
 {# 검수 편집 모달의 내용. 틀(<dialog>)은 base.html 에 하나 있고 이 조각이 그 안을 채운다.
 
-   저장은 이 조각을 다시 그리고, 응답 뒤에 표의 그 칸·보정 개수·전달 칸을 OOB 로 함께 갈아
-   끼운다. 표 전체는 다시 그리지 않는다 (Push 6 의 부분 갱신).
+   공고 한 건이 통째로 들어온다. 조회 화면의 상세 모달(`fragments/job_detail.html`)과 같은
+   모양이되 여기서는 고칠 수 있다 — 값 하나만 보고는 그 값이 맞는지 판정할 수 없어서다.
+
+   여러 필드를 고치고 한 번에 저장한다. 고친 필드만 보정으로 쌓인다. 손대지 않은 칸은 그대로
+   돌아가고 서버가 그것을 걸러낸다.
+
+   저장은 이 조각을 다시 그리고, 응답 뒤에 표의 그 행(값 칸 여섯·보정 개수·전달 칸)을 OOB 로
+   함께 갈아 끼운다. 표 전체는 다시 그리지 않는다 (Push 6 의 부분 갱신).
 
    닫는 것은 서버가 `HX-Trigger-After-Settle: app-modal-done` 로 알린다. 설정(settle) 뒤라
-   표가 갈린 다음에 닫히고, 그래서 닫힌 순간 뒤에 보이는 값이 방금 저장한 값이다. #}
+   표가 갈린 다음에 닫히고, 그래서 닫힌 순간 뒤에 보이는 값이 방금 저장한 값이다.
+   보정 삭제는 닫지 않는다 — 한 필드를 되돌리고 나머지를 계속 보는 자리다. #}
 {% from "fragments/review_cell_macro.html" import review_cell_inner, review_override_count, review_delivery %}
-{% if cell is none %}
+{# 회사명이 어디서 왔는지. 상태는 단어로 적는다 (`.claude/rules/writing.md`) #}
+{% set company_source_label = {"parsed": "파싱", "operator": "입력"} %}
+{% if job is none %}
 <div class="modal-body">
   <header class="modal-head">
     <h3 id="app-modal-title" class="text-base font-semibold text-slate-900">고칠 수 없다</h3>
@@ -20,21 +29,26 @@
 </div>
 {% else %}
 <form class="modal-body"
-      hx-put="/ui/review/cells/{{ cell.raw_job_id }}/{{ cell.field }}"
+      hx-put="/ui/review/jobs/{{ job.raw_job_id }}"
       hx-target="#app-modal-body" hx-swap="innerHTML"
       hx-disabled-elt="find button[type=submit]">
   <header class="modal-head">
-    <h3 id="app-modal-title" class="text-base font-semibold text-slate-900">{{ cell.label }} 고치기</h3>
+    <h3 id="app-modal-title" class="text-base font-semibold text-slate-900">{{ job.title or "제목 값 없음" }}</h3>
     <p class="mt-1 text-sm text-slate-600">
-      수집 건 {{ cell.raw_job_id }} · {{ job.company or "회사 값 없음" }} ·
-      {{ job.title or "제목 값 없음" }}
+      수집 건 {{ job.raw_job_id }} · 공고 {{ job.id }} · {{ job.company or "회사 값 없음" }} ·
+      워크플로우 {{ job.workflow_id }} - {{ job.workflow_name }}
     </p>
   </header>
 
-  <div class="modal-scroll">
+  <div class="modal-scroll"{% if not focus_field %} tabindex="-1" autofocus{% endif %}>
     {% if saved %}
     <p class="mb-3 rounded-md bg-emerald-50 px-3 py-2 text-sm">
       <span class="state-ok">저장</span> — {{ saved }}
+    </p>
+    {% endif %}
+    {% if note %}
+    <p class="mb-3 rounded-md bg-slate-100 px-3 py-2 text-sm">
+      <span class="state-idle">변경 없음</span> — {{ note }}
     </p>
     {% endif %}
     {% if error %}
@@ -42,57 +56,105 @@
       <span class="state-bad">저장 실패</span> — {{ error }}
     </p>
     {% endif %}
-    {% if cell.delivered %}
+    {% if job.delivered_at %}
     <p class="mb-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
-      이미 전달된 행이다. 여기서 고쳐도 소비 측이 가진 값은 바뀌지 않는다 —
-      수동 수정은 전달 표시를 되돌리지 않는다.
+      이미 전달된 행이다 ({{ job.delivered_at | as_time }}). 여기서 고쳐도 소비 측이 가진 값은
+      바뀌지 않는다 — 수동 수정은 전달 표시를 되돌리지 않는다.
     </p>
     {% endif %}
 
     <p class="text-sm text-slate-600">
-      지금 값의 출처:
-      {% if cell.overridden %}<span class="badge badge-ok">사람 보정</span>
-      {% else %}<span class="badge badge-idle">규칙값</span>{% endif %}
+      고친 필드만 보정으로 쌓인다. 손대지 않은 칸에는 보정을 만들지 않는다. 확정 값에는 다음
+      정규화부터 반영된다.
     </p>
 
-    <p>
-      <label for="review-modal-value">{{ cell.label }}</label>
-      {% if cell.long %}
-      <textarea id="review-modal-value" name="value" rows="16" autofocus
-                class="block w-full">{{ draft if draft is not none else (cell.value or "") }}</textarea>
+    <div class="table-scroll">
+    <table class="data-table">
+      <caption>고치지 않는 값</caption>
+      <tbody>
+        <tr><th scope="row">공고 번호</th><td>{{ job.id }}</td></tr>
+        <tr><th scope="row">수집 건</th><td>raw_jobs {{ job.raw_job_id }}</td></tr>
+        <tr><th scope="row">회사명 출처</th>
+            <td>{{ company_source_label.get(job.company_source, "값 없음") }}</td></tr>
+        <tr><th scope="row">수집 시각</th><td>{{ job.crawled_at | as_time }}</td></tr>
+        <tr><th scope="row">정규화 시각</th><td>{{ job.normalized_at | as_time }}</td></tr>
+        <tr><th scope="row">전달</th>
+            <td>
+              {% if job.delivered_at %}
+              <span class="badge badge-idle">전달됨</span>
+              <span class="text-xs text-slate-500">{{ job.delivered_at | as_time }}</span>
+              {% else %}
+              <span class="badge badge-warn">미전달</span>
+              {% endif %}
+            </td></tr>
+        <tr><th scope="row">보정</th>
+            <td>{% if override_count %}{{ override_count }}개 필드{% else %}없음{% endif %}</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    {% for field in fields %}
+    <div class="mt-5 border-t border-slate-200 pt-4">
+      <div class="flex flex-wrap items-center gap-2">
+        <label for="review-field-{{ field.field }}"
+               class="text-sm font-semibold text-slate-900">{{ field.label }}</label>
+        {% if field.overridden %}
+        <span class="badge badge-ok">사람 보정</span>
+        {# 폼의 hx-disabled-elt 를 그대로 물려받으면 이 버튼 안에서 submit 버튼을 찾다가
+           실패한다. 자기 자신으로 덮어쓴다.
+           PUT 으로 보낸다 — DELETE 는 HTMX 가 값을 주소에 실어 보내서, 아직 저장하지 않은
+           본문 수백 자가 URL 로 들어간다. `hx-include` 로 지금 폼에 친 값을 함께 보내
+           보정 하나를 지우려다 나머지 수정을 잃지 않게 한다 #}
+        <button type="button" hx-put="/ui/review/jobs/{{ job.raw_job_id }}"
+                hx-include="closest form" hx-vals='{"drop": "{{ field.field }}"}'
+                hx-target="#app-modal-body" hx-swap="innerHTML"
+                hx-disabled-elt="this" hx-indicator="#review-drop-wait-{{ field.field }}"
+                hx-confirm="{{ field.label }} 보정을 지운다. 다음 정규화에서 규칙이 만든 값으로 돌아간다. 계속할까"
+                title="사람이 정한 값을 버리고 규칙 값으로 되돌린다">보정 삭제</button>
+        <span id="review-drop-wait-{{ field.field }}" class="wait-note">지우는 중</span>
+        {% else %}
+        <span class="badge badge-idle">규칙값</span>
+        {% endif %}
+      </div>
+
+      {% set shown = drafts[field.field] if field.field in drafts else (field.value or "") %}
+      {% if field.long %}
+      <textarea id="review-field-{{ field.field }}" name="{{ field.field }}" rows="12"
+                class="block w-full"{% if focus_field == field.field %} autofocus{% endif %}>{{ shown }}</textarea>
       {% else %}
-      <input id="review-modal-value" name="value" type="text" autofocus class="block w-full"
-             value="{{ draft if draft is not none else (cell.value or "") }}">
+      <input id="review-field-{{ field.field }}" name="{{ field.field }}" type="text"
+             class="block w-full" value="{{ shown }}"{% if focus_field == field.field %} autofocus{% endif %}>
       {% endif %}
-    </p>
 
-    <h5 class="mb-1 mt-5 text-sm font-semibold text-slate-700">규칙이 만든 값</h5>
-    <p class="text-sm text-slate-600">
-      무엇에서 고치는 것인지 함께 본다. 저장해도 이 값은 지워지지 않고, 보정을 지우면 다음
-      정규화에서 이 값으로 돌아간다.
-    </p>
-    <pre>{{ cell.rule_value or "값 없음" }}</pre>
+      {# 무엇에서 고치는 것인지 함께 본다. 보정이 없는 필드는 저장된 값이 곧 규칙이 만든 값이라
+         같은 것을 두 번 보여주지 않는다 — 본문처럼 긴 필드에서 그 중복이 모달의 절반을 먹는다 #}
+      {% if field.overridden %}
+      <p class="mt-2 text-xs font-semibold text-slate-700">규칙이 만든 값</p>
+      <pre class="max-h-40 overflow-y-auto">{{ field.rule_value or "값 없음" }}</pre>
+      {% else %}
+      <p class="mt-1 text-xs text-slate-500">
+        저장된 값이 곧 규칙이 만든 값이다. 아직 사람 보정이 없다.
+      </p>
+      {% endif %}
+    </div>
+    {% endfor %}
   </div>
 
   <footer class="modal-foot">
     <button type="submit">저장</button>
-    {% if cell.overridden %}
-    {# 폼의 hx-disabled-elt 를 그대로 물려받으면 이 버튼 안에서 submit 버튼을 찾다가 실패한다.
-       자기 자신으로 덮어쓴다 #}
-    <button type="button" hx-delete="/ui/review/cells/{{ cell.raw_job_id }}/{{ cell.field }}"
-            hx-target="#app-modal-body" hx-swap="innerHTML"
-            hx-disabled-elt="this" hx-indicator="closest footer"
-            hx-confirm="{{ cell.label }} 보정을 지운다. 다음 정규화에서 규칙이 만든 값으로 돌아간다. 계속할까"
-            title="사람이 정한 값을 버리고 규칙 값으로 되돌린다">보정 삭제</button>
-    {% endif %}
+    {# 원문은 늘 보이는 자리에 둔다. 긴 본문을 지나면 위쪽 표는 밀려 올라간다 #}
+    <a class="inline-flex items-center rounded-md border border-slate-300 bg-white px-2.5 py-1
+              text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+       href="{{ job.source_url }}" target="_blank" rel="noreferrer">원문 열기</a>
     <button type="button" data-modal-close>닫기</button>
     <span class="wait-note">저장하는 중</span>
   </footer>
 </form>
 {% endif %}
 {% if swap_row %}
-{# 뒤에 있는 표의 그 행. 닫았더니 옛 값이 남아 있으면 저장이 안 된 줄 안다 #}
-{{ review_cell_inner(cell, oob=True, changed=True) }}
-{{ review_override_count(cell.raw_job_id, override_count, oob=True) }}
-{{ review_delivery(cell.raw_job_id, job.delivered_at, override_count, oob=True) }}
+{# 뒤에 있는 표의 그 행. 닫았더니 옛 값이 남아 있으면 저장이 안 된 줄 안다.
+   표를 다시 그리지 않는다 — 이 행의 자리들만 제자리로 들어간다 #}
+{% for field in fields %}{{ review_cell_inner(field, oob=True, changed=field.field in changed_fields) }}{% endfor %}
+{{ review_override_count(job.raw_job_id, override_count, oob=True) }}
+{{ review_delivery(job.raw_job_id, job.delivered_at, override_count, oob=True) }}
 {% endif %}
