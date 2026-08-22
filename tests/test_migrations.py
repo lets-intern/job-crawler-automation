@@ -46,6 +46,7 @@ EXPECTED_COLUMNS = {
         "fail_count",
         "error_class",
         "error_message",
+        "trigger",
     },
     "raw_jobs": {
         "id",
@@ -99,7 +100,7 @@ OVERRIDABLE = ["company", "title", "department", "deadline", "body", "requiremen
 EXPECTED_INDEXES = {"idx_raw_jobs_content_hash", "idx_normalized_jobs_normalized_at"}
 
 # 지금까지의 마이그레이션. 전부 역적용해야 테이블이 사라진다
-ALL_VERSIONS = ["0001", "0002", "0003", "0004", "0005", "0006"]
+ALL_VERSIONS = ["0001", "0002", "0003", "0004", "0005", "0006", "0007"]
 
 
 @pytest.fixture

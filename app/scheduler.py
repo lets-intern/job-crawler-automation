@@ -29,7 +29,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
 from app import db, settings
-from app.crawler.runner import run_workflow
+from app.crawler.runner import SCHEDULE, run_workflow
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +153,7 @@ class WorkflowScheduler:
         async with get_gate().slot():
             conn = db.connect()
             try:
-                await run_workflow(conn, workflow_id)
+                await run_workflow(conn, workflow_id, trigger=SCHEDULE)
             finally:
                 self.sync(conn)
                 conn.close()

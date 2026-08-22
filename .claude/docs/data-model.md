@@ -56,9 +56,15 @@ SQLite 파일 하나. 경로는 `DATABASE_PATH` 가 정하고 Docker named volum
 | fail_count | |
 | error_class | `transport` / `selector_miss` / `parse` |
 | error_message | |
+| trigger | 무엇이 실행을 시작했는지. `schedule` / `manual` / `test`. 0007 이전 행은 NULL |
 
 `workflow_id` 와 `crawler_id` 가 둘 다 NULL 인 행은 CHECK 가 막는다. 어느 쪽에도 걸리지 않은
 실행은 나중에 누구도 추적하지 못한다.
+
+`trigger` 는 스케줄러가 깨운 실행(`schedule`), 워크플로우 카드의 지금 1회 실행(`manual`),
+승격 전 크롤러의 테스트 실행(`test`)을 가른다. 이것이 없으면 최근 실행이 있어도 주기가 실제로
+도는 것인지 사람이 눌러 온 것인지 알 수 없다. NULL 은 기록되기 전의 실행이고 화면에
+`알 수 없음` 으로 나온다.
 
 `error_class` 가 세 가지로 나뉘어 있는 이유는 조치가 각각 다르기 때문이다.
 `transport` 만 재시도 대상이다. `.claude/rules/crawling.md` 참조.

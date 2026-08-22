@@ -46,7 +46,7 @@ from app import db
 from app.crawler.failures import SUCCESS
 from app.crawler.fetcher import FetchError, FetchPolicy, RobotsDisallowedError, get_fetcher
 from app.crawler.playwright import RENDER_MODES, STATIC, open_source
-from app.crawler.runner import RunTarget, run_once
+from app.crawler.runner import TEST, RunTarget, run_once
 from app.selector.generator import (
     GenerationResult,
     SelectorGenerationError,
@@ -683,6 +683,7 @@ async def test_run(
             RunTarget(
                 list_url=row["list_url"],
                 selectors=selectors,
+                trigger=TEST,
                 crawler_id=crawler_id,
                 render_mode=used_mode,
             ),

@@ -17,7 +17,15 @@ import pytest
 from app import db
 from app.config import Settings
 from app.crawler.fetcher import Fetcher
-from app.crawler.runner import KNOWN, PREVIEW, STORED, RunTarget, run_once
+from app.crawler.runner import (
+    KNOWN,
+    PREVIEW,
+    SCHEDULE,
+    STORED,
+    TEST,
+    RunTarget,
+    run_once,
+)
 from app.selector.schema import SelectorSet, validate_selectors
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
@@ -96,7 +104,7 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
 
 
 def workflow_target(selectors: SelectorSet = SELECTORS) -> RunTarget:
-    return RunTarget(list_url=LIST_URL, selectors=selectors, workflow_id=1)
+    return RunTarget(list_url=LIST_URL, selectors=selectors, trigger=SCHEDULE, workflow_id=1)
 
 
 def rows(connection: sqlite3.Connection, sql: str) -> list[sqlite3.Row]:
@@ -169,6 +177,7 @@ async def test_item_0개_매칭은_실패로_남는다(conn: sqlite3.Connection)
     target = RunTarget(
         list_url=LIST_URL,
         selectors=replaced("list", item="ol.list-of-nothing > li"),
+        trigger=SCHEDULE,
         workflow_id=1,
     )
 
@@ -220,6 +229,7 @@ async def test_상세_필드를_못_읽으면_parse_로_남는다(conn: sqlite3.
     target = RunTarget(
         list_url=LIST_URL,
         selectors=replaced("detail", body="div.no-such-description"),
+        trigger=SCHEDULE,
         workflow_id=1,
     )
 
@@ -239,7 +249,7 @@ async def test_워크플로우_없는_실행은_적재하지_않고_행만_남�
     conn: sqlite3.Connection,
 ) -> None:
     fetcher = StubSite().fetcher()
-    target = RunTarget(list_url=LIST_URL, selectors=SELECTORS, crawler_id=1)
+    target = RunTarget(list_url=LIST_URL, selectors=SELECTORS, trigger=TEST, crawler_id=1)
 
     result = await run_once(conn, target, fetcher=fetcher, limit=2)
     await fetcher.aclose()
@@ -257,4 +267,4 @@ async def test_워크플로우_없는_실행은_적재하지_않고_행만_남�
 
 def test_어디에도_속하지_않는_실행은_만들지_못한다() -> None:
     with pytest.raises(ValueError, match="workflow_id"):
-        RunTarget(list_url=LIST_URL, selectors=SELECTORS)
+        RunTarget(list_url=LIST_URL, selectors=SELECTORS, trigger=SCHEDULE)

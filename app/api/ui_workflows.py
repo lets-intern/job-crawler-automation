@@ -84,7 +84,7 @@ from app.api.ui_tests import mode_word
 from app.config import get_settings
 from app.crawler.failures import SUCCESS
 from app.crawler.fetcher import FetchPolicy
-from app.crawler.runner import consecutive_failures, run_workflow
+from app.crawler.runner import MANUAL, consecutive_failures, run_workflow
 from app.scheduler import RunGate, WorkflowScheduler, get_gate
 
 logger = logging.getLogger(__name__)
@@ -330,7 +330,7 @@ async def _execute_run(
     conn = connect()
     try:
         async with gate.slot():
-            await run_workflow(conn, workflow_id, fetcher=fetcher)
+            await run_workflow(conn, workflow_id, trigger=MANUAL, fetcher=fetcher)
     except Exception:
         # 백그라운드에서 터진 예외는 아무도 보지 못한다. 로그에는 남긴다
         logger.exception("workflow %s: 화면에서 시작한 1회 실행이 예외로 끝났다", workflow_id)

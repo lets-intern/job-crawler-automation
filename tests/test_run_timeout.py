@@ -21,7 +21,7 @@ import pytest
 from app import db
 from app.config import Settings
 from app.crawler.fetcher import Fetcher
-from app.crawler.runner import RunTarget, run_once, run_workflow
+from app.crawler.runner import TEST, RunTarget, run_once, run_workflow
 from app.selector.schema import validate_selectors
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
@@ -138,7 +138,12 @@ async def test_시간_제한이_없으면_끝까지_돈다(conn: sqlite3.Connect
     """항목 수를 정해 놓고 도는 테스트 실행 경로다."""
     result = await run_once(
         conn,
-        RunTarget(list_url=LIST_URL, selectors=validate_selectors(SELECTORS), crawler_id=1),
+        RunTarget(
+            list_url=LIST_URL,
+            selectors=validate_selectors(SELECTORS),
+            trigger=TEST,
+            crawler_id=1,
+        ),
         fetcher=slow_fetcher(detail_delay=0.0),
         limit=1,
     )

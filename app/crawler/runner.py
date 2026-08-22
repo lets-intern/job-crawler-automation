@@ -55,6 +55,14 @@ STORED = "stored"
 KNOWN = "known"
 PREVIEW = "preview"
 
+# 실행을 무엇이 시작했는가. `crawl_runs.trigger` 에 그대로 들어간다
+# (`migrations/0007_run_trigger.sql`).
+# 최근 실행이 있어도 그것이 사람이 누른 것이면 주기는 죽어 있는 것이라, 이 셋이 갈리지 않으면
+# "주기가 실제로 도는가" 에 답할 수 없다
+SCHEDULE = "schedule"
+MANUAL = "manual"
+TEST = "test"
+
 
 @dataclass(frozen=True)
 class RunTarget:
@@ -62,6 +70,8 @@ class RunTarget:
 
     list_url: str
     selectors: SelectorSet
+    # `SCHEDULE` / `MANUAL` / `TEST`. 기본값을 두지 않는다 — 부르는 쪽이 자기가 누구인지 안다
+    trigger: str
     workflow_id: int | None = None
     crawler_id: int | None = None
     # 어느 경로로 가져왔는가. 0개 매칭의 사유를 어떻게 적을지가 이 값에 갈린다
@@ -114,6 +124,7 @@ async def run_workflow(
     conn: sqlite3.Connection,
     workflow_id: int,
     *,
+    trigger: str = SCHEDULE,
     fetcher: FetchPolicy | None = None,
     limit: int | None = None,
     timeout_seconds: float | None = None,
@@ -129,6 +140,9 @@ async def run_workflow(
 
     셀렉터가 없거나 스키마에 맞지 않으면 실행하지 못하지만, 그것도 종료 경로다.
     `crawl_runs` 행을 실패로 남긴다.
+
+    `trigger` 는 이 실행을 무엇이 시작했는지다. 기본값이 `SCHEDULE` 인 것은 여기가 스케줄러의
+    진입점이기 때문이고, 화면의 1회 실행은 `MANUAL` 을 직접 준다.
     """
     row = conn.execute(
         """
@@ -148,7 +162,7 @@ async def run_workflow(
     except (json.JSONDecodeError, SelectorSchemaError) as exc:
         # 저장된 셀렉터가 실행할 수 있는 상태가 아니다. transport·selector_miss·parse 중
         # 어느 것도 아니므로 error_class 는 비워 두고 사유만 남긴다.
-        result = _config_failure(conn, workflow_id, f"셀렉터를 읽을 수 없다: {exc}")
+        result = _config_failure(conn, workflow_id, trigger, f"셀렉터를 읽을 수 없다: {exc}")
         _record_outcome(conn, workflow_id, result)
         return result
 
@@ -160,6 +174,7 @@ async def run_workflow(
             RunTarget(
                 list_url=row["list_url"],
                 selectors=selectors,
+                trigger=trigger,
                 workflow_id=workflow_id,
                 render_mode=row["render_mode"],
             ),
@@ -240,10 +255,12 @@ def consecutive_failures(conn: sqlite3.Connection, workflow_id: int, limit: int)
     return streak
 
 
-def _config_failure(conn: sqlite3.Connection, workflow_id: int, message: str) -> RunResult:
+def _config_failure(
+    conn: sqlite3.Connection, workflow_id: int, trigger: str, message: str
+) -> RunResult:
     cursor = conn.execute(
-        "INSERT INTO crawl_runs (workflow_id) VALUES (?)",
-        (workflow_id,),
+        "INSERT INTO crawl_runs (workflow_id, trigger) VALUES (?, ?)",
+        (workflow_id, trigger),
     )
     result = RunResult(run_id=int(cursor.lastrowid or 0), status="")
     _finish_run(conn, result, Failure(error_class=None, message=message))
@@ -505,8 +522,8 @@ def close_orphan_runs(conn: sqlite3.Connection) -> int:
 def _start_run(conn: sqlite3.Connection, target: RunTarget) -> int:
     # started_at 은 테이블 기본값(datetime('now'))이 채운다. 다른 테이블과 같은 형식이어야 한다.
     cursor = conn.execute(
-        "INSERT INTO crawl_runs (workflow_id, crawler_id) VALUES (?, ?)",
-        (target.workflow_id, target.crawler_id),
+        "INSERT INTO crawl_runs (workflow_id, crawler_id, trigger) VALUES (?, ?, ?)",
+        (target.workflow_id, target.crawler_id, target.trigger),
     )
     return int(cursor.lastrowid or 0)
 
