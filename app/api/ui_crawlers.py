@@ -228,7 +228,8 @@ def _repair_notice(result: crawlers.RepairOut) -> str:
         parts = [f"크롤러 {result.id} 에 실패한 필드는 없었다. 힌트가 가리킨 자리를 물었다."]
     else:
         parts = [
-            f"크롤러 {result.id} 의 실패한 필드 {len(result.targets)}개를 모델에게 다시 물었다."
+            f"크롤러 {result.id} 의 실패한 필드 "
+            f"{len(result.failed_targets)}개를 모델에게 다시 물었다."
         ]
     if result.repaired:
         parts.append(f"고쳐진 필드: {', '.join(result.repaired)}.")

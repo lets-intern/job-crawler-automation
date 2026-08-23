@@ -458,7 +458,7 @@ def _fragile_notes(changes: list[SelectorChange]) -> list[str]:
         if not reasons:
             continue
         notes.append(
-            f"{change.name} 의 새 셀렉터가 {' 와 '.join(reasons)} 에 기대고 있다: "
+            f"{change.name} 의 새 셀렉터가 {'와 '.join(reasons)}에 기대고 있다: "
             f"{change.after} — 그 자리에 뜻이 있는 클래스나 data- 속성이 없었다는 뜻이다. "
             "사이트를 다시 배포하면 깨질 수 있으니 다음에 이 필드가 실패하면 여기부터 본다"
         )

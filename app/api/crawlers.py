@@ -212,6 +212,9 @@ class RepairOut(BaseModel):
     # 자리를 고친 것이다. 화면이 뭐라고 적을지가 여기서 갈린다
     mode: str
     targets: list[str]
+    # `targets` 중 실제로 실패였던 것. 힌트가 들어오면 대상이 그보다 넓어진다 — 화면이
+    # "실패한 필드 N개" 라고 적을 때 세야 하는 것은 이쪽이다
+    failed_targets: list[str]
     repaired: list[str]
     unresolved: list[str]
     # 고친 뒤에도 실패로 남은 필드 전부. `unresolved` 는 이번에 고치려 한 것만이라, 대상이
@@ -669,6 +672,7 @@ async def repair_selectors(
         after_matches=after_matches,
         mode="hinted" if outcome.hinted_only else "failed",
         targets=outcome.targets,
+        failed_targets=outcome.failed_targets,
         repaired=outcome.repaired,
         unresolved=outcome.unresolved,
         failed_fields=[name for name in outcome.after.failed if name not in skipped],
