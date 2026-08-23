@@ -1,0 +1,96 @@
+{# 테스트 결과 바로 아래에 붙는 수정 자리.
+
+   실패는 주기 실행에서 나고, 확인은 이 화면에서 한다. 고치러 등록 화면으로 건너갔다
+   돌아오면 방금 본 실패가 화면에서 사라진다. 그래서 고치기·저장·다시 실행이 전부 여기
+   한 자리에 있다.
+
+   결과 표와 힌트 입력칸은 등록 화면과 같은 매크로다 — 두 화면의 동작이 같아야 한다. #}
+{% from "fragments/selector_repair_macro.html" import hint_field, repair_report %}
+{% if error %}
+<h3>고치지 못했다</h3>
+<dl>
+  <dt>사유</dt><dd>{{ error.reason }}</dd>
+  <dt>내용</dt><dd>{{ error.message }}</dd>
+  {% if next_step(error.reason) %}<dt>다음</dt><dd>{{ next_step(error.reason) }}</dd>{% endif %}
+</dl>
+{% endif %}
+
+{% if notice %}
+<p>{{ notice }}</p>
+{% endif %}
+
+{% if repair %}
+{{ repair_report(repair) }}
+{% endif %}
+
+<h3>AI 수정</h3>
+<p>
+  저장된 셀렉터를 기준으로 <span class="font-semibold">실패한 필드만</span> 모델에게 다시
+  물어본다. 잘 되는 필드는 그대로 둔다 — 힌트로 그 필드를 지적했을 때만 함께 고친다.
+  페이지는 지금 다시 가져오므로 이 실행의 결과와 같은 화면을 보고 고친다.
+</p>
+{% if failed_fields %}
+<p class="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-red-800">
+  <span class="font-semibold">이번 실행에서 실패한 필드</span>: {{ failed_fields | join(", ") }}
+</p>
+{% elif run_failed %}
+<p class="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-red-800">
+  필드 표에는 실패가 없지만 실행이 끝까지 가지 못했다. 무엇이 막았는지는 위의 실행 요약과
+  항목별 실패에 있다.
+</p>
+{% else %}
+{# 다 성공한 실행에도 버튼은 남는다. 잡히는 값이 틀렸는데 고칠 길이 없으면 운영자가 막힌다 #}
+<p class="rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-slate-700">
+  이번 실행의 필드 표에는 실패가 없다. 그래도 잡히는 값이 틀렸으면 고칠 수 있다 —
+  <span class="font-semibold">어느 필드가 무엇을 잘못 잡는지 힌트에 적으면 그 필드를 고친다.</span>
+  힌트를 비우고 눌러도 되지만, 그때는 지금 아무것도 잡지 못하는 셀렉터만 대상이 된다.
+  사이트에 없는 항목(건너뜀)은 어느 쪽에서도 대상이 아니다.
+</p>
+{% endif %}
+<form hx-post="/ui/tests/{{ crawler_id }}/repair"
+      hx-target="#test-repair"
+      hx-swap="innerHTML"
+      hx-disabled-elt="find button"
+      hx-indicator="#test-repair-wait">
+  {{ hint_field("test-repair") }}
+  <p>
+    <button type="submit">AI 수정</button>
+    <span id="test-repair-wait" class="wait-note">페이지를 다시 가져와 실패한 필드를 고치는 중. 10초쯤 걸린다</span>
+  </p>
+</form>
+
+<h3>셀렉터 편집</h3>
+<p>
+  고친 결과는 아직 저장되지 않았다. 그대로 두면 다음 실행은 지금까지의 셀렉터로 돈다.
+  손으로 더 고쳐도 되고, 그대로 저장해도 된다.
+</p>
+<form hx-put="/ui/tests/{{ crawler_id }}/selectors"
+      hx-target="#test-repair"
+      hx-swap="innerHTML"
+      hx-disabled-elt="find button"
+      hx-indicator="#test-selectors-wait">
+  <fieldset>
+    <legend>크롤러 {{ crawler_id }}{% if status %} (상태 {{ status }}){% endif %}</legend>
+    <label for="test-selectors-json">셀렉터 JSON</label>
+    <br>
+    <textarea id="test-selectors-json" name="selectors_json" rows="20" cols="90"
+              spellcheck="false" class="w-full">{{ selectors_json }}</textarea>
+    <br>
+    <button type="submit">셀렉터 저장</button>
+    <span id="test-selectors-wait" class="wait-note">셀렉터를 저장하는 중</span>
+  </fieldset>
+</form>
+
+<h3>다시 실행</h3>
+<p>저장한 셀렉터로 한 번 더 돌린다. 위의 결과가 새 결과로 갈린다.</p>
+<form hx-post="/ui/crawlers/{{ crawler_id }}/test-run"
+      hx-target="#test-result"
+      hx-swap="innerHTML"
+      hx-disabled-elt="find button"
+      hx-indicator="closest form, #test-result-wait">
+  <label for="test-rerun-limit">상세 건수</label>
+  <input id="test-rerun-limit" name="limit" type="number" value="{{ limit }}" min="1" max="20"
+         size="3">
+  <button type="submit">테스트 다시 실행</button>
+  <span class="wait-note">실행 중</span>
+</form>

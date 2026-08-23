@@ -135,6 +135,14 @@
 <p>항목별 실패는 없다.</p>
 {% endif %}
 
+{# 실패한 필드가 있을 때만 붙는다. 고치기·저장·다시 실행이 이 자리 하나에 있어서,
+   고치러 등록 화면으로 건너갔다 돌아올 일이 없다 (`app/api/ui_tests.py`) #}
+{% if crawler_id is defined and crawler_id %}
+<div id="test-repair">
+  {% include "fragments/test_repair.html" %}
+</div>
+{% endif %}
+
 {% if targets is defined and targets is not none %}
 {# 실행으로 크롤러 상태가 바뀔 수 있다. 대상 목록도 같이 갈아 끼운다 #}
 <div id="test-targets" hx-swap-oob="true">

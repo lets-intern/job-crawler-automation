@@ -50,8 +50,12 @@ def crawler_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return list(conn.execute(_LIST_QUERY).fetchall())
 
 
-def _pretty(selectors_json: str) -> str:
-    """저장된 JSON 을 사람이 고칠 수 있게 편다. 못 읽는 값은 그대로 보여준다."""
+def pretty_selectors(selectors_json: str) -> str:
+    """저장된 JSON 을 사람이 고칠 수 있게 편다. 못 읽는 값은 그대로 보여준다.
+
+    테스트 실행 화면의 편집기도 이 함수를 쓴다. 두 화면의 편집기에 다른 모양이 뜨면
+    같은 값을 보고 있는지 화면에서 알 수 없다.
+    """
     try:
         return json.dumps(json.loads(selectors_json), ensure_ascii=False, indent=2)
     except (TypeError, ValueError):
@@ -160,8 +164,15 @@ async def repair_selectors_fragment(
     crawler_id: int,
     conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
     repair: Annotated[crawlers.RepairFn, Depends(crawlers.get_repairer)],
+    hint: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
     """AI 수정 버튼. 실패한 필드만 모델에게 다시 고르게 한다.
+
+    `hint` 는 운영자가 브라우저에서 보고 준 단서다. 테스트 실행 화면의 입력칸과 같은
+    매크로를 쓰고 같은 경로로 들어간다. 비워 두면 힌트 없이 돈다.
+
+    붙여 넣은 경로가 그대로 저장되지 않는다. 모델은 그 자리를 찾는 데만 쓰고, 고친 셀렉터는
+    지금 가져온 HTML 에 다시 돌려 판정한다 (`app/selector/repair.py`).
 
     저장하지 않는다. 고치기 전과 후를 나란히 보여주고, 고친 셀렉터를 편집기에 올려 둘 뿐이다.
     반영하는 것은 운영자가 누르는 "셀렉터 저장" 이고, 그 버튼이 `.claude/rules/llm.md` 가
@@ -171,7 +182,9 @@ async def repair_selectors_fragment(
     화면에 그대로 보인다.
     """
     try:
-        result = await crawlers.repair_selectors(crawler_id, conn, repair)
+        result = await crawlers.repair_selectors(
+            crawler_id, conn, repair, crawlers.RepairIn(hint=hint)
+        )
     except HTTPException as exc:
         # 편집기를 유지하려면 지금 저장된 셀렉터를 다시 올려야 한다. 실패했다고 편집기가
         # 사라지면 운영자는 손으로 고칠 자리를 잃는다
@@ -182,7 +195,7 @@ async def repair_selectors_fragment(
             request,
             crawler_id=crawler_id if row is not None else None,
             status=str(row["status"]) if row is not None else "",
-            selectors_json=_pretty(row["selectors_json"] or "") if row is not None else "",
+            selectors_json=pretty_selectors(row["selectors_json"] or "") if row is not None else "",
             error=error_detail(exc),
         )
 
@@ -210,7 +223,14 @@ async def repair_selectors_fragment(
 
 def _repair_notice(result: crawlers.RepairOut) -> str:
     """무엇을 고쳤고 무엇이 남았는지. 저장 전이라는 사실을 매번 적는다."""
-    parts = [f"크롤러 {result.id} 의 실패한 필드 {len(result.targets)}개를 모델에게 다시 물었다."]
+    if result.mode == "hinted":
+        # 실패한 필드가 없었다. 고친 것은 운영자가 힌트로 지적한 자리다
+        parts = [f"크롤러 {result.id} 에 실패한 필드는 없었다. 힌트가 가리킨 자리를 물었다."]
+    else:
+        parts = [
+            f"크롤러 {result.id} 의 실패한 필드 "
+            f"{len(result.failed_targets)}개를 모델에게 다시 물었다."
+        ]
     if result.repaired:
         parts.append(f"고쳐진 필드: {', '.join(result.repaired)}.")
     if result.unresolved:
@@ -292,7 +312,7 @@ def selector_editor_fragment(
         request,
         crawler_id=int(row["id"]),
         status=str(row["status"]),
-        selectors_json=_pretty(row["selectors_json"] or ""),
+        selectors_json=pretty_selectors(row["selectors_json"] or ""),
     )
 
 

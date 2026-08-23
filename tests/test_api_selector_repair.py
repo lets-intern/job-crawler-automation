@@ -105,6 +105,8 @@ def outcome_for(
         usage=USAGE,
         attempts=1,
         targets=targets,
+        # 힌트 없이 부른 것과 같다. 대상이 곧 실패였던 필드다
+        failed_targets=targets,
         changes=[],
         unresolved=[name for name in targets if name in remaining],
     )
@@ -377,3 +379,31 @@ def test_a_failed_repair_leaves_the_database_alone(
     client.post(f"/api/crawlers/{crawler_id}/repair")
 
     assert stored_selectors(conn, crawler_id) == before
+
+
+def test_the_failed_count_does_not_grow_with_the_hint(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """힌트가 들어오면 대상이 넓어진다. 화면이 "실패한 필드 N개" 로 셀 것은 실패였던 쪽이다."""
+    crawler_id = insert_crawler(conn)
+
+    def widened(selectors: SelectorSet) -> RepairOutcome:
+        result = outcome_for(selectors)
+        return RepairOutcome(
+            selectors=result.selectors,
+            before=result.before,
+            after=result.after,
+            usage=result.usage,
+            attempts=result.attempts,
+            targets=[*result.targets, "detail.title", "detail.body"],
+            failed_targets=result.targets,
+            changes=result.changes,
+            unresolved=result.unresolved,
+        )
+
+    use_repairer(widened)
+
+    body = client.post(f"/api/crawlers/{crawler_id}/repair", json={"hint": "제목이 틀렸다"}).json()
+
+    assert len(body["targets"]) > len(body["failed_targets"])
+    assert "detail.title" not in body["failed_targets"]

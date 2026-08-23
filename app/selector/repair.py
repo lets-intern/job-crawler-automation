@@ -75,12 +75,12 @@ from app.selector.verify import FieldMatch, VerificationReport, verify_selectors
 
 logger = logging.getLogger(__name__)
 
-_PROMPT = """아래 채용 사이트의 셀렉터 중 몇 개가 지금 HTML 에서 아무것도 잡지 못한다.
-못 잡는 필드만 다시 골라라.
+_PROMPT = """{intro}
 
 규칙:
 - 고칠 필드는 "고쳐야 하는 필드" 에 적힌 것뿐이다. 나머지 필드는 "현재 셀렉터" 의 값을
   그대로 옮겨 적는다. 다른 필드를 바꿔도 반영되지 않는다.
+- 이미 잘 잡고 있는 필드는 손대지 않는다. 바꿀 이유가 단서에 적혀 있을 때만 바꾼다.
 - 주어진 HTML 에 실제로 있는 것만 쓴다. 본 적 없는 클래스명을 지어내지 않는다.
 - 이미 틀린 것으로 판정된 셀렉터를 그대로 다시 내지 않는다. 같은 답이면 고친 것이 아니다.
 - list.item 은 공고 하나에 해당하는 반복 요소다. 목록 전체를 감싸는 컨테이너가 아니고,
@@ -100,6 +100,7 @@ _PROMPT = """아래 채용 사이트의 셀렉터 중 몇 개가 지금 HTML 에
 [고쳐야 하는 필드]
 {failures}
 
+
 [목록 페이지 {list_url}]
 {list_html}
 
@@ -107,6 +108,18 @@ _PROMPT = """아래 채용 사이트의 셀렉터 중 몇 개가 지금 HTML 에
 {detail_html}
 {hint}"""
 
+
+# 여는 문장. 실패한 필드를 고칠 때와, 실패는 없는데 운영자가 특정 자리를 지적할 때가 다르다
+_INTRO_FAILED = (
+    "아래 채용 사이트의 셀렉터 중 몇 개가 지금 HTML 에서 아무것도 잡지 못한다.\n"
+    "못 잡는 필드만 다시 골라라."
+)
+_INTRO_HINTED = (
+    "아래 채용 사이트의 셀렉터는 지금 HTML 에서 전부 무언가를 잡고 있다. 그런데 운영자가"
+    " 잡히는 값이 틀렸다고 지적했다.\n"
+    "운영자가 준 단서를 읽고, 그 단서가 가리키는 필드만 다시 골라라. 단서와 상관없는 필드는"
+    " 지금 값을 그대로 옮겨 적는다."
+)
 
 # 힌트가 있을 때만 프롬프트에 붙는 블록. 없으면 프롬프트는 힌트가 생기기 전과 글자 하나까지
 # 같다 — 힌트를 안 준 실행이 준 실행과 다른 답을 내는 일이 없어야 한다
@@ -183,16 +196,30 @@ class RepairOutcome:
     attempts: int
     targets: list[str]
     changes: list[SelectorChange]
-    # 고친 뒤에도 남은 실패. `after` 를 `targets` 와 같은 기준으로 다시 판정한 결과다 —
-    # 억지로 성공으로 만들지 않는다
+    # 고친 뒤에도 남은 실패. `after` 를 실패 판정으로 다시 돌린 결과다 — 억지로 성공으로
+    # 만들지 않는다
     unresolved: list[str]
     notes: list[str] = field(default_factory=list)
+    # 이 중 실제로 실패였던 것. 힌트가 들어오면 `targets` 는 그보다 넓어진다 — 잘 되는
+    # 필드도 "바꿔도 되는 필드" 가 되기 때문이다. 넓힌 자리는 실제로 바뀐 것만 센다
+    failed_targets: list[str] = field(default_factory=list)
+
+    @property
+    def watched(self) -> list[str]:
+        """이번 호출의 결과를 판정할 필드. 실패였던 것과 실제로 바뀐 것."""
+        names = list(self.failed_targets)
+        return names + [c.name for c in self.changes if c.name not in names]
 
     @property
     def repaired(self) -> list[str]:
-        """고쳐진 필드. 대상이었고 지금은 실패가 아니다."""
+        """고쳐진 필드. 지금은 실패가 아니고, 이번 호출이 실제로 손댄 것이다."""
         remaining = set(self.unresolved)
-        return [name for name in self.targets if name not in remaining]
+        return [name for name in self.watched if name not in remaining]
+
+    @property
+    def hinted_only(self) -> bool:
+        """실패는 없었고 힌트가 가리킨 자리만 고친 호출인가."""
+        return not self.failed_targets
 
     @property
     def ok(self) -> bool:
@@ -249,19 +276,31 @@ async def repair_from_html(
     같다. 있어도 검증은 그대로다 — 고친 셀렉터는 같은 HTML 에 다시 돌린다.
     """
     resolved = settings or get_settings()
+    has_detail = bool(detail_html.strip())
     before = verify_selectors(selectors, list_html, detail_html)
-    targets = repair_targets(before, has_detail_html=bool(detail_html.strip()))
+    trimmed_hint, hint_notes = normalize_hint(hint)
+
+    failed_targets = repair_targets(before, has_detail_html=has_detail)
+    # 힌트가 들어오면 대상이 넓어진다. 실행이 성공이어도 잡히는 값이 틀릴 수 있고, 고칠 길이
+    # 없으면 운영자는 화면에서 막힌다. 넓혀도 바뀌는 것은 단서가 가리킨 자리뿐이다 —
+    # 나머지는 모델이 지금 값을 그대로 옮겨 적고 `_overlay` 가 같은 값을 변경으로 세지 않는다
+    targets = (
+        repair_targets(before, has_detail_html=has_detail, hinted=True)
+        if trimmed_hint
+        else failed_targets
+    )
     if not targets:
         raise SelectorRepairError(
             "nothing_to_repair",
-            "실패한 필드가 없다. 건너뛴 필드는 사이트에 그 항목이 없다는 뜻이라 고칠 셀렉터가 없다",
+            "실패한 필드가 없다. 어느 필드가 무엇을 잘못 잡는지 힌트에 적으면 "
+            "그 필드를 고친다. 건너뛴 필드는 사이트에 그 항목이 없다는 뜻이라 "
+            "고칠 셀렉터가 없다",
         )
 
     resolved_client = client or build_client(resolved)
     model = resolved.gemini_model
     cleaned_list = clean_html(list_html)
-    cleaned_detail = clean_html(detail_html) if detail_html.strip() else None
-    trimmed_hint, hint_notes = normalize_hint(hint)
+    cleaned_detail = clean_html(detail_html) if has_detail else None
     prompt = build_prompt(
         selectors,
         before,
@@ -271,6 +310,7 @@ async def repair_from_html(
         list_url,
         detail_url,
         hint=trimmed_hint,
+        failed_targets=failed_targets,
     )
 
     proposal, attempts, usage, extra_notes = await _ask(resolved_client, model, prompt)
@@ -278,8 +318,12 @@ async def repair_from_html(
     repaired, changes = _overlay(selectors, proposal, targets)
     after = verify_selectors(repaired, list_html, detail_html)
     # 고친 뒤 판정을 대상 고르기와 같은 함수로 다시 돌린다. 두 벌로 판정하면 "고쳤다"고
-    # 적힌 필드가 다음 실행에서 다시 실패로 나온다
-    remaining = set(repair_targets(after, has_detail_html=bool(detail_html.strip())))
+    # 적힌 필드가 다음 실행에서 다시 실패로 나온다. `hinted` 는 주지 않는다 — 여기서 묻는
+    # 것은 "지금 실패인가" 하나다
+    remaining = set(repair_targets(after, has_detail_html=has_detail))
+    watched = failed_targets + [
+        change.name for change in changes if change.name not in failed_targets
+    ]
     outcome = RepairOutcome(
         selectors=repaired,
         before=before,
@@ -288,7 +332,8 @@ async def repair_from_html(
         attempts=attempts,
         targets=targets,
         changes=changes,
-        unresolved=[name for name in targets if name in remaining],
+        unresolved=[name for name in watched if name in remaining],
+        failed_targets=failed_targets,
         notes=(
             _notes(cleaned_list, cleaned_detail)
             + hint_notes
@@ -307,12 +352,21 @@ async def repair_from_html(
     return outcome
 
 
-def repair_targets(report: VerificationReport, *, has_detail_html: bool) -> list[str]:
-    """고칠 필드 이름. 실패한 것만이고 순서는 화면의 표와 같다.
+def repair_targets(
+    report: VerificationReport, *, has_detail_html: bool, hinted: bool = False
+) -> list[str]:
+    """고칠 필드 이름. 순서는 화면의 표와 같다.
 
-    `건너뜀` 은 빠진다 — `report.failed` 가 이미 그것을 제외한다. 상세 HTML 이 없을 때
-    상세 필드도 빠진다. 볼 페이지가 없어 0개 매칭인 것이지 셀렉터가 틀린 것이 아니라,
-    고쳐 봐야 맞는지 확인할 방법이 없다.
+    기본은 실패한 필드뿐이다. `hinted` 면 판정된 필드 전부가 대상이 된다 — 운영자가 힌트로
+    "이 필드가 잡는 값이 틀렸다" 고 지적한 경우고, 실패가 아닌 필드를 바꾸는 것이 바로 그
+    요청이다. 힌트가 가리키지 않는 필드는 모델이 지금 값을 그대로 옮겨 적고, 같은 값은
+    `_overlay` 가 변경으로 세지 않는다.
+
+    `건너뜀` 은 어느 쪽에서도 빠진다. 사이트에 그 항목이 없다는 응답이라 고칠 셀렉터가 없고,
+    억지로 채우면 잘못된 값이 공고마다 붙는다.
+
+    상세 HTML 이 없을 때 상세 필드도 빠진다. 볼 페이지가 없어 0개 매칭인 것이지 셀렉터가
+    틀린 것이 아니라, 고쳐 봐야 맞는지 확인할 방법이 없다.
 
     예외가 하나 있다. `list.item` 이 노드를 잡았는데 그 안의 제목·링크·날짜가 **전부** 실패면
     항목 셀렉터도 대상이다(`VerificationReport.list_fields_missing`). 2026-08-22 롯데가 그
@@ -320,8 +374,18 @@ def repair_targets(report: VerificationReport, *, has_detail_html: bool) -> list
     항목을 그대로 두면 그 안의 셀렉터를 무엇으로 바꿔도 잡을 것이 없다. 셋 중 하나만 실패한
     경우에는 건드리지 않는다 — 그때는 항목이 맞고 그 필드 하나가 틀린 것이다.
     """
-    failed = [name for name in report.failed if has_detail_html or not name.startswith("detail.")]
-    if report.list_fields_missing and "list.item" not in failed:
+
+    def judged(name: str) -> bool:
+        return has_detail_html or not name.startswith("detail.")
+
+    if hinted:
+        skipped = set(report.skipped)
+        return [
+            item.name for item in report.fields if item.name not in skipped and judged(item.name)
+        ]
+
+    failed = [name for name in report.failed if judged(name)]
+    if failed and report.list_fields_missing and "list.item" not in failed:
         return ["list.item", *failed]
     return failed
 
@@ -336,6 +400,7 @@ def build_prompt(
     detail_url: str = "",
     *,
     hint: str = "",
+    failed_targets: list[str] | None = None,
 ) -> str:
     """지금 셀렉터 전부와 실패한 필드의 사유를 함께 넣는다.
 
@@ -346,8 +411,9 @@ def build_prompt(
     않는다.
     """
     return _PROMPT.format(
+        intro=_INTRO_FAILED if failed_targets else _INTRO_HINTED,
         current=selectors.to_json(),
-        failures=_failure_lines(report, targets),
+        failures=_failure_lines(report, targets, failed=set(failed_targets or ())),
         list_url=list_url,
         list_html=cleaned_list.html,
         detail_url=detail_url or "(없음)",
@@ -392,15 +458,23 @@ def _fragile_notes(changes: list[SelectorChange]) -> list[str]:
         if not reasons:
             continue
         notes.append(
-            f"{change.name} 이 {' 와 '.join(reasons)} 로 고쳐졌다: {change.after} — "
-            "그 자리에 뜻이 있는 클래스나 data- 속성이 없었다는 뜻이다. "
+            f"{change.name} 의 새 셀렉터가 {'와 '.join(reasons)}에 기대고 있다: "
+            f"{change.after} — 그 자리에 뜻이 있는 클래스나 data- 속성이 없었다는 뜻이다. "
             "사이트를 다시 배포하면 깨질 수 있으니 다음에 이 필드가 실패하면 여기부터 본다"
         )
     return notes
 
 
-def _failure_lines(report: VerificationReport, targets: list[str]) -> str:
-    """필드 이름 + 지금 셀렉터 + 왜 실패했는지. 사유가 있어야 무엇을 바꿀지 정해진다."""
+def _failure_lines(
+    report: VerificationReport, targets: list[str], *, failed: set[str] | None = None
+) -> str:
+    """필드 이름 + 지금 셀렉터 + 왜 실패했는지. 사유가 있어야 무엇을 바꿀지 정해진다.
+
+    힌트가 들어오면 대상에 **잘 되는 필드도 섞인다**. 그 자리에 적을 것은 실패 사유가 아니라
+    지금 무엇을 몇 건 잡고 있는지다 — 잡히는 값이 틀렸다고 지적한 것이 어느 필드인지는
+    단서가 말한다. 잘 되는 필드에 실패 사유를 적으면 모델은 멀쩡한 셀렉터를 전부 바꾼다.
+    """
+    broken = failed if failed is not None else set(targets)
     by_name: dict[str, FieldMatch] = {item.name: item for item in report.fields}
     lines: list[str] = []
     for name in targets:
@@ -408,6 +482,12 @@ def _failure_lines(report: VerificationReport, targets: list[str]) -> str:
         if item is None:
             continue
         current = item.selector or "(비어 있음)"
+        if name not in broken:
+            lines.append(
+                f"- {name}: 지금 `{current}` — {item.matches}건을 잡고 있다. 실패가 아니다. "
+                "단서가 이 필드를 가리키면 고치고, 아니면 지금 값을 그대로 옮겨 적는다"
+            )
+            continue
         reason = item.message or _no_message_reason(item)
         lines.append(f"- {name}: 지금 `{current}` — {reason}")
     return "\n".join(lines)

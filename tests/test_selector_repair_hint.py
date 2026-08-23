@@ -29,11 +29,15 @@ from app.config import Settings
 from app.selector.repair import (
     MAX_HINT_CHARS,
     MAX_PROMPT_CHARS,
+    SelectorRepairError,
     normalize_hint,
     repair_from_html,
 )
 from app.selector.schema import validate_selectors
 from tests.test_selector_generator import FakeClient
+from tests.test_selector_repair import DETAIL_HTML as WORKING_DETAIL
+from tests.test_selector_repair import LIST_HTML as WORKING_LIST
+from tests.test_selector_repair import response as _working_response
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
 LG_LIST = (FIXTURES / "lg-list-20260824.html").read_text(encoding="utf-8")
@@ -71,6 +75,19 @@ def answer(**list_fields: str) -> str:
     """모델 응답 한 벌. 목록 필드만 바꿔 준다."""
     payload = json.loads(json.dumps(LG))
     payload["list"].update(list_fields)
+    return json.dumps(payload, ensure_ascii=False)
+
+
+# 실패한 필드가 하나도 없는 셀렉터 한 벌. 롯데 픽스처를 제대로 잡는 값이다
+WORKING: dict[str, Any] = json.loads(_working_response())
+
+
+def working_answer(**overrides: Any) -> str:
+    """실패가 없는 셀렉터에서 몇 개만 바꾼 모델 응답."""
+    payload = json.loads(json.dumps(WORKING))
+    payload["list"].update(overrides.pop("list", {}))
+    payload["detail"].update(overrides.pop("detail", {}))
+    payload["list"].update(overrides)
     return json.dumps(payload, ensure_ascii=False)
 
 
@@ -215,15 +232,31 @@ async def test_a_hinted_answer_that_works_is_counted_on_the_same_html() -> None:
     assert "list.item" in outcome.repaired
 
 
-async def test_the_hint_does_not_widen_what_gets_repaired() -> None:
-    """대상은 실패한 필드뿐이다. 힌트가 들어와도 잘 되는 필드는 건드리지 않는다."""
-    outcome, _ = await repair(
-        answer(item="div.MuiBox-root", title="p", link="p.css-1pvxq8e"),
-        hint=HINT_PATH,
-    )
+async def test_without_a_hint_only_the_failed_field_can_change() -> None:
+    """힌트가 없으면 대상은 실패한 필드뿐이다. 맞던 셀렉터를 두 번째 호출에서 잃지 않는다."""
+    outcome, _ = await repair(answer(item="div.MuiBox-root", title="p"))
 
     assert outcome.targets == ["list.link"]
+    assert outcome.changes == []
     assert outcome.selectors.list.item == LG["list"]["item"]
+    assert outcome.selectors.list.title == LG["list"]["title"]
+
+
+async def test_a_hint_widens_the_targets_beyond_the_failed_field() -> None:
+    """운영자가 지적하는 자리는 실패한 필드가 아닐 수 있다. LG 는 `list.link` 가 늘 실패라,
+    대상을 실패한 것으로만 두면 다른 필드는 영영 힌트로 고칠 수 없다."""
+    outcome, _ = await repair(answer(title="p.css-1swfevn"), hint="제목이 회사명을 물고 온다")
+
+    assert "list.title" in outcome.targets
+    assert [change.name for change in outcome.changes] == ["list.title"]
+    assert outcome.failed_targets == ["list.link"]
+
+
+async def test_a_widened_target_the_model_left_alone_stays_put() -> None:
+    """넓혔다고 다 바뀌는 것이 아니다. 같은 값이 오면 변경으로 세지 않는다."""
+    outcome, _ = await repair(answer(), hint="제목이 회사명을 물고 온다")
+
+    assert outcome.changes == []
     assert outcome.selectors.list.title == LG["list"]["title"]
 
 
@@ -271,3 +304,93 @@ async def test_the_hint_length_is_logged(caplog: pytest.LogCaptureFixture) -> No
         await repair(hint=HINT_PATH)
 
     assert f"힌트={len(HINT_PATH)}자" in caplog.text
+
+
+# 실패가 없어도 지적한 자리는 고친다 (20.2 보정) -------------------------------
+
+
+async def working(*texts: str, hint: str = "", selectors: dict[str, Any] | None = None) -> Any:
+    """실패한 필드가 하나도 없는 크롤러. 롯데 픽스처의 고쳐진 셀렉터를 쓴다."""
+    client = FakeClient(*texts)
+    outcome = await repair_from_html(
+        WORKING_LIST,
+        WORKING_DETAIL,
+        validate_selectors(selectors or WORKING),
+        settings=settings_with_key(),
+        client=client,
+        hint=hint,
+    )
+    return outcome, client
+
+
+async def test_no_failure_and_no_hint_is_still_refused() -> None:
+    """고칠 것이 없으면 부르지 않는다. 대신 무엇을 하면 되는지 사유에 적는다."""
+    client = FakeClient(working_answer())
+
+    with pytest.raises(SelectorRepairError) as caught:
+        await repair_from_html(
+            WORKING_LIST,
+            WORKING_DETAIL,
+            validate_selectors(WORKING),
+            settings=settings_with_key(),
+            client=client,
+        )
+
+    assert caught.value.reason == "nothing_to_repair"
+    assert "힌트에 적으면" in str(caught.value)
+    assert client.calls == []
+
+
+async def test_a_hint_lets_the_operator_fix_a_field_that_is_not_failing() -> None:
+    """실행이 성공이어도 잡히는 값이 틀릴 수 있다. 그때 고칠 길이 있어야 한다."""
+    outcome, client = await working(
+        working_answer(date="li.job-card > span.regdate"),
+        hint="등록일이 카드 바깥의 다른 날짜를 물고 온다. 카드 안의 것만 잡아라",
+    )
+
+    assert outcome.hinted_only
+    assert outcome.failed_targets == []
+    assert [change.name for change in outcome.changes] == ["list.date"]
+    assert outcome.selectors.list.date == "li.job-card > span.regdate"
+    assert outcome.after.summary()["list.date"] == 3
+    assert len(client.calls) == 1
+
+
+async def test_the_hinted_prompt_does_not_call_working_fields_broken() -> None:
+    _, client = await working(working_answer(), hint="날짜가 틀렸다")
+
+    prompt = prompt_of(client)
+    assert "아무것도 잡지 못한다" not in prompt
+    assert "운영자가 준 단서를 읽고" in prompt
+    assert "건을 잡고 있다" in prompt
+
+
+async def test_fields_the_hint_did_not_mention_stay_as_they_were() -> None:
+    outcome, _ = await working(
+        working_answer(date="li.job-card > span.regdate"), hint="등록일이 틀렸다"
+    )
+
+    assert outcome.selectors.list.title == WORKING["list"]["title"]
+    assert outcome.selectors.list.item == WORKING["list"]["item"]
+    assert outcome.repaired == ["list.date"]
+
+
+async def test_a_hinted_change_that_breaks_the_field_is_reported_as_unresolved() -> None:
+    """힌트를 받아도 검증은 그대로다. 바꿔 놓고 안 잡히면 실패로 적는다."""
+    outcome, _ = await working(working_answer(date="span.not-there"), hint="등록일이 틀렸다")
+
+    assert outcome.after.summary()["list.date"] == 0
+    assert outcome.unresolved == ["list.date"]
+    assert outcome.repaired == []
+    assert not outcome.ok
+
+
+async def test_a_skipped_field_is_never_a_hinted_target() -> None:
+    """사이트에 없는 항목을 억지로 만들면 잘못된 값이 공고마다 붙는다."""
+    outcome, _ = await working(
+        working_answer(detail={"requirements": "div.made-up"}),
+        hint="자격요건도 좀 채워 줘",
+    )
+
+    assert "detail.requirements" not in outcome.targets
+    assert outcome.selectors.detail.requirements == ""

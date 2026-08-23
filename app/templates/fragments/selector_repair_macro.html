@@ -1,0 +1,119 @@
+{# AI 수정의 공통 조각. 크롤러 등록 화면과 테스트 실행 화면이 둘 다 이 파일을 쓴다.
+
+   두 화면이 각자 마크업을 들고 있으면 한쪽에만 설명이 붙거나, 한쪽만 전/후를 보여주는
+   상태가 생긴다. 운영자가 같은 일을 하는 자리가 둘인데 결과 모양이 다르면 어느 쪽 숫자를
+   믿어야 하는지 알 수 없다.
+
+   상태는 단어로 적는다. 아이콘·이모지를 쓰지 않는다 (`.claude/rules/writing.md`). #}
+
+{# 힌트 입력칸. 무엇을 넣으면 되는지 한 줄로 적는다 — 빈 칸만 있으면 아무도 쓰지 않는다.
+
+   `id_prefix` 로 자리를 구분한다. 한 페이지에 두 폼이 뜨는 일은 없지만, label 의 for 가
+   같은 id 를 가리키면 어느 칸이 열릴지 브라우저가 정한다 #}
+{% macro hint_field(id_prefix) %}
+<div>
+  <label for="{{ id_prefix }}-hint">힌트 (선택)</label>
+  <p class="text-sm text-slate-600">
+    모델이 HTML 만 보고 못 찾는 자리를 알려 준다. 브라우저에서 F12 로 그 요소를 고른 뒤
+    <span class="font-medium">Copy selector</span> 한 경로를 붙여 넣거나,
+    "마감일은 목록 두 번째 줄에 있다" 처럼 어디 있는지 문장으로 적는다.
+  </p>
+  <p class="text-sm text-slate-600">
+    붙여 넣은 경로가 그대로 저장되지는 않는다. 모델은 그 자리를 찾아가는 데만 쓰고,
+    거기서 배포가 바뀌어도 견디는 셀렉터를 고른다 — 자동 생성 클래스(<code>css-1a2b3c</code>)와
+    <code>:nth-child</code> 는 다음 배포에 어긋난다.
+  </p>
+  <textarea id="{{ id_prefix }}-hint" name="hint" rows="3" class="w-full" spellcheck="false"
+            placeholder="비워 두면 지금 아무것도 잡지 못하는 필드만 고친다"></textarea>
+</div>
+{% endmacro %}
+
+{# 고치기 결과. 전/후 매칭 수, 바뀐 셀렉터, 남은 실패, 설명, 토큰 사용량 #}
+{% macro repair_report(repair) %}
+<h3>AI 수정 결과</h3>
+<div class="table-scroll">
+<table class="data-table">
+  <caption>고치기 전과 후 (지금 가져온 같은 HTML 기준)</caption>
+  <thead><tr>
+    <th scope="col">필드</th>
+    <th scope="col" class="num">고치기 전</th>
+    <th scope="col" class="num">고친 뒤</th>
+    <th scope="col">판정</th>
+    <th scope="col">대상</th>
+  </tr></thead>
+  <tbody>
+    {% for field, count in repair.after_matches.items() %}
+    <tr>
+      <td>{{ field }}</td>
+      <td class="num">{{ repair.before_matches.get(field, 0) }}</td>
+      <td class="num">{{ count }}</td>
+      <td>
+        {% if field in repair.skipped_fields %}
+        <span class="state-idle">건너뜀</span>
+        {% elif field in repair.failed_fields %}
+        <span class="state-bad">실패</span>
+        {% else %}
+        <span class="state-ok">성공</span>
+        {% endif %}
+      </td>
+      <td>
+        {# 대상이 아니었던 필드는 응답에 무엇이 왔든 원래 셀렉터가 그대로다 #}
+        {% if field in repair.repaired %}
+        <span class="state-ok">고침</span>
+        {% elif field in repair.unresolved %}
+        <span class="state-bad">못 고침</span>
+        {% else %}
+        <span class="state-idle">그대로</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+{% if repair.changes %}
+<div class="table-scroll">
+<table class="data-table">
+  <caption>바뀐 셀렉터</caption>
+  <thead><tr>
+    <th scope="col">필드</th>
+    <th scope="col">고치기 전</th>
+    <th scope="col">고친 뒤</th>
+  </tr></thead>
+  <tbody>
+    {% for change in repair.changes %}
+    <tr>
+      <td>{{ change.name }}</td>
+      <td class="cell-text">{{ change.before or "(비어 있음)" }}</td>
+      <td class="cell-text">{{ change.after }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p class="rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-slate-700">
+  모델이 바꾼 셀렉터가 없다. 같은 답이 왔거나 고칠 방법이 이 HTML 에 없다는 응답이다.
+  다음 수단은 손으로 고치는 것이다.
+</p>
+{% endif %}
+
+{% if repair.unresolved %}
+<p class="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-red-800">
+  <span class="font-semibold">고친 뒤에도 실패로 남은 필드</span>: {{ repair.unresolved | join(", ") }}
+  — 모델이 고르지 못했다. 손으로 고친다.
+</p>
+{% else %}
+<p><span class="state-ok">고치려 한 필드가 모두 값을 찾았다.</span> 저장하면 반영된다.</p>
+{% endif %}
+{% if repair.notes %}
+<ul>{% for note in repair.notes %}<li>{{ note }}</li>{% endfor %}</ul>
+{% endif %}
+<p>
+  모델 {{ repair.usage.model }},
+  입력 {{ repair.usage.input_tokens }} 토큰,
+  출력 {{ repair.usage.output_tokens }} 토큰,
+  {{ repair.usage.latency_ms }} ms
+</p>
+{% endmacro %}

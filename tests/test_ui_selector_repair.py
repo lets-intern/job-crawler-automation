@@ -87,17 +87,19 @@ def use_repairer(result: Any) -> list[str]:
 # 버튼 ----------------------------------------------------------------------
 
 
-def test_the_button_appears_only_when_a_field_failed(
+def test_the_button_stays_after_everything_was_fixed(
     client: TestClient, conn: sqlite3.Connection
 ) -> None:
+    """이번 고치기로 전부 해결됐다. 그래도 버튼은 남는다 — 잡히는 값이 틀렸는데 고칠 길이
+    없으면 운영자가 막힌다. 대신 고칠 것이 없다는 사실과 다음 수를 그 자리에 적는다."""
     crawler_id = insert_crawler(conn)
     use_repairer(outcome_for)
 
     body = client.post(f"/ui/crawlers/{crawler_id}/repair").text
 
-    # 이번 고치기로 전부 해결됐다. 더 고칠 것이 없으므로 버튼도 없다
-    assert "AI 수정" in body
-    assert f'hx-post="/ui/crawlers/{crawler_id}/repair"' not in body
+    assert f'hx-post="/ui/crawlers/{crawler_id}/repair"' in body
+    assert "지금 실패한 필드는 없다" in body
+    assert "힌트에 적으면 그 필드를 고친다" in body
 
 
 def test_the_button_stays_when_a_field_is_still_failing(
@@ -238,3 +240,44 @@ def test_an_unknown_crawler_says_so(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert "9999" in response.text
+
+
+# 힌트 입력 (20.3) -----------------------------------------------------------
+
+
+def test_the_repair_form_has_the_same_hint_box_as_the_test_screen(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """두 화면이 같은 매크로를 쓴다. 한쪽에만 설명이 붙는 일이 없어야 한다."""
+    crawler_id = insert_crawler(conn)
+    still_wrong = json.loads(json.dumps(BROKEN))
+    still_wrong["list"]["item"] = "nav.family ul li"
+    use_repairer(lambda selectors: outcome_for(selectors, still_wrong))
+
+    body = client.post(f"/ui/crawlers/{crawler_id}/repair").text
+
+    assert 'name="hint"' in body
+    assert "Copy selector" in body
+    assert "그대로 저장되지는 않는다" in body
+
+
+def test_the_hint_reaches_the_repairer(client: TestClient, conn: sqlite3.Connection) -> None:
+    crawler_id = insert_crawler(conn)
+    hints = use_repairer(outcome_for)
+    hint = "#root > div > main > div.MuiBox-root.css-1jelp97 > div:nth-child(2) > div"
+
+    client.post(f"/ui/crawlers/{crawler_id}/repair", data={"hint": hint})
+
+    assert hints == [hint]
+
+
+def test_the_repair_still_works_without_a_hint(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    crawler_id = insert_crawler(conn)
+    hints = use_repairer(outcome_for)
+
+    response = client.post(f"/ui/crawlers/{crawler_id}/repair")
+
+    assert response.status_code == 200
+    assert hints == [""]
