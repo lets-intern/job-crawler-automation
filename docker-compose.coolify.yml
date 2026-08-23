@@ -1,0 +1,60 @@
+# Coolify 배포용. GHCR 이 만든 이미지를 받아 띄운다 — 서버에서 빌드하지 않는다.
+#
+# Chromium 이 들어가 이미지가 2.3GB 다. 매 배포마다 서버가 이것을 빌드하면 배포가 몇 분씩
+# 걸리고 디스크도 두 배로 쓴다. 빌드는 GitHub Actions 가 하고 여기서는 받기만 한다.
+#
+# Coolify 에서 할 일
+#   1. 이 파일을 Docker Compose 소스로 지정한다
+#   2. GEMINI_API_KEY 를 환경변수로 넣는다. 없으면 컨테이너는 뜨고 셀렉터 생성만 실패한다
+#   3. CRAWL_USER_AGENT 에 실제 연락처를 넣는다. 이름과 연락처를 정직하게 적는 것은
+#      선택이 아니다 (.claude/rules/crawling.md)
+#   4. jobs-data 볼륨을 백업 대상으로 잡는다. 수집한 데이터는 다시 만들 수 없다
+#
+# 로컬 개발은 docker-compose.yml 을 쓴다. 이 파일과 섞지 않는다.
+services:
+  api:
+    image: ghcr.io/dusvlf111/job-crawler-automation:latest
+    restart: unless-stopped
+
+    environment:
+      # 볼륨 마운트 지점과 같은 경로여야 한다
+      DATABASE_PATH: /data/jobs.db
+
+      # 셀렉터 생성에만 쓴다. 주기 실행에는 모델을 부르지 않는다
+      GEMINI_API_KEY: "${GEMINI_API_KEY}"
+      GEMINI_MODEL: "${GEMINI_MODEL:-gemini-3.5-flash}"
+
+      # 이름과 연락처를 적는다. 사이트가 우리를 차단할 때 연락할 곳이 있어야 한다
+      CRAWL_USER_AGENT: "${CRAWL_USER_AGENT}"
+
+      # 값은 보수적으로 둔다. 늦게 끝나는 워크플로우는 괜찮지만 차단당하면 사이트를
+      # 영구히 잃는다 (.claude/rules/crawling.md)
+      CRAWL_DELAY_SECONDS: "${CRAWL_DELAY_SECONDS:-3}"
+      CRAWL_TIMEOUT_SECONDS: "${CRAWL_TIMEOUT_SECONDS:-20}"
+      CRAWL_MAX_RETRIES: "${CRAWL_MAX_RETRIES:-3}"
+
+      # 브라우저 하나가 150~300MB 다. 상한을 올리기 전에 서버 메모리를 확인한다
+      MAX_CONCURRENT_RUNS: "${MAX_CONCURRENT_RUNS:-3}"
+      RUN_TIMEOUT_SECONDS: "${RUN_TIMEOUT_SECONDS:-600}"
+      RENDER_TIMEOUT_SECONDS: "${RENDER_TIMEOUT_SECONDS:-60}"
+
+    volumes:
+      # 실제 수집 데이터가 여기 남는다. 컨테이너를 지워도 이 볼륨은 남아야 한다
+      # (.claude/rules/data-safety.md)
+      - jobs-data:/data
+
+    # Coolify 가 이 결과를 보고 배포 성공을 판정한다. 기동 시 마이그레이션이 돌아
+    # 첫 응답까지 시간이 걸리므로 start_period 를 넉넉히 둔다
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    # Coolify 가 리버스 프록시를 붙인다. 포트를 호스트에 직접 열지 않는다
+    expose:
+      - "8000"
+
+volumes:
+  jobs-data:

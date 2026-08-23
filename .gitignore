@@ -10,6 +10,12 @@ __pycache__/
 data/
 debug_snapshots/
 
+# 예외: 스냅샷 하나만 저장소에 둔다.
+# 운영 DB(data/jobs.db, 볼륨의 /data/jobs.db)는 여전히 금지다. 이것은 그것을 복사한
+# 읽기용 사본이고, 새 환경에서 화면과 파이프라인이 어떤 데이터를 다루는지 보여 주는
+# 용도다. 여기에 대고 크롤링을 돌리지 않는다.
+!seeds/snapshot/jobs.db
+
 # 도구
 .pytest_cache/
 .mypy_cache/
@@ -21,3 +27,4 @@ debug_snapshots/
 
 # OS
 .DS_Store
+.history

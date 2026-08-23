@@ -1,0 +1,38 @@
+# 커밋마다 도는 검사. 이미지 빌드는 여기서 하지 않는다 — 그것은 release.yml 이 한다.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: 의존성 설치
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]" || pip install -e . ruff mypy pytest
+
+      - name: 포맷
+        run: ruff format --check .
+
+      - name: 린트
+        run: ruff check .
+
+      - name: 타입체크
+        run: mypy app
+
+      # 실사이트를 때리는 테스트는 CI 에서 돌리지 않는다. 남의 서버에 우리 CI 빈도로
+      # 요청이 나가고, 사이트가 바뀌면 우리 잘못이 아닌 이유로 빌드가 빨개진다
+      # (.claude/rules/crawling.md).
+      - name: 테스트
+        run: pytest -q -m "not live"
