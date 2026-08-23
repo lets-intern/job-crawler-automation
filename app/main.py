@@ -9,6 +9,7 @@ from fastapi import FastAPI
 
 from app import db
 from app.api import (
+    auth,
     crawlers,
     jobs,
     review,
@@ -34,6 +35,11 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     """기동 시 `workflows` 테이블에서 잡을 등록한다. 스키마 적용은 CLI 가 한다."""
+    if auth.admin_password_is_default():
+        logger.warning(
+            "ADMIN_PASSWORD 가 기본값이다. 공개 주소에서는 잠기지 않은 것과 같다 — "
+            "환경변수를 설정하고 다시 띄운다"
+        )
     conn = db.connect()
     try:
         orphans = close_orphan_runs(conn)
@@ -76,6 +82,9 @@ app.include_router(ui_settings.router)
 # 조각 요청의 실패는 200 과 오류 조각으로 나간다. HTMX 가 4xx·5xx 를 갈아 끼우지 않아
 # 그대로 두면 화면이 조용해진다. `/api/...` 의 상태 코드는 건드리지 않는다
 ui.install_ui_error_handlers(app)
+# 잠금은 라우트 등록이 끝난 뒤에 건다. 열어 두는 것은 `/health` 와 로그인 자리뿐이고
+# 나머지는 전부 잠긴다 — 새 라우트가 생겨도 기본이 잠김이다 (`app/api/auth.py`)
+auth.install_auth(app)
 
 
 @app.get("/health")
