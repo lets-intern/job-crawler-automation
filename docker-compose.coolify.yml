@@ -13,7 +13,13 @@
 # 로컬 개발은 docker-compose.yml 을 쓴다. 이 파일과 섞지 않는다.
 services:
   api:
-    image: ghcr.io/dusvlf111/job-crawler-automation:latest
+    # 커밋 SHA 로 고정한다. :latest 는 Coolify·도커 데몬·레지스트리 어디서든 캐시되어,
+    # 새 이미지를 만들어도 옛것이 계속 뜨는 일이 생긴다. 2026-08-24 에 실제로 겪었다 —
+    # 캐시를 지우고 재배포해도 며칠 전 이미지가 떠 있었다.
+    #
+    # SHA 태그는 캐시가 있어도 이름이 달라 반드시 새로 받는다. 어떤 코드가 떠 있는지도
+    # 이 줄만 보면 안다. 새로 배포할 때 이 값을 main 의 최신 SHA 로 바꾼다.
+    image: ghcr.io/dusvlf111/job-crawler-automation:sha-f98c898
     restart: unless-stopped
 
     environment:
