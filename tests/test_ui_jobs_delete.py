@@ -334,3 +334,20 @@ def test_워크플로우_범위는_걸리지_않는_조건을_적지_않는다(c
 
     assert "워크플로우 1 - LG · 나머지 조건은 걸리지 않는다" in html
     assert "회사 엘지화학" not in html
+
+
+def test_확인_창이_다시_수집된다는_것을_적는다(client: TestClient) -> None:
+    """진행중인 공고를 지우면 다음 실행에서 다시 들어온다. 모르면 왜 되살아나는지 알 수 없다."""
+    html = client.post("/ui/jobs/delete/confirm", data={"raw_job_id": ["1"]}).text
+
+    assert "아직 게시 중인 공고는 다음 실행에서 다시 들어온다" in html
+    assert "content_hash" in html
+    assert "source_url" in html
+    # 되살아나지 않게 하는 길도 함께 적는다
+    assert "워크플로우</a> 를 먼저 중지한다" in html
+
+
+def test_지운_뒤에도_다시_수집된다는_것을_적는다(client: TestClient) -> None:
+    html = client.post("/ui/jobs/delete", data={"raw_job_id": ["1"]}).text
+
+    assert "다음 실행에서 다시 들어온다" in html
