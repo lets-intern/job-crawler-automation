@@ -40,6 +40,7 @@ NAV: tuple[tuple[str, str], ...] = (
     ("/workflows", "워크플로우"),
     ("/rules", "정규화 규칙"),
     ("/jobs", "데이터 조회"),
+    ("/review", "데이터 검수"),
     ("/settings", "운영 설정"),
 )
 
