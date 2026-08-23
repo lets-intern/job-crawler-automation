@@ -1,6 +1,12 @@
-{# 필터·검색·정렬 폼. 어떤 조작이든 표 영역(#job-table)만 갈아 끼운다 #}
+{# 필터·검색·정렬 폼. 어떤 조작이든 표 영역(#job-table)만 갈아 끼운다.
+
+   조건이 상세한 이유는 지우기가 "지금 걸린 조건에 걸린 것" 을 대상으로 하기 때문이다.
+   좁힐 방법이 성기면 운영자는 지울 것보다 넓은 범위를 지우게 된다.
+
+   시각 범위는 날짜 하나로 받는다. 저장된 값은 UTC 지만 화면이 표시 시간대로 그리므로,
+   서버가 고른 날짜를 표시 시간대의 하루로 읽어 바꾼다 (`app/api/ui_jobs.py`). #}
 <form hx-get="/ui/jobs" hx-target="#job-table" hx-swap="innerHTML" hx-trigger="submit, change"
-      hx-disabled-elt="find button">
+      hx-disabled-elt="find button[type=submit]">
   <fieldset>
     <legend>조회 조건</legend>
     <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
@@ -12,6 +18,7 @@
         {% endfor %}
       </select>
 
+      {# 한 사이트에 계열사가 여럿이라 워크플로우와 따로 걸린다 #}
       <label for="filter-company">회사</label>
       <select id="filter-company" name="company">
         <option value="">전체</option>
@@ -19,6 +26,38 @@
         <option value="{{ name }}">{{ name }}</option>
         {% endfor %}
       </select>
+
+      <label for="filter-status">진행 여부</label>
+      <select id="filter-status" name="status">
+        <option value="">전체</option>
+        {% for value, label in deadline_states.items() %}
+        <option value="{{ value }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="filter-delivered">전달 여부</label>
+      <select id="filter-delivered" name="delivered">
+        <option value="">전체</option>
+        {% for value, label in delivery_states.items() %}
+        <option value="{{ value }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </p>
+    <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
+      <label for="filter-crawled-from">수집 시각</label>
+      <input id="filter-crawled-from" name="crawled_from" type="date">
+      <span class="text-sm text-slate-600">부터</span>
+      <input id="filter-crawled-to" name="crawled_to" type="date"
+             aria-label="수집 시각 끝나는 날">
+      <span class="text-sm text-slate-600">까지 (그날 포함)</span>
+    </p>
+    <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
+      <label for="filter-normalized-from">정규화 시각</label>
+      <input id="filter-normalized-from" name="normalized_from" type="date">
+      <span class="text-sm text-slate-600">부터</span>
+      <input id="filter-normalized-to" name="normalized_to" type="date"
+             aria-label="정규화 시각 끝나는 날">
+      <span class="text-sm text-slate-600">까지 (그날 포함)</span>
     </p>
     <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
       <label for="filter-q">검색 (제목·회사·부서)</label>
