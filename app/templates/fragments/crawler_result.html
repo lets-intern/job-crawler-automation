@@ -85,6 +85,8 @@
       hx-swap="innerHTML"
       hx-disabled-elt="find button"
       hx-indicator="#repair-wait, #crawler-result-wait">
+  {# 힌트 입력칸은 테스트 실행 화면과 같은 매크로다. 두 화면의 동작이 같아야 한다 #}
+  {{ hint_field("crawler-repair") }}
   <p>
     <button type="submit">AI 수정</button>
     <span id="repair-wait" class="wait-note">페이지를 다시 가져와 실패한 필드를 고치는 중. 10초쯤 걸린다</span>

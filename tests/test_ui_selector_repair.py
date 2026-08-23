@@ -238,3 +238,44 @@ def test_an_unknown_crawler_says_so(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert "9999" in response.text
+
+
+# 힌트 입력 (20.3) -----------------------------------------------------------
+
+
+def test_the_repair_form_has_the_same_hint_box_as_the_test_screen(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """두 화면이 같은 매크로를 쓴다. 한쪽에만 설명이 붙는 일이 없어야 한다."""
+    crawler_id = insert_crawler(conn)
+    still_wrong = json.loads(json.dumps(BROKEN))
+    still_wrong["list"]["item"] = "nav.family ul li"
+    use_repairer(lambda selectors: outcome_for(selectors, still_wrong))
+
+    body = client.post(f"/ui/crawlers/{crawler_id}/repair").text
+
+    assert 'name="hint"' in body
+    assert "Copy selector" in body
+    assert "그대로 저장되지는 않는다" in body
+
+
+def test_the_hint_reaches_the_repairer(client: TestClient, conn: sqlite3.Connection) -> None:
+    crawler_id = insert_crawler(conn)
+    hints = use_repairer(outcome_for)
+    hint = "#root > div > main > div.MuiBox-root.css-1jelp97 > div:nth-child(2) > div"
+
+    client.post(f"/ui/crawlers/{crawler_id}/repair", data={"hint": hint})
+
+    assert hints == [hint]
+
+
+def test_the_repair_still_works_without_a_hint(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    crawler_id = insert_crawler(conn)
+    hints = use_repairer(outcome_for)
+
+    response = client.post(f"/ui/crawlers/{crawler_id}/repair")
+
+    assert response.status_code == 200
+    assert hints == [""]
