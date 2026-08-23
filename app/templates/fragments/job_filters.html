@@ -5,7 +5,11 @@
 
    시각 범위는 날짜 하나로 받는다. 저장된 값은 UTC 지만 화면이 표시 시간대로 그리므로,
    서버가 고른 날짜를 표시 시간대의 하루로 읽어 바꾼다 (`app/api/ui_jobs.py`). #}
-<form hx-get="/ui/jobs" hx-target="#job-table" hx-swap="innerHTML" hx-trigger="submit, change"
+{# 지운 뒤 표를 다시 부르는 것도 이 폼이 한다. 조건을 아는 쪽이 불러야 지우고 나서 화면이
+   전체 목록으로 되돌아가지 않는다. 표가 `hx-include` 로 이 폼을 끌어오게 두면, 표가 처음
+   뜨는 순간에는 이 조각이 아직 들어오지 않아 가리킬 것이 없다 #}
+<form hx-get="/ui/jobs" hx-target="#job-table" hx-swap="innerHTML"
+      hx-trigger="submit, change, jobs-deleted from:body"
       hx-disabled-elt="find button[type=submit]">
   <fieldset>
     <legend>조회 조건</legend>

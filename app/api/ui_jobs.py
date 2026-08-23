@@ -22,7 +22,9 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Annotated, Any
@@ -32,6 +34,8 @@ from fastapi.responses import HTMLResponse
 
 from app.api import crawlers
 from app.api.ui import display_zone, render
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["ui"], include_in_schema=False)
 
@@ -60,8 +64,28 @@ DELIVERY_STATES: dict[str, str] = {
     "no": "미전달",
 }
 
+# 지울 대상을 무엇으로 고른 것인지. "화면에 보이는 100건" 과 "필터에 걸린 148건" 이 같은 단추
+# 뒤에 숨어 있으면 운영자는 100건인 줄 알고 148건을 지운다. 범위는 이름을 갖고, 화면은 그
+# 이름과 건수를 늘 함께 적는다
+SCOPE_SELECTED = "selected"
+SCOPE_FILTERED = "filtered"
+SCOPES: tuple[str, ...] = (SCOPE_SELECTED, SCOPE_FILTERED)
+
+# 범위를 사람이 읽는 한 줄로. 확인 창의 첫 줄이고 로그에도 같은 문장이 남는다
+SCOPE_LABELS: dict[str, str] = {
+    SCOPE_SELECTED: "표에서 고른 공고",
+    SCOPE_FILTERED: "지금 조회 조건에 걸린 전부",
+}
+
+# 표를 다시 부르라고 알리는 이벤트 이름. 지우고 나면 표에 없는 행이 남아 있다
+TABLE_RELOAD_EVENT = "jobs-deleted"
+
+# `IN (?, ?, ...)` 에 한 번에 넣을 id 수. SQLite 의 바인딩 개수 상한에 걸리지 않게 끊는다
+_ID_CHUNK = 500
+
 _BASE = """
     SELECT n.id             AS id,
+           n.raw_job_id      AS raw_job_id,
            n.company         AS company,
            n.company_source  AS company_source,
            n.title           AS title,
@@ -281,6 +305,270 @@ def job_filters_fragment(
         deadline_states=DEADLINE_STATES,
         delivery_states=DELIVERY_STATES,
     )
+
+
+def _chunks(ids: Sequence[int]) -> Iterator[tuple[list[int], str]]:
+    """id 목록을 바인딩 가능한 크기로 끊는다. 묶음마다 물음표 자리도 함께 낸다."""
+    for start in range(0, len(ids), _ID_CHUNK):
+        part = list(ids[start : start + _ID_CHUNK])
+        yield part, ",".join("?" for _ in part)
+
+
+def _existing_ids(conn: sqlite3.Connection, ids: Sequence[int]) -> tuple[int, ...]:
+    """받은 id 중 지금도 `raw_jobs` 에 있는 것. 이미 사라진 id 는 그 자리에서 떨어뜨린다."""
+    wanted = list(dict.fromkeys(int(value) for value in ids))
+    found: list[int] = []
+    for part, marks in _chunks(wanted):
+        found.extend(
+            int(row["id"])
+            for row in conn.execute(
+                f"SELECT id FROM raw_jobs WHERE id IN ({marks})", part
+            ).fetchall()
+        )
+    return tuple(sorted(found))
+
+
+def _count_ids(conn: sqlite3.Connection, sql: str, ids: Sequence[int]) -> int:
+    """id 묶음에 걸리는 행 수. 묶음을 끊어 세고 더한다."""
+    total = 0
+    for part, marks in _chunks(ids):
+        row = conn.execute(sql.format(marks=marks), part).fetchone()
+        total += int(row[0]) if row is not None else 0
+    return total
+
+
+def _describe(conn: sqlite3.Connection, picked: JobFilter) -> str:
+    """지금 걸린 조건을 한 줄로. 비어 있는 조건도 `전체` 라고 적는다.
+
+    확인 창의 첫 줄이고 로그에도 같은 문장이 남는다. 무엇을 지웠는지 나중에 묻는 사람은
+    건수가 아니라 이 줄을 본다.
+    """
+    workflow = "전체"
+    if picked.workflow_id is not None:
+        found = conn.execute(
+            "SELECT name FROM workflows WHERE id = ?", (picked.workflow_id,)
+        ).fetchone()
+        workflow = f"{picked.workflow_id} - {found['name']}" if found else str(picked.workflow_id)
+
+    def span(start: str, end: str) -> str:
+        if not start and not end:
+            return "전체"
+        return f"{start or '처음'} ~ {end or '지금'}"
+
+    return " · ".join(
+        (
+            f"워크플로우 {workflow}",
+            f"회사 {picked.company or '전체'}",
+            f"진행 여부 {DEADLINE_STATES.get(picked.status, '전체')}",
+            f"전달 여부 {DELIVERY_STATES.get(picked.delivered, '전체')}",
+            f"수집 {span(picked.crawled_from, picked.crawled_to)}",
+            f"정규화 {span(picked.normalized_from, picked.normalized_to)}",
+            f"검색어 {picked.query or '없음'}",
+        )
+    )
+
+
+@dataclass(frozen=True)
+class DeleteTarget:
+    """지울 대상 한 묶음. 세 표에서 각각 몇 행이 사라지는지까지 들고 있다.
+
+    건수를 화면이 아니라 서버가 낸다. 확인 창이 보여준 숫자와 실제로 지워지는 행이 다르면,
+    `raw_jobs` 는 다시 만들 수 없으므로 되돌릴 방법이 없다.
+    """
+
+    scope: str
+    label: str
+    criteria: str
+    picked: JobFilter
+    raw_job_ids: tuple[int, ...]
+    normalized: int
+    overrides: int
+    delivered: int
+
+    @property
+    def raw(self) -> int:
+        return len(self.raw_job_ids)
+
+
+def _build_target(
+    conn: sqlite3.Connection,
+    *,
+    scope: str,
+    ids: Sequence[int],
+    picked: JobFilter,
+    resolve: bool = True,
+) -> DeleteTarget:
+    """범위를 실제 `raw_jobs.id` 목록으로 바꾸고, 세 표에서 사라질 행을 센다.
+
+    `resolve` 를 끄면 범위를 다시 풀지 않고 받은 id 만 쓴다. 확인 창을 지나온 요청이 그렇다 —
+    확인 창이 148건이라고 적었는데 그 사이 크롤이 한 번 더 돌아 160건을 지우면, `raw_jobs` 는
+    다시 만들 수 없으므로 되돌릴 방법이 없다. 지우는 것은 사람이 보고 승낙한 그 목록이다.
+    """
+    if resolve and scope == SCOPE_FILTERED:
+        where, params = _filters(picked)
+        rows = conn.execute(
+            f"SELECT DISTINCT r.id AS id FROM normalized_jobs n"
+            f" JOIN raw_jobs r ON r.id = n.raw_job_id{where} ORDER BY r.id",
+            params,
+        ).fetchall()
+        raw_job_ids = tuple(int(row["id"]) for row in rows)
+    else:
+        raw_job_ids = _existing_ids(conn, ids)
+
+    return DeleteTarget(
+        scope=scope,
+        label=SCOPE_LABELS[scope],
+        criteria=_describe(conn, picked),
+        picked=picked,
+        raw_job_ids=raw_job_ids,
+        normalized=_count_ids(
+            conn,
+            "SELECT count(*) FROM normalized_jobs WHERE raw_job_id IN ({marks})",
+            raw_job_ids,
+        ),
+        overrides=_count_ids(
+            conn,
+            "SELECT count(*) FROM job_field_overrides WHERE raw_job_id IN ({marks})",
+            raw_job_ids,
+        ),
+        delivered=_count_ids(
+            conn,
+            "SELECT count(*) FROM normalized_jobs"
+            " WHERE delivered_at IS NOT NULL AND raw_job_id IN ({marks})",
+            raw_job_ids,
+        ),
+    )
+
+
+def _form_ids(values: Sequence[Any]) -> list[int]:
+    """체크박스가 보낸 id. 숫자가 아닌 값은 버린다."""
+    found: list[int] = []
+    for value in values:
+        text = str(value).strip()
+        if text.isdigit():
+            found.append(int(text))
+    return found
+
+
+async def _delete_request(request: Request) -> tuple[str, list[int], JobFilter]:
+    """지우기 폼 한 벌. 확인 창과 실제 삭제가 같은 폼을 읽는다."""
+    form = await request.form()
+    scope = str(form.get("scope") or "").strip()
+    if scope not in SCOPES:
+        # 범위를 따로 싣지 않으면 `필터 전체` 체크박스가 정한다
+        scope = SCOPE_FILTERED if form.get("all_filtered") else SCOPE_SELECTED
+    picked = read_filter(
+        **{
+            name: str(form.get(name) or "")
+            for name in (
+                "workflow_id",
+                "company",
+                "q",
+                "status",
+                "delivered",
+                "crawled_from",
+                "crawled_to",
+                "normalized_from",
+                "normalized_to",
+            )
+        }
+    )
+    return scope, _form_ids(form.getlist("raw_job_id")), picked
+
+
+def _delete_rows(conn: sqlite3.Connection, raw_job_ids: Sequence[int]) -> tuple[int, int, int]:
+    """세 표를 한 트랜잭션으로, 외래키 순서대로 비운다.
+
+    `job_field_overrides` -> `normalized_jobs` -> `raw_jobs` 순이다. 거꾸로 지우면 외래키가
+    막고, 막히지 않는다면 그것대로 문제다 — 가리키는 곳이 없는 보정이 남는다.
+
+    한 트랜잭션인 이유는 절반만 지워진 상태를 운영자가 손으로 풀 수 없어서다. 정규화 행만
+    사라지고 수집 건이 남으면 그 건은 어느 화면에도 나오지 않는데 표에는 있다.
+    """
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        overrides = normalized = raw = 0
+        for part, marks in _chunks(raw_job_ids):
+            overrides += conn.execute(
+                f"DELETE FROM job_field_overrides WHERE raw_job_id IN ({marks})", part
+            ).rowcount
+            normalized += conn.execute(
+                f"DELETE FROM normalized_jobs WHERE raw_job_id IN ({marks})", part
+            ).rowcount
+            raw += conn.execute(f"DELETE FROM raw_jobs WHERE id IN ({marks})", part).rowcount
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return raw, normalized, overrides
+
+
+@router.post("/ui/jobs/delete/confirm", response_class=HTMLResponse)
+async def job_delete_confirm_fragment(
+    request: Request,
+    conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
+) -> HTMLResponse:
+    """지우기 전에 무엇이 몇 건 사라지는지 보여주는 모달.
+
+    브라우저 `confirm()` 을 쓰지 않는다. 저장소의 다른 확인과 같은 `<dialog>` 다 — 여기에
+    적어야 하는 것이 한 줄로 끝나지 않아서다. 세 표에서 각각 몇 행이 사라지는지, 그중 이미
+    전달된 것이 몇 건인지, 되돌릴 수 없다는 것까지 들어간다.
+
+    GET 이 아니라 POST 로 받는다. 고른 id 가 백 개를 넘으면 주소에 실을 수 없다.
+    """
+    scope, ids, picked = await _delete_request(request)
+    target = _build_target(conn, scope=scope, ids=ids, picked=picked)
+    return render(request, "fragments/job_delete.html", target=target, done=None)
+
+
+@router.post("/ui/jobs/delete", response_class=HTMLResponse)
+async def job_delete_fragment(
+    request: Request,
+    conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
+) -> HTMLResponse:
+    """확인 창이 보여준 그 목록을 지운다.
+
+    범위를 여기서 다시 풀지 않는다. 확인 창이 실어 보낸 id 만 지운다 — 그래야 사람이 보고
+    승낙한 숫자와 사라진 행이 같다.
+
+    모달은 닫지 않고 결과를 그 자리에 적는다. 되돌릴 수 없는 일이라 몇 건이 지워졌는지가
+    화면에 남아야 한다. 표는 `jobs-deleted` 를 받아 스스로 다시 그린다.
+    """
+    scope, ids, picked = await _delete_request(request)
+    target = _build_target(conn, scope=scope, ids=ids, picked=picked, resolve=False)
+    if target.raw == 0:
+        return render(request, "fragments/job_delete.html", target=target, done=None)
+
+    raw, normalized, overrides = _delete_rows(conn, target.raw_job_ids)
+    # 요청자를 남긴다. 계정이 없는 단일 운영자라 남길 수 있는 것은 어디서 왔는지뿐이다
+    # (`app/api/auth.py`). 되돌릴 수 없는 일이라 이 줄이 유일한 기록이다
+    client = request.client.host if request.client is not None else "알 수 없음"
+    logger.info(
+        "조회 화면에서 공고를 지웠다: 범위=%s(%s), 조건=%s,"
+        " raw_jobs=%d, normalized_jobs=%d, job_field_overrides=%d, 전달됐던 행=%d, 요청=%s",
+        target.scope,
+        target.label,
+        target.criteria,
+        raw,
+        normalized,
+        overrides,
+        target.delivered,
+        client,
+    )
+    done = DeleteTarget(
+        scope=target.scope,
+        label=target.label,
+        criteria=target.criteria,
+        picked=picked,
+        raw_job_ids=target.raw_job_ids[:raw],
+        normalized=normalized,
+        overrides=overrides,
+        delivered=target.delivered,
+    )
+    response = render(request, "fragments/job_delete.html", target=target, done=done)
+    # 설정(settle) 뒤에 표를 다시 부른다. 모달은 열어 둔 채다
+    response.headers["HX-Trigger-After-Settle"] = TABLE_RELOAD_EVENT
+    return response
 
 
 @router.get("/ui/jobs/{job_id}", response_class=HTMLResponse)
