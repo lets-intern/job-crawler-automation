@@ -96,6 +96,15 @@ POST /api/jobs/delivered
 `updated_after` 에 타임존이 없으면 UTC 로 본다. 저장된 값이 UTC 라, 로컬 시각으로 해석하면
 소비 측이 시차만큼 받지 못한 구간이 생긴다.
 
+## 응답의 시각과 화면의 시각은 다르다
+
+응답의 `normalized_at` 은 UTC 다. 운영 화면은 같은 행을 `DISPLAY_TIMEZONE`(기본 `Asia/Seoul`)
+으로 옮겨 그리므로, 화면의 값이 응답보다 9시간 앞선다. 바뀌는 것은 화면에 그리는 순간뿐이고
+저장된 값과 이 응답은 UTC 그대로다 (`app/api/ui.py` 의 `format_time`).
+
+화면에서 본 시각을 `updated_after` 에 그대로 넣으면 그 시차만큼 건너뛴다. 커서에 넣을 값은
+응답의 `normalized_at` 이다.
+
 ## 계약을 바꿀 때
 
 필드 추가는 안전하다. 필드 삭제·이름 변경·타입 변경은 소비 측을 깨뜨린다.
