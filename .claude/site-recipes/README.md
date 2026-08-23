@@ -10,6 +10,7 @@
 |---|---|---|---|
 | `www-hanwhain-com.md` | 한화 | Playwright 필요 | 2026-08-22 |
 | `talent-hyundai-com.md` | 현대자동차 | Playwright 필요 | 2026-08-22 |
+| `careers-lg-com.md` | LG | Playwright 필요 | 2026-08-24 |
 
 ## 새 사이트 등록 전에
 
