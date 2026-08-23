@@ -574,7 +574,7 @@ def test_registration_defaults_to_static(client: TestClient, conn: sqlite3.Conne
 
     assert response.status_code == 201
     assert called_with == ["static"]
-    assert rows(conn)[0]["render_mode"] == "static"
+    assert (rows(conn)[0]["list_mode"], rows(conn)[0]["detail_mode"]) == ("static", "static")
     assert response.json()["render_mode"] == "static"
 
 
@@ -591,7 +591,10 @@ def test_registration_can_start_in_render_mode(
 
     assert response.status_code == 201
     assert called_with == ["playwright"]
-    assert rows(conn)[0]["render_mode"] == "playwright"
+    assert (rows(conn)[0]["list_mode"], rows(conn)[0]["detail_mode"]) == (
+        "playwright",
+        "playwright",
+    )
 
 
 def test_registration_refuses_an_unknown_render_mode(
@@ -622,7 +625,10 @@ def test_render_mode_can_be_switched(client: TestClient, conn: sqlite3.Connectio
 
     assert response.status_code == 200
     assert response.json() == {"id": crawler_id, "render_mode": "playwright"}
-    assert rows(conn)[0]["render_mode"] == "playwright"
+    assert (rows(conn)[0]["list_mode"], rows(conn)[0]["detail_mode"]) == (
+        "playwright",
+        "playwright",
+    )
 
 
 def test_switching_render_mode_keeps_the_selectors(

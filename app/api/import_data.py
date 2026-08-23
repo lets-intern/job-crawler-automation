@@ -89,7 +89,6 @@ READ_TABLES: dict[str, tuple[str, ...]] = {
         "list_url",
         "detail_url",
         "selectors_json",
-        "render_mode",
         "status",
         "default_company",
     ),
@@ -308,8 +307,12 @@ def _merge_crawlers(
     """크롤러를 더한다. 이름과 리스트 URL 이 같으면 같은 크롤러로 본다.
 
     셀렉터를 포함해 통째로 가져온다. `selectors_json` 에는 사람이 손으로 고친 것이 섞여 있고,
-    `render_mode` 를 놓치면 JS 로 그려지는 사이트가 정적으로 돌아 0건이 나온다. `status` 도
+    수집 방식을 놓치면 JS 로 그려지는 사이트가 정적으로 돌아 0건이 나온다. `status` 도
     그대로다 — `promoted` 인 크롤러를 `draft` 로 들여오면 워크플로우가 매달릴 곳이 없다.
+
+    0008 이전에 뜬 파일에는 `list_mode` 대신 `render_mode` 하나가 있다. 그 값을 목록과 상세
+    양쪽에 넣는다 — 그때는 한 값이 크롤러 전체의 경로였다. `api_config_json` 은 그 파일에
+    없으므로 NULL 로 들어가고, `api` 모드였던 크롤러도 있을 수 없다.
     """
     known = {
         (str(row["name"]), str(row["list_url"])): int(row["id"])
@@ -317,9 +320,15 @@ def _merge_crawlers(
     }
     mapping: dict[int, int] = {}
     added = skipped = 0
+    columns = {str(row["name"]) for row in source.execute("PRAGMA table_info(crawlers)").fetchall()}
+    modes = (
+        "list_mode, detail_mode, api_config_json"
+        if "list_mode" in columns
+        else "render_mode AS list_mode, render_mode AS detail_mode, NULL AS api_config_json"
+    )
     for row in source.execute(
-        """
-        SELECT id, name, list_url, detail_url, selectors_json, render_mode, status,
+        f"""
+        SELECT id, name, list_url, detail_url, selectors_json, {modes}, status,
                default_company
           FROM crawlers ORDER BY id
         """
@@ -332,16 +341,18 @@ def _merge_crawlers(
             continue
         cursor = conn.execute(
             """
-            INSERT INTO crawlers (name, list_url, detail_url, selectors_json, render_mode,
-                                  status, default_company)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO crawlers (name, list_url, detail_url, selectors_json, list_mode,
+                                  detail_mode, api_config_json, status, default_company)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 row["name"],
                 row["list_url"],
                 row["detail_url"],
                 row["selectors_json"],
-                row["render_mode"],
+                row["list_mode"],
+                row["detail_mode"],
+                row["api_config_json"],
                 row["status"],
                 row["default_company"],
             ),

@@ -1,6 +1,7 @@
 {# 실행 대상 목록. 실행 뒤에는 크롤러 상태(draft -> tested)가 바뀌므로 OOB 로 다시 들어온다.
 
-   모드는 두 자리로 갈린다. "저장 모드" 열은 `crawlers.render_mode` 를 바꾸고, 실행 폼의
+   모드는 두 자리로 갈린다. "저장 모드" 열은 `crawlers.list_mode` 와 `detail_mode` 를 함께
+   바꾸고, 실행 폼의
    "가져오는 방식" 은 이번 실행 한 번만 다른 경로로 돈다. 비교가 이 화면의 일이라 시험할
    때마다 저장값이 따라 바뀌면 안 된다 (`app/api/ui_tests.py`).
 
@@ -35,16 +36,16 @@
       </td>
       <td>
         {# 워크플로우 실행이 읽는 값이다. 여기서 바꾸면 다음 주기부터 그 경로로 돈다 #}
-        <span class="font-medium">{{ mode_word(crawler.render_mode) }}</span>
-        <span class="text-xs text-slate-500">({{ crawler.render_mode }})</span>
+        <span class="font-medium">{{ mode_word(crawler.list_mode) }}</span>
+        <span class="text-xs text-slate-500">({{ crawler.list_mode }})</span>
         <form hx-put="/ui/test-targets/{{ crawler.id }}/render-mode"
               hx-target="#test-targets"
               hx-swap="innerHTML"
               hx-disabled-elt="find button"
               hx-indicator="closest form">
           <input type="hidden" name="render_mode"
-                 value="{% if crawler.render_mode == 'playwright' %}static{% else %}playwright{% endif %}">
-          <button type="submit">{% if crawler.render_mode == 'playwright' %}정적으로 저장{% else %}렌더로 저장{% endif %}</button>
+                 value="{% if crawler.list_mode == 'playwright' %}static{% else %}playwright{% endif %}">
+          <button type="submit">{% if crawler.list_mode == 'playwright' %}정적으로 저장{% else %}렌더로 저장{% endif %}</button>
           <span class="wait-note">바꾸는 중</span>
         </form>
       </td>
@@ -63,7 +64,7 @@
           {# 저장값을 바꾸지 않고 한 번만 시험하는 자리다. 정적으로 되는지 렌더가 필요한지는
              같은 크롤러를 양쪽으로 돌려 필드별 매칭 수를 비교해서 안다 #}
           <select id="mode-{{ crawler.id }}" name="render_mode">
-            <option value="">저장 모드로 ({{ mode_word(crawler.render_mode) }})</option>
+            <option value="">저장 모드로 ({{ mode_word(crawler.list_mode) }})</option>
             <option value="static">이번만 정적으로</option>
             <option value="playwright">이번만 렌더로</option>
           </select>

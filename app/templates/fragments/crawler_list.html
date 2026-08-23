@@ -25,7 +25,7 @@
         <span class="text-xs text-slate-500">({{ crawler.status }})</span>
       </td>
       <td>
-        {{ crawler.render_mode }}
+        {{ crawler.list_mode }}
         {# 승격은 운영자가 정한다. 자동으로 렌더로 올라가는 경로는 없다 #}
         <form hx-put="/ui/crawlers/{{ crawler.id }}/render-mode"
               hx-target="#crawler-result"
@@ -33,8 +33,8 @@
               hx-disabled-elt="find button"
               hx-indicator="closest form, #crawler-result-wait">
           <input type="hidden" name="render_mode"
-                 value="{% if crawler.render_mode == 'playwright' %}static{% else %}playwright{% endif %}">
-          <button type="submit">{% if crawler.render_mode == 'playwright' %}정적으로{% else %}렌더로{% endif %}</button>
+                 value="{% if crawler.list_mode == 'playwright' %}static{% else %}playwright{% endif %}">
+          <button type="submit">{% if crawler.list_mode == 'playwright' %}정적으로{% else %}렌더로{% endif %}</button>
           <span class="wait-note">바꾸는 중</span>
         </form>
       </td>

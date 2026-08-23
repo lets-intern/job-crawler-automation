@@ -212,7 +212,10 @@ def test_역적용하면_컬럼이_사라진다(db_path: pathlib.Path) -> None:
             "INSERT INTO crawl_runs (crawler_id, trigger) VALUES (?, 'test')", (crawler_id,)
         )
 
-        db.migrate_down(connection, steps=1)
+        # 0007 까지 내려가려면 그 뒤에 붙은 것을 먼저 되돌려야 한다. 마이그레이션이 하나
+        # 붙을 때마다 이 숫자를 손으로 고치지 않도록 파일 목록에서 센다
+        versions = [migration.version for migration in db.load_migrations()]
+        db.migrate_down(connection, steps=len(versions) - versions.index("0007"))
 
         columns = {
             row["name"] for row in connection.execute("PRAGMA table_info(crawl_runs)").fetchall()

@@ -244,7 +244,8 @@ class TestRunOut(BaseModel):
     """`crawl_runs` 행에 남은 값과 같은 카운트 + 미리보기.
 
     `render_mode` 는 이 실행이 실제로 쓴 경로고, `saved_render_mode` 는 크롤러에 저장된
-    값이다. 둘이 다르면 이번 한 번만 다른 모드로 시험한 것이고 저장값은 그대로다.
+    목록 모드(`crawlers.list_mode`)다. 둘이 다르면 이번 한 번만 다른 모드로 시험한 것이고
+    저장값은 그대로다.
     """
 
     crawler_id: int
@@ -381,8 +382,9 @@ async def create_crawler(
     cursor = conn.execute(
         """
         INSERT INTO crawlers
-               (name, list_url, detail_url, selectors_json, status, default_company, render_mode)
-        VALUES (?, ?, ?, ?, 'draft', ?, ?)
+               (name, list_url, detail_url, selectors_json, status, default_company,
+                list_mode, detail_mode)
+        VALUES (?, ?, ?, ?, 'draft', ?, ?, ?)
         """,
         (
             name,
@@ -390,6 +392,7 @@ async def create_crawler(
             detail_url,
             result.selectors.to_json(),
             default_company,
+            render_mode,
             render_mode,
         ),
     )
@@ -473,7 +476,12 @@ def update_render_mode(
         raise HTTPException(status_code=404, detail={"message": f"크롤러 {crawler_id} 가 없다"})
 
     mode = _validated_render_mode(payload.render_mode)
-    conn.execute("UPDATE crawlers SET render_mode = ? WHERE id = ?", (mode, crawler_id))
+    # 목록과 상세를 한 값으로 함께 옮긴다. 이 경로는 정적과 렌더 사이만 오가고, 둘을 갈라
+    # 고르는 것은 화면이 붙는 Push 25 다
+    conn.execute(
+        "UPDATE crawlers SET list_mode = ?, detail_mode = ? WHERE id = ?",
+        (mode, mode, crawler_id),
+    )
     return RenderModeOut(id=crawler_id, render_mode=mode)
 
 
@@ -606,8 +614,7 @@ async def repair_selectors(
     돌린다.
     """
     row = conn.execute(
-        "SELECT list_url, detail_url, selectors_json, status, render_mode "
-        "FROM crawlers WHERE id = ?",
+        "SELECT list_url, detail_url, selectors_json, status, list_mode FROM crawlers WHERE id = ?",
         (crawler_id,),
     ).fetchone()
     if row is None:
@@ -631,7 +638,7 @@ async def repair_selectors(
         outcome = await repair(
             str(row["list_url"]),
             detail_url,
-            str(row["render_mode"]),
+            str(row["list_mode"]),
             selectors,
             hint=payload.hint if payload else "",
         )
@@ -697,15 +704,17 @@ async def test_run(
     테스트가 아니라 그냥 크롤링이다 (`.claude/skills/crawl-test/SKILL.md`).
 
     `render_mode` 는 이번 한 번만 다른 경로로 시험하는 값이다. 비우면 저장된 모드로 돈다.
-    값을 줘도 `crawlers.render_mode` 는 바뀌지 않는다 — 정적으로 되는지 렌더가 필요한지
-    비교하는 것이 이 실행의 일이고, 시험할 때마다 저장값이 따라 바뀌면 비교가 안 된다.
+    값을 줘도 저장된 모드(`crawlers.list_mode` 와 `detail_mode`)는 바뀌지 않는다 — 정적으로
+    되는지 렌더가 필요한지 비교하는 것이 이 실행의 일이고, 시험할 때마다 저장값이 따라
+    바뀌면 비교가 안 된다.
     저장값을 바꾸는 것은 `PUT /api/crawlers/{id}/render-mode` 하나뿐이다.
 
     워크플로우가 없는 실행이라 `raw_jobs` 에는 적재하지 않는다. 남는 것은 `crawl_runs` 행과
     이 응답의 미리보기뿐이다.
     """
     row = conn.execute(
-        "SELECT list_url, selectors_json, status, render_mode FROM crawlers WHERE id = ?",
+        "SELECT list_url, selectors_json, status, list_mode, detail_mode FROM crawlers "
+        "WHERE id = ?",
         (crawler_id,),
     ).fetchone()
     if row is None:
@@ -724,7 +733,7 @@ async def test_run(
             status_code=409, detail={"reason": "invalid_selectors", "message": str(exc)}
         ) from exc
 
-    saved_mode = str(row["render_mode"])
+    saved_mode = str(row["list_mode"])
     # 값을 줬을 때만 이번 실행의 경로가 갈린다. 저장값은 어느 쪽이든 그대로다
     used_mode = _validated_render_mode(render_mode) if render_mode.strip() else saved_mode
     async with open_source(used_mode, fetcher) as source:

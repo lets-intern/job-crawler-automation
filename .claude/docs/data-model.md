@@ -17,12 +17,22 @@ SQLite 파일 하나. 경로는 `DATABASE_PATH` 가 정하고 Docker named volum
 | list_url | 리스트 페이지 URL |
 | detail_url | 셀렉터 생성 시 참고한 상세 페이지 URL |
 | selectors_json | 생성 또는 수동 보정된 셀렉터 |
-| render_mode | `static` 또는 `playwright` |
+| list_mode | 목록을 무엇으로 가져오는가. `static` / `api` / `playwright` |
+| detail_mode | 상세를 무엇으로 가져오는가. 같은 세 값 |
+| api_config_json | `api` 모드가 쓰는 endpoint·본문·응답 경로. 안 쓰면 NULL |
 | status | `draft` / `tested` / `promoted` |
 | default_company | 운영자가 적어 둔 회사명. 선택. NULL 이면 안 적은 것 |
 | created_at | |
 
 `status` 는 `tested` 를 거쳐야 `promoted` 가 된다. 테스트 없이 워크플로우로 올라가지 않는다.
+
+목록과 상세는 따로 고른다. 섞어 쓰는 것이 정상적인 선택지다 — 목록이 JSON API 로 오고 상세는
+브라우저가 있어야 그려지는 사이트가 있다. 두 값을 하나로 합치면 그 사이트를 담을 자리가 없다
+(`migrations/0008_collect_modes.sql`).
+
+`api_config_json` 의 형식은 `app/selector/api_schema.py` 가 강제한다. 목록은 `url`, `method`,
+`body`, `items_path`, `fields`, `id_field`, `link_template` 을, 상세는 `url`, `method`, `body`,
+`fields` 를 갖는다.
 
 ### workflows
 

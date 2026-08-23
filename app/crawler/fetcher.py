@@ -68,8 +68,8 @@ class FetchResult:
 class PageSource(Protocol):
     """URL 하나를 HTML 로 바꿔 주는 것. `Fetcher` 와 렌더러가 둘 다 이 모양이다.
 
-    실행 경로가 정적인지 렌더인지는 `crawlers.render_mode` 가 정하고, 그 뒤로는 같은 코드가
-    돈다. 파서와 러너는 어느 쪽이 왔는지 알 필요가 없다.
+    실행 경로가 정적인지 렌더인지는 `crawlers.list_mode` 와 `detail_mode` 가 정하고, 그 뒤로는
+    같은 코드가 돈다. 파서와 러너는 어느 쪽이 왔는지 알 필요가 없다.
     """
 
     async def fetch(self, url: str) -> FetchResult: ...

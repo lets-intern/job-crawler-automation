@@ -133,7 +133,7 @@ async def run_workflow(
 
     `workflows` 와 `crawlers` 가 진실이다. 잡을 등록할 때의 값을 스케줄러가 들고 있다가
     쓰지 않는다 (`.claude/rules/crawling.md`). 정적으로 가져올지 렌더할지도 매번
-    `crawlers.render_mode` 를 다시 읽어서 정한다.
+    `crawlers.list_mode` 를 다시 읽어서 정한다.
 
     실행은 `RUN_TIMEOUT_SECONDS` 로 감싼다. 끝나지 않는 실행 하나가 동시 실행 자리를 영원히
     붙들고 있으면 나머지 워크플로우가 전부 멈춘다.
@@ -147,7 +147,7 @@ async def run_workflow(
     row = conn.execute(
         """
         SELECT c.list_url AS list_url, c.selectors_json AS selectors_json,
-               c.render_mode AS render_mode
+               c.list_mode AS list_mode, c.detail_mode AS detail_mode
           FROM workflows w
           JOIN crawlers c ON c.id = w.crawler_id
          WHERE w.id = ?
@@ -167,8 +167,8 @@ async def run_workflow(
         return result
 
     bound = timeout_seconds if timeout_seconds is not None else get_settings().run_timeout_seconds
-    # 어느 경로로 가져올지는 crawlers.render_mode 가 정한다. 브라우저는 이 블록에서만 산다
-    async with open_source(row["render_mode"], fetcher or get_fetcher()) as source:
+    # 어느 경로로 가져올지는 crawlers.list_mode 가 정한다. 브라우저는 이 블록에서만 산다
+    async with open_source(row["list_mode"], fetcher or get_fetcher()) as source:
         result = await run_once(
             conn,
             RunTarget(
@@ -176,7 +176,7 @@ async def run_workflow(
                 selectors=selectors,
                 trigger=trigger,
                 workflow_id=workflow_id,
-                render_mode=row["render_mode"],
+                render_mode=row["list_mode"],
             ),
             fetcher=source,
             limit=limit,

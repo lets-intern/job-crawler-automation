@@ -42,7 +42,7 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
     connection = db.connect(tmp_path / "jobs.db")
     db.migrate_up(connection)
     connection.execute(
-        "INSERT INTO crawlers (name, list_url, render_mode) VALUES ('긴 URL 크롤러', ?, 'static')",
+        "INSERT INTO crawlers (name, list_url, list_mode) VALUES ('긴 URL 크롤러', ?, 'static')",
         (LONG_URL,),
     )
     connection.commit()

@@ -137,18 +137,25 @@ def client(tmp_path: pathlib.Path, conn: sqlite3.Connection) -> Iterator[TestCli
 def add_crawler(conn: sqlite3.Connection, render_mode: str) -> int:
     cursor = conn.execute(
         """
-        INSERT INTO crawlers (name, list_url, detail_url, selectors_json, status, render_mode)
-        VALUES ('python.org', ?, ?, ?, 'draft', ?)
+        INSERT INTO crawlers
+               (name, list_url, detail_url, selectors_json, status, list_mode, detail_mode)
+        VALUES ('python.org', ?, ?, ?, 'draft', ?, ?)
         """,
-        (LIST_URL, "https://www.python.org/jobs/8126/", json.dumps(SELECTORS), render_mode),
+        (
+            LIST_URL,
+            "https://www.python.org/jobs/8126/",
+            json.dumps(SELECTORS),
+            render_mode,
+            render_mode,
+        ),
     )
     conn.commit()
     return int(cursor.lastrowid or 0)
 
 
 def saved_mode(conn: sqlite3.Connection, crawler_id: int) -> str:
-    row = conn.execute("SELECT render_mode FROM crawlers WHERE id = ?", (crawler_id,)).fetchone()
-    return str(row["render_mode"])
+    row = conn.execute("SELECT list_mode FROM crawlers WHERE id = ?", (crawler_id,)).fetchone()
+    return str(row["list_mode"])
 
 
 def crawler_status(conn: sqlite3.Connection, crawler_id: int) -> str:

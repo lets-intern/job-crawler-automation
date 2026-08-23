@@ -18,7 +18,9 @@ EXPECTED_COLUMNS = {
         "list_url",
         "detail_url",
         "selectors_json",
-        "render_mode",
+        "list_mode",
+        "detail_mode",
+        "api_config_json",
         "status",
         "default_company",
         "created_at",
@@ -100,7 +102,7 @@ OVERRIDABLE = ["company", "title", "department", "deadline", "body", "requiremen
 EXPECTED_INDEXES = {"idx_raw_jobs_content_hash", "idx_normalized_jobs_normalized_at"}
 
 # 지금까지의 마이그레이션. 전부 역적용해야 테이블이 사라진다
-ALL_VERSIONS = ["0001", "0002", "0003", "0004", "0005", "0006", "0007"]
+ALL_VERSIONS = ["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008"]
 
 
 @pytest.fixture
@@ -375,3 +377,76 @@ def test_override_down_removes_only_its_own_table(conn: sqlite3.Connection) -> N
 
     assert "job_field_overrides" not in _names(conn, "table")
     assert conn.execute("SELECT count(*) AS n FROM raw_jobs").fetchone()["n"] == 1
+
+
+def _at_0007(connection: sqlite3.Connection) -> None:
+    """0008 직전 상태로 만든다. `crawlers` 에 `render_mode` 하나만 있는 스키마다."""
+    db.migrate_up(connection)
+    db.migrate_down(connection, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0008"))
+    assert "render_mode" in _columns(connection, "crawlers")
+
+
+def test_collect_modes_copy_the_previous_render_mode(conn: sqlite3.Connection) -> None:
+    """0008 은 값을 옮기기만 한다. 렌더로 돌던 크롤러가 적용 후 정적으로 떨어지면 안 된다."""
+    _at_0007(conn)
+    conn.execute(
+        "INSERT INTO crawlers (name, list_url, render_mode) VALUES ('렌더', ?, 'playwright')",
+        ("https://example.test",),
+    )
+    conn.execute(
+        "INSERT INTO crawlers (name, list_url, render_mode) VALUES ('정적', ?, 'static')",
+        ("https://example.test/2",),
+    )
+
+    db.migrate_up(conn)
+
+    rows = conn.execute(
+        "SELECT name, list_mode, detail_mode, api_config_json FROM crawlers ORDER BY id"
+    ).fetchall()
+    assert [(row["list_mode"], row["detail_mode"]) for row in rows] == [
+        ("playwright", "playwright"),
+        ("static", "static"),
+    ]
+    # 쓰지 않는 크롤러의 API 설정은 비어 있다. 빈 객체를 넣으면 "설정했다" 와 구분되지 않는다
+    assert [row["api_config_json"] for row in rows] == [None, None]
+    assert "render_mode" not in _columns(conn, "crawlers")
+
+
+@pytest.mark.parametrize("column", ["list_mode", "detail_mode"])
+def test_collect_mode_rejects_a_value_outside_the_three(
+    conn: sqlite3.Connection, column: str
+) -> None:
+    db.migrate_up(conn)
+    conn.execute(
+        "INSERT INTO crawlers (name, list_url) VALUES (?, ?)", ("테스트", "https://example.test")
+    )
+
+    conn.execute(f"UPDATE crawlers SET {column} = 'api' WHERE id = 1")
+
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(f"UPDATE crawlers SET {column} = 'selenium' WHERE id = 1")
+
+
+def test_collect_modes_down_restores_render_mode(conn: sqlite3.Connection) -> None:
+    """역적용은 `list_mode` 를 되돌린다. `api` 는 담을 자리가 없어 정적으로 내려온다."""
+    db.migrate_up(conn)
+    conn.execute(
+        """
+        INSERT INTO crawlers (name, list_url, list_mode, detail_mode, api_config_json)
+        VALUES ('API', ?, 'api', 'playwright', '{}')
+        """,
+        ("https://example.test",),
+    )
+    conn.execute(
+        """
+        INSERT INTO crawlers (name, list_url, list_mode, detail_mode)
+        VALUES ('렌더', ?, 'playwright', 'playwright')
+        """,
+        ("https://example.test/2",),
+    )
+
+    db.migrate_down(conn, steps=1)
+
+    rows = conn.execute("SELECT name, render_mode FROM crawlers ORDER BY id").fetchall()
+    assert [row["render_mode"] for row in rows] == ["static", "playwright"]
+    assert "list_mode" not in _columns(conn, "crawlers")
