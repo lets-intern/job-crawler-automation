@@ -87,17 +87,19 @@ def use_repairer(result: Any) -> list[str]:
 # 버튼 ----------------------------------------------------------------------
 
 
-def test_the_button_appears_only_when_a_field_failed(
+def test_the_button_stays_after_everything_was_fixed(
     client: TestClient, conn: sqlite3.Connection
 ) -> None:
+    """이번 고치기로 전부 해결됐다. 그래도 버튼은 남는다 — 잡히는 값이 틀렸는데 고칠 길이
+    없으면 운영자가 막힌다. 대신 고칠 것이 없다는 사실과 다음 수를 그 자리에 적는다."""
     crawler_id = insert_crawler(conn)
     use_repairer(outcome_for)
 
     body = client.post(f"/ui/crawlers/{crawler_id}/repair").text
 
-    # 이번 고치기로 전부 해결됐다. 더 고칠 것이 없으므로 버튼도 없다
-    assert "AI 수정" in body
-    assert f'hx-post="/ui/crawlers/{crawler_id}/repair"' not in body
+    assert f'hx-post="/ui/crawlers/{crawler_id}/repair"' in body
+    assert "지금 실패한 필드는 없다" in body
+    assert "힌트에 적으면 그 필드를 고친다" in body
 
 
 def test_the_button_stays_when_a_field_is_still_failing(
