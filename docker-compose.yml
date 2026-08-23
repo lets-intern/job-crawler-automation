@@ -13,12 +13,16 @@ services:
       GEMINI_MODEL:
       # 값 없이 이름만 적으면 호스트 환경이나 .env 에 있을 때만 전달된다.
       # 없으면 app/config.py 의 보수적인 기본값을 쓴다. 여기에 값을 적지 않는다.
+      # 화면과 API 를 여는 비밀번호. 없으면 기본값으로 뜬다
+      ADMIN_PASSWORD:
       CRAWL_USER_AGENT:
       CRAWL_DELAY_SECONDS:
       CRAWL_TIMEOUT_SECONDS:
       CRAWL_MAX_RETRIES:
       MAX_CONCURRENT_RUNS:
       RUN_TIMEOUT_SECONDS:
+      # 화면에 시각을 그릴 때 쓰는 시간대. 저장된 값은 UTC 그대로다.
+      DISPLAY_TIMEZONE:
     volumes:
       # named volume. 실제 수집 데이터가 여기 남는다 (.claude/rules/data-safety.md).
       - jobs-data:/data

@@ -17,9 +17,12 @@ HTMX 와 Tailwind 둘 다 CDN 에서 받는다.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import logging
+from datetime import UTC, datetime, tzinfo
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.exception_handlers import (
@@ -29,6 +32,10 @@ from fastapi.exception_handlers import (
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
+
+from app.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -78,11 +85,39 @@ NEXT_STEPS: dict[str, str] = {
 }
 
 
-def format_time(value: Any) -> str:
-    """시각을 화면 한 가지 형식으로 맞춘다.
+@lru_cache(maxsize=8)
+def _zone(name: str) -> tzinfo:
+    """이름으로 시간대를 찾는다. 못 찾으면 UTC 다 — 화면이 죽는 것보다 낫다."""
+    if not name:
+        return UTC
+    try:
+        return ZoneInfo(name)
+    except (KeyError, ValueError, OSError):
+        # 설정이 틀렸다. 화면은 계속 뜨고, 값 옆의 `UTC` 가 그 사실을 말한다
+        logger.warning("DISPLAY_TIMEZONE 을 찾지 못했다: %r. UTC 로 그린다", name)
+        return UTC
 
-    DB 는 `datetime('now')` 로 UTC 를 초까지 넣고, 재정규화 진행은 ISO 문자열을 넣는다.
-    같은 화면에 두 형식이 섞이면 같은 시각인지 아닌지를 사람이 계산해야 한다.
+
+def display_zone() -> tzinfo:
+    """화면에 시각을 그릴 때 쓰는 시간대. 설정에서 오고 기본값은 `Asia/Seoul` 이다."""
+    return _zone(get_settings().display_timezone)
+
+
+def format_time(value: Any) -> str:
+    """저장된 UTC 시각을 운영자가 사는 시간대의 문자열로 바꾼다.
+
+    DB 는 `datetime('now')` 로 UTC 를 초까지 넣고(시간대 표시가 없다), 재정규화 진행과
+    스케줄러는 시간대가 붙은 ISO 문자열을 넣는다. 둘 다 받아 한 형식으로 낸다.
+
+    저장된 값은 UTC 그대로 둔다. 바꾸는 것은 화면에 그리는 이 순간뿐이다 —
+    `normalized_at` 은 제공 API 의 폴링 커서라 값이 밀리면 소비 측의 커서가 어긋난다
+    (`.claude/docs/api-contract.md`).
+
+    시간대 약칭(`KST`)을 값에 붙인다. 어느 시간대인지 적혀 있지 않으면 UTC 였던 시절의
+    9시간 차이를 볼 때마다 다시 의심하게 된다.
+
+    값이 없으면 빈 문자열이다. 읽지 못한 값은 예외 없이 원문 그대로 돌려준다 — 화면 하나가
+    통째로 죽는 것보다 낫다.
     """
     if not value:
         return ""
@@ -91,9 +126,11 @@ def format_time(value: Any) -> str:
         parsed = datetime.fromisoformat(text)
     except ValueError:
         return text
-    if parsed.tzinfo is not None:
-        parsed = parsed.astimezone(UTC).replace(tzinfo=None)
-    return parsed.strftime("%Y-%m-%d %H:%M:%S")
+    if parsed.tzinfo is None:
+        # 저장 형식(`YYYY-MM-DD HH:MM:SS`)에는 시간대가 없다. SQLite 가 UTC 로 찍은 값이다
+        parsed = parsed.replace(tzinfo=UTC)
+    shown = parsed.astimezone(display_zone())
+    return f"{shown.strftime('%Y-%m-%d %H:%M:%S')} {shown.strftime('%Z')}".strip()
 
 
 def next_step(reason: str) -> str:
@@ -187,5 +224,5 @@ def health_fragment(request: Request) -> HTMLResponse:
     return render(
         request,
         "fragments/health.html",
-        checked_at=datetime.now().strftime("%H:%M:%S"),
+        checked_at=datetime.now(UTC),
     )

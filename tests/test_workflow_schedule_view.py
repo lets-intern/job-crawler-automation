@@ -11,6 +11,7 @@
 | 중지된 워크플로우는 다음 실행이 없다고 적는다 | 빈 칸이 "모른다" 로 읽혀 조치가 갈린다 |
 | 최근 실행 옆에 출처를 단어로 적는다 | 주기가 죽어 있어도 최근 실행이 있으면 도는 것처럼 보인다 |
 | 기록되지 않은 출처는 `알 수 없음` 이다 | 추측한 값이 사실인 것처럼 화면에 남는다 |
+| 예정 시각을 운영자 시간대로 적는다 | UTC 가 그대로 떠 9시간 전을 가리킨다 (21.2) |
 
 예정 시각은 스케줄러의 잡에서 읽는다. 기동 전 잡에는 그 값이 없으므로 테스트가 직접 넣는다 —
 마지막 실행에 주기를 더해 추측하는 계산을 여기에 만들지 않는다 (`app/scheduler.py`).
@@ -35,6 +36,7 @@ from app import db
 from app.api import crawlers as crawlers_api
 from app.api import ui_workflows
 from app.api import workflows as workflows_api
+from app.api.ui import display_zone
 from app.config import Settings
 from app.crawler.fetcher import Fetcher
 from app.main import app
@@ -219,7 +221,9 @@ def test_다음_실행_예정_시각이_카드에_있다(
 
     html = client.get("/ui/workflows").text
 
-    assert f"다음 실행 예정 {when.strftime('%Y-%m-%d %H:%M:%S')}" in html
+    # 저장은 UTC, 화면은 운영자 시간대다. 약칭까지 적어야 9시간 차이를 다시 의심하지 않는다
+    local = when.astimezone(display_zone())
+    assert f"다음 실행 예정 {local.strftime('%Y-%m-%d %H:%M:%S %Z')}" in html
     # 시각만 적으면 화면을 보는 사람이 매번 뺄셈을 한다
     assert "약 11분 뒤" in html or "약 12분 뒤" in html
 
