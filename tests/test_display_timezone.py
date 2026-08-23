@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import pathlib
+import re
 from collections.abc import Iterator
 
 import pytest
@@ -100,3 +101,29 @@ def test_다른_시간대를_설정하면_그대로_따른다(monkeypatch: pytes
     monkeypatch.setenv("DISPLAY_TIMEZONE", "UTC")
 
     assert ui.format_time("2026-08-23 20:15:00") == "2026-08-23 20:15:00 UTC"
+
+
+# --- 21.2 시각을 그리는 모든 자리가 이 필터를 거치는가 ---
+
+TEMPLATES = pathlib.Path(__file__).parent.parent / "app" / "templates"
+EXPRESSION = re.compile(r"\{\{(.+?)\}\}", re.DOTALL)
+TIME_NAME = re.compile(r"\b\w+_at\b")
+# 매크로에 값을 넘기기만 하는 자리다. 그리는 것은 매크로 안이고 거기서 필터를 거친다
+MACRO_CALLS = ("review_delivery(",)
+
+
+def test_시각을_그리는_모든_자리가_필터를_거친다() -> None:
+    """한 곳이라도 빠지면 그 화면만 9시간 어긋난다. 섞인 화면은 전부 어긋난 화면보다 나쁘다."""
+    leaked: list[str] = []
+    for path in sorted(TEMPLATES.rglob("*.html")):
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            for expression in EXPRESSION.findall(line):
+                if not TIME_NAME.search(expression):
+                    continue
+                if "as_time" in expression:
+                    continue
+                if any(call in expression for call in MACRO_CALLS):
+                    continue
+                leaked.append(f"{path.relative_to(TEMPLATES)}:{number}: {expression.strip()}")
+
+    assert leaked == []

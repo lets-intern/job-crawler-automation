@@ -224,5 +224,5 @@ def health_fragment(request: Request) -> HTMLResponse:
     return render(
         request,
         "fragments/health.html",
-        checked_at=datetime.now().strftime("%H:%M:%S"),
+        checked_at=datetime.now(UTC),
     )

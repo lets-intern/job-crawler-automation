@@ -19,6 +19,8 @@ services:
       CRAWL_MAX_RETRIES:
       MAX_CONCURRENT_RUNS:
       RUN_TIMEOUT_SECONDS:
+      # 화면에 시각을 그릴 때 쓰는 시간대. 저장된 값은 UTC 그대로다.
+      DISPLAY_TIMEZONE:
     volumes:
       # named volume. 실제 수집 데이터가 여기 남는다 (.claude/rules/data-safety.md).
       - jobs-data:/data

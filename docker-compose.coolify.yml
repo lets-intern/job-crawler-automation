@@ -44,6 +44,9 @@ services:
       RUN_TIMEOUT_SECONDS: "${RUN_TIMEOUT_SECONDS:-600}"
       RENDER_TIMEOUT_SECONDS: "${RENDER_TIMEOUT_SECONDS:-60}"
 
+      # 화면에 시각을 그릴 때 쓰는 시간대. 저장된 값과 제공 API 는 UTC 그대로다
+      DISPLAY_TIMEZONE: "${DISPLAY_TIMEZONE:-Asia/Seoul}"
+
     volumes:
       # 실제 수집 데이터가 여기 남는다. 컨테이너를 지워도 이 볼륨은 남아야 한다
       # (.claude/rules/data-safety.md)
