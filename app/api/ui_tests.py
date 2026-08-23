@@ -63,11 +63,10 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 from app.api import crawlers
-from app.api.ui import render
+from app.api.ui import mode_word, render
 from app.api.ui_crawlers import crawler_rows, error_detail, pretty_selectors
 from app.crawler.fetcher import Fetcher
 from app.crawler.parser import list_only
-from app.crawler.playwright import PLAYWRIGHT, STATIC
 from app.crawler.runner import KNOWN
 from app.selector.schema import SelectorSchemaError, validate_selectors
 
@@ -86,14 +85,6 @@ FIELDS: tuple[tuple[str, str], ...] = (
 
 # 값이 길면 표가 읽히지 않는다. 자른 자리는 화면에 표시한다
 PREVIEW_LIMIT = 120
-
-# 사람이 읽는 자리에는 단어로 적는다. 저장값은 그대로 영어다 (`.claude/rules/writing.md`)
-MODE_WORDS: dict[str, str] = {STATIC: "정적", PLAYWRIGHT: "렌더"}
-
-
-def mode_word(mode: str) -> str:
-    """모드 이름 하나. 모르는 값이면 저장된 값을 그대로 보여준다."""
-    return MODE_WORDS.get(mode, mode)
 
 
 def _selector_of(selectors: Any, path: str) -> str:

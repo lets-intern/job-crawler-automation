@@ -1,5 +1,6 @@
 {# 규칙 목록과 편집 폼. 추가·수정·삭제·토글이 모두 이 조각으로 돌아온다.
    이 조각의 어떤 동작도 재정규화를 부르지 않는다 — 그 버튼은 다른 영역에 있다 #}
+{% from "macros.html" import state, empty_row, wait, failure %}
 {% if error %}
 <div class="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
   <p><span class="font-semibold">저장하지 못했다</span> — 사유: {{ error.reason }}</p>
@@ -42,8 +43,7 @@
       <td>
         {# 한 줄 입력이면 긴 메모가 잘려 읽을 수 없다. 설정 JSON 과 같은 높이로 둔다 #}
         <textarea name="note" form="rule-form-{{ rule.id }}" rows="4"
-                  placeholder="이 규칙이 하는 일"
-                  class="w-52 rounded border border-slate-300 px-2 py-1 text-sm"
+                  placeholder="이 규칙이 하는 일" class="w-52"
                   >{{ rule.note }}</textarea>
       </td>
       <td>
@@ -55,8 +55,7 @@
       </td>
       <td>
         <textarea name="rule_config" form="rule-form-{{ rule.id }}" rows="4"
-                  spellcheck="false"
-                  class="w-72 rounded border border-slate-300 px-2 py-1 font-mono text-xs"
+                  spellcheck="false" class="code w-72"
                   >{{ rule.rule_config | tojson }}</textarea>
       </td>
       <td>
@@ -66,7 +65,7 @@
       <td>
         <input name="enabled" form="rule-form-{{ rule.id }}" type="checkbox"
                {% if rule.enabled %}checked{% endif %}>
-        {% if rule.enabled %}<span class="state-ok">켜짐</span>{% else %}<span class="state-idle">꺼짐</span>{% endif %}
+        {% if rule.enabled %}{{ state("켜짐") }}{% else %}{{ state("꺼짐") }}{% endif %}
       </td>
       <td>
         <form id="rule-form-{{ rule.id }}"
@@ -110,32 +109,46 @@
       hx-disabled-elt="find button">
   <fieldset>
     <legend>추가한 규칙은 다음에 정규화되는 건부터 적용된다</legend>
+    {# 라벨 하나에 입력 하나다. 앞서 여기는 <p> 안에서 </label> 이 짝 없이 닫혀 있었고,
+       그래서 메모 칸과 활성 체크박스가 한 라벨 안으로 빨려 들어가 있었다 #}
+    <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
+      <span>
+        <label for="new-field" class="block">필드</label>
+        <select id="new-field" name="field_name">
+          {% for field in fields %}<option value="{{ field }}">{{ field }}</option>{% endfor %}
+        </select>
+      </span>
+      <span>
+        <label for="new-type" class="block">타입</label>
+        <select id="new-type" name="rule_type">
+          {% for type_name in rule_types %}<option value="{{ type_name }}">{{ type_name }}</option>{% endfor %}
+        </select>
+      </span>
+      <span>
+        <label for="new-priority" class="block">우선순위</label>
+        <input id="new-priority" name="priority" type="number" value="0" size="4">
+      </span>
+      <span>
+        <label for="new-enabled">활성</label>
+        <input id="new-enabled" name="enabled" type="checkbox" checked>
+      </span>
+    </p>
     <p>
-      <label for="new-field">필드</label>
-      <select id="new-field" name="field_name">
-        {% for field in fields %}<option value="{{ field }}">{{ field }}</option>{% endfor %}
-      </select>
-      <label for="new-type">타입</label>
-      <select id="new-type" name="rule_type">
-        {% for type_name in rule_types %}<option value="{{ type_name }}">{{ type_name }}</option>{% endfor %}
-      </select>
-      <label for="new-priority">우선순위</label>
-      <input id="new-priority" name="priority" type="number" value="0" size="4">
-    </label>
-    <label for="new-note" class="grow">
-      <span class="block text-slate-600">메모</span>
+      <label for="new-note">메모</label>
+      <br>
       <textarea id="new-note" name="note" rows="2" placeholder="이 규칙이 하는 일"
-                class="mt-1 w-full rounded border border-slate-300 px-2 py-1"></textarea>
-      <label for="new-enabled">활성</label>
-      <input id="new-enabled" name="enabled" type="checkbox" checked>
+                class="w-full max-w-2xl"></textarea>
     </p>
     <p>
       <label for="new-config">설정 JSON</label>
       <br>
-      <textarea id="new-config" name="rule_config" rows="4" cols="70" spellcheck="false">{}</textarea>
+      <textarea id="new-config" name="rule_config" rows="4" cols="70" spellcheck="false"
+                class="code w-full max-w-2xl">{}</textarea>
     </p>
-    <button type="submit">규칙 추가</button>
-    <span class="wait-note">규칙을 추가하는 중</span>
+    <p>
+      <button type="submit">규칙 추가</button>
+      {{ wait("규칙을 추가하는 중") }}
+    </p>
   </fieldset>
 </form>
 

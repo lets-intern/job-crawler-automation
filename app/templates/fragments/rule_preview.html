@@ -1,33 +1,32 @@
 {# 규칙 미리보기. 아무것도 저장하지 않는다 — 값을 넣어 보고 결과를 확인하는 자리다 #}
+{% from "macros.html" import failure, blank, wait %}
 <form hx-post="/ui/rules/preview" hx-target="#rule-preview" hx-swap="innerHTML"
       class="space-y-3">
   <div class="flex flex-wrap items-end gap-3">
     <label class="text-sm">
-      <span class="block text-slate-600">필드</span>
-      <select name="field_name" class="mt-1 rounded border border-slate-300 px-2 py-1">
+      <span class="block font-medium text-slate-700">필드</span>
+      <select name="field_name">
         {% for name in fields %}
         <option value="{{ name }}" {% if name == field_name %}selected{% endif %}>{{ name }}</option>
         {% endfor %}
       </select>
     </label>
     <label class="grow text-sm">
-      <span class="block text-slate-600">시험할 값</span>
+      <span class="block font-medium text-slate-700">시험할 값</span>
       <input type="text" name="sample" value="{{ sample }}"
              placeholder="2026-08-15 09:00 ~ 2026-08-30 17:00"
-             class="mt-1 w-full rounded border border-slate-300 px-2 py-1">
+             class="w-full">
     </label>
-    <button type="submit"
-            class="rounded bg-slate-800 px-3 py-1.5 text-sm font-medium text-white">
-      미리보기
-    </button>
+    <button type="submit">미리보기</button>
+    {{ wait("규칙을 걸어 보는 중") }}
   </div>
 
   <details class="text-sm text-slate-600">
     <summary class="cursor-pointer">저장하지 않은 규칙도 얹어 보기</summary>
     <div class="mt-2 flex flex-wrap items-end gap-3">
       <label>
-        <span class="block text-slate-600">타입</span>
-        <select name="draft_type" class="mt-1 rounded border border-slate-300 px-2 py-1">
+        <span class="block font-medium text-slate-700">타입</span>
+        <select name="draft_type">
           <option value="">없음</option>
           {% for name in rule_types %}
           <option value="{{ name }}" {% if name == draft_type %}selected{% endif %}>{{ name }}</option>
@@ -35,14 +34,14 @@
         </select>
       </label>
       <label>
-        <span class="block text-slate-600">우선순위</span>
+        <span class="block font-medium text-slate-700">우선순위</span>
         <input type="number" name="draft_priority" value="{{ draft_priority }}"
-               class="mt-1 w-24 rounded border border-slate-300 px-2 py-1">
+               class="w-24">
       </label>
       <label class="grow">
-        <span class="block text-slate-600">설정 JSON</span>
+        <span class="block font-medium text-slate-700">설정 JSON</span>
         <input type="text" name="draft_config" value="{{ draft_config }}"
-               class="mt-1 w-full rounded border border-slate-300 px-2 py-1 font-mono text-xs">
+               class="w-full font-mono text-xs">
       </label>
     </div>
   </details>

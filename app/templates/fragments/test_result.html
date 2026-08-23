@@ -1,4 +1,6 @@
 {# 테스트 실행 결과. 상태는 단어로만 적는다 #}
+{# `failure` 는 항목별 실패 루프의 변수 이름과 겹친다. 매크로는 다른 이름으로 받는다 #}
+{% from "macros.html" import badge, state, blank, failure as failure_box, empty %}
 {% if error %}
 <h3>실행할 수 없다</h3>
 <dl>
@@ -27,9 +29,9 @@
         </td></tr>
     <tr><th scope="row">종료 상태</th>
         <td>
-          {% if result.status == "success" %}<span class="badge badge-ok">성공</span>
-          {% elif result.status == "timeout" %}<span class="badge badge-warn">시간 초과</span>
-          {% else %}<span class="badge badge-bad">실패</span>{% endif %}
+          {% if result.status == "success" %}{{ badge("성공") }}
+          {% elif result.status == "timeout" %}{{ badge("시간 초과") }}
+          {% else %}{{ badge("실패") }}{% endif %}
           <span class="text-xs text-slate-500">({{ result.status }})</span>
         </td></tr>
     <tr><th scope="row">크롤러 상태</th><td>{{ result.crawler_status }}</td></tr>
@@ -62,11 +64,7 @@
       <td>{{ row.path }}</td>
       <td class="cell-text">{{ row.selector or "없음" }}</td>
       <td class="num">{{ row.filled }} / {{ row.total }}</td>
-      <td>
-        {% if row.state == "성공" %}<span class="state-ok">{{ row.state }}</span>
-        {% elif row.state == "실패" %}<span class="state-bad">{{ row.state }}</span>
-        {% else %}<span class="state-idle">{{ row.state }}</span>{% endif %}
-      </td>
+      <td>{{ state(row.state) }}</td>
       <td class="cell-text">{{ row.reason or "없음" }}</td>
     </tr>
     {% endfor %}
@@ -89,9 +87,9 @@
     {% for item in result.items %}
     <tr>
       <td>
-        {% if item.state == "stored" %}<span class="state-ok">저장됨</span>
-        {% elif item.state == "known" %}<span class="state-idle">이미 있음</span>
-        {% else %}<span class="state-idle">미리보기</span>{% endif %}
+        {% if item.state == "stored" %}{{ state("저장됨") }}
+        {% elif item.state == "known" %}{{ state("이미 있음") }}
+        {% else %}{{ state("미리보기") }}{% endif %}
         <span class="text-xs text-slate-500">({{ item.state }})</span>
       </td>
       <td class="cell-url">
@@ -124,7 +122,7 @@
       <td class="cell-url">
         <span class="cell-url-value" title="{{ failure.source_url }}">{{ failure.source_url }}</span>
       </td>
-      <td><span class="state-bad">{{ failure.error_class or "분류 없음" }}</span></td>
+      <td>{{ state(failure.error_class or "분류 없음", tone="bad") }}</td>
       <td class="cell-text">{{ failure.message }}</td>
     </tr>
     {% endfor %}

@@ -34,6 +34,7 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from app.config import get_settings
+from app.crawler.playwright import PLAYWRIGHT, STATIC
 
 logger = logging.getLogger(__name__)
 
@@ -138,8 +139,20 @@ def next_step(reason: str) -> str:
     return NEXT_STEPS.get(reason, "")
 
 
+# 사람이 읽는 자리에는 단어로 적는다. 저장값은 그대로 영어다 (`.claude/rules/writing.md`).
+# 크롤러 등록 화면과 테스트 실행 화면이 같은 값을 다른 말로 적던 자리라, 매핑을 여기 하나만
+# 두고 모든 템플릿이 쓰게 한다
+MODE_WORDS: dict[str, str] = {STATIC: "정적", PLAYWRIGHT: "렌더"}
+
+
+def mode_word(mode: str) -> str:
+    """모드 이름 하나. 모르는 값이면 저장된 값을 그대로 보여준다."""
+    return MODE_WORDS.get(mode, mode)
+
+
 # 라우트가 자기 조각에 직접 렌더하는 실패에도 같은 문구가 붙게 한다
 templates.env.globals["next_step"] = next_step
+templates.env.globals["mode_word"] = mode_word
 templates.env.filters["as_time"] = format_time
 
 
