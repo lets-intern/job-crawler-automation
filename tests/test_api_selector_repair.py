@@ -110,14 +110,22 @@ def outcome_for(
     )
 
 
-def use_repairer(result: Any) -> list[tuple[str, str, str]]:
-    """고치기 의존성을 갈아끼운다. `result` 가 예외면 그것을 던진다."""
-    called: list[tuple[str, str, str]] = []
+def use_repairer(result: Any) -> list[tuple[str, str, str, str]]:
+    """고치기 의존성을 갈아끼운다. `result` 가 예외면 그것을 던진다.
+
+    받은 힌트도 함께 기록한다. 화면이 넣은 값이 여기까지 오는지는 그것으로만 알 수 있다.
+    """
+    called: list[tuple[str, str, str, str]] = []
 
     async def repair(
-        list_url: str, detail_url: str, render_mode: str, selectors: SelectorSet
+        list_url: str,
+        detail_url: str,
+        render_mode: str,
+        selectors: SelectorSet,
+        *,
+        hint: str = "",
     ) -> RepairOutcome:
-        called.append((list_url, detail_url, render_mode))
+        called.append((list_url, detail_url, render_mode, hint))
         if isinstance(result, Exception):
             raise result
         if callable(result):
@@ -271,7 +279,47 @@ def test_repair_uses_the_saved_render_mode(client: TestClient, conn: sqlite3.Con
 
     client.post(f"/api/crawlers/{crawler_id}/repair")
 
-    assert called == [(LIST_URL, DETAIL_URL, "playwright")]
+    assert called == [(LIST_URL, DETAIL_URL, "playwright", "")]
+
+
+# 운영자 힌트 (20.1) ---------------------------------------------------------
+
+
+def test_a_hint_in_the_body_reaches_the_repairer(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """운영자가 F12 로 딴 경로. 그대로 저장되는 것이 아니라 위치 단서로 실려 나간다."""
+    crawler_id = insert_crawler(conn)
+    called = use_repairer(outcome_for)
+    hint = "#root > div > main > div.MuiBox-root.css-1jelp97 > div:nth-child(2) > div"
+
+    client.post(f"/api/crawlers/{crawler_id}/repair", json={"hint": hint})
+
+    assert [row[3] for row in called] == [hint]
+
+
+def test_a_free_text_hint_is_carried_as_is(client: TestClient, conn: sqlite3.Connection) -> None:
+    """셀렉터가 아닐 수도 있다. 판정하지 않고 그대로 넘긴다."""
+    crawler_id = insert_crawler(conn)
+    called = use_repairer(outcome_for)
+
+    client.post(
+        f"/api/crawlers/{crawler_id}/repair",
+        json={"hint": "마감일은 목록 두 번째 줄에 있다"},
+    )
+
+    assert called[0][3] == "마감일은 목록 두 번째 줄에 있다"
+
+
+def test_the_body_is_optional(client: TestClient, conn: sqlite3.Connection) -> None:
+    """힌트가 생기기 전과 같이 본문 없이 불러도 된다."""
+    crawler_id = insert_crawler(conn)
+    called = use_repairer(outcome_for)
+
+    response = client.post(f"/api/crawlers/{crawler_id}/repair")
+
+    assert response.status_code == 200
+    assert called[0][3] == ""
 
 
 # 실패 ----------------------------------------------------------------------

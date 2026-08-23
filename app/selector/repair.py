@@ -23,6 +23,24 @@
 
 모델이 못 고친 필드는 원래 값이 남는다. 빈 문자열로 덮지 않는다.
 
+## 운영자 힌트
+
+모델이 HTML 만 보고는 못 고치는 자리가 있다. 2026-08-23 LG 의 `list.link` 가 그랬다 — 항목
+안에 `a` 태그가 없어 모델이 고를 것이 없었다. 사람은 브라우저에서 그 자리를 볼 수 있으므로,
+본 것을 글로 실어 보내는 통로가 `hint` 다.
+
+힌트는 자유 입력이다. F12 의 `Copy selector` 가 뱉은 경로일 수도 있고 "마감일은 목록 두 번째
+줄에 있다" 같은 문장일 수도 있다. 둘 다 그냥 사람이 준 단서로 프롬프트에 싣는다.
+
+**받은 경로를 그대로 쓰게 하지 않는다.** `css-jj9lbc` 는 빌드마다 바뀌는 자동 생성 클래스고
+`div:nth-child(2)` 는 항목이 하나 늘면 어긋난다. 그것을 저장하면 다음 배포에 깨질 셀렉터를
+심는 것이다. 프롬프트는 힌트를 **위치 단서**로 쓰라고 적고, 그 자리 근처의 안정적인 것(의미
+있는 클래스, `data-` 속성, 태그 구조)을 찾게 한다. 그런 것이 없어 결국 위치로 잡은 셀렉터가
+나오면 `_fragile_notes` 가 그 사실을 결과에 적는다.
+
+힌트를 받았다고 검증을 건너뛰지 않는다. 고친 셀렉터는 힌트가 있든 없든 같은 HTML 에 다시
+돌려 매칭 개수를 센다.
+
 ## 두 번째 API 경로를 만들지 않는다
 
 정제(`app/selector/cleaner.py`), 호출과 로그(`generator.call_model`), 스키마 검증
@@ -33,12 +51,13 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
 from app.config import Settings, get_settings
 from app.crawler.fetcher import PageSource, get_fetcher
-from app.selector.cleaner import CleanedHtml, clean_html
+from app.selector.cleaner import DEFAULT_MAX_CHARS, CleanedHtml, clean_html
 from app.selector.generator import (
     MAX_ATTEMPTS,
     SelectorGenerationError,
@@ -86,7 +105,44 @@ _PROMPT = """아래 채용 사이트의 셀렉터 중 몇 개가 지금 HTML 에
 
 [상세 페이지 {detail_url}]
 {detail_html}
+{hint}"""
+
+
+# 힌트가 있을 때만 프롬프트에 붙는 블록. 없으면 프롬프트는 힌트가 생기기 전과 글자 하나까지
+# 같다 — 힌트를 안 준 실행이 준 실행과 다른 답을 내는 일이 없어야 한다
+_HINT = """
+[운영자가 준 단서]
+운영자가 브라우저에서 그 자리를 직접 보고 적어 준 것이다. F12 의 `Copy selector` 가 뱉은
+경로일 수도 있고, 값이 어디 있는지 설명하는 문장일 수도 있다.
+
+{hint}
+
+이 단서를 쓰는 법:
+- **위치를 알려 주는 것**이지 답이 아니다. 받은 경로를 그대로 베껴 쓰지 않는다.
+- `css-1a2b3c`, `sc-a1b2c3` 같은 자동 생성 클래스는 사이트를 다시 배포할 때마다 바뀐다.
+  `:nth-child(2)` 같은 위치 선택자는 항목이 하나 늘거나 줄면 어긋난다. 둘 다 지금 이 HTML
+  에서는 맞지만 다음 배포에 깨진다.
+- 그 자리와 그 주변을 HTML 에서 찾아, **거기서 안정적인 것**을 골라라 — 뜻이 있는 클래스명,
+  `data-` 로 시작하는 속성, `article > h3 > a` 같은 태그 구조.
+- 그런 것이 그 자리에 정말 하나도 없을 때만 받은 경로를 쓴다.
+- 단서가 가리키는 자리에 찾는 값이 없으면 억지로 맞추지 않는다. 그 필드는 빈 문자열로 둔다.
 """
+
+# 프롬프트에 실어 보낼 힌트의 상한(문자 수). 자유 입력이라 페이지를 통째로 붙여 넣는 일이
+# 생기고, 그러면 정제해서 줄여 둔 HTML 옆에서 힌트가 입력의 대부분을 차지한다
+# (`.claude/rules/llm.md`).
+MAX_HINT_CHARS = 800
+
+# 프롬프트 전체의 상한. 정제 HTML 두 벌에 지시문과 힌트를 더한 값이고, 위의 두 상한이
+# 지켜지는 한 프롬프트가 이 값을 넘지 않는다
+MAX_PROMPT_CHARS = 2 * DEFAULT_MAX_CHARS + 8_000
+
+# 지금 이 HTML 에서는 맞지만 다음 배포에 깨지는 모양. 고쳐진 셀렉터에 이것이 남으면 결과에
+# 적는다 — 고쳤다고만 적고 넘기면 다음 실패 때 같은 자리를 처음부터 다시 뒤진다
+_FRAGILE: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r":nth-(?:child|of-type|last-child)\b"), "위치 선택자(:nth-child 등)"),
+    (re.compile(r"\b(?:css|sc|jsx|styles?)-[0-9a-z]{5,}\b", re.IGNORECASE), "자동 생성 클래스"),
+)
 
 
 class SelectorRepairError(RuntimeError):
@@ -151,6 +207,7 @@ async def repair_for_urls(
     source: PageSource | None = None,
     settings: Settings | None = None,
     client: Any | None = None,
+    hint: str = "",
 ) -> RepairOutcome:
     """저장된 URL 을 다시 가져와 고친다.
 
@@ -171,6 +228,7 @@ async def repair_for_urls(
         detail_url=detail_url,
         settings=settings,
         client=client,
+        hint=hint,
     )
 
 
@@ -183,8 +241,13 @@ async def repair_from_html(
     detail_url: str = "",
     settings: Settings | None = None,
     client: Any | None = None,
+    hint: str = "",
 ) -> RepairOutcome:
-    """이미 가져온 HTML 로 고친다. 저장된 픽스처로 돌릴 수 있는 경로다."""
+    """이미 가져온 HTML 로 고친다. 저장된 픽스처로 돌릴 수 있는 경로다.
+
+    `hint` 는 운영자가 브라우저에서 보고 준 단서다. 비워 두면 프롬프트는 힌트가 생기기 전과
+    같다. 있어도 검증은 그대로다 — 고친 셀렉터는 같은 HTML 에 다시 돌린다.
+    """
     resolved = settings or get_settings()
     before = verify_selectors(selectors, list_html, detail_html)
     targets = repair_targets(before, has_detail_html=bool(detail_html.strip()))
@@ -198,8 +261,16 @@ async def repair_from_html(
     model = resolved.gemini_model
     cleaned_list = clean_html(list_html)
     cleaned_detail = clean_html(detail_html) if detail_html.strip() else None
+    trimmed_hint, hint_notes = normalize_hint(hint)
     prompt = build_prompt(
-        selectors, before, targets, cleaned_list, cleaned_detail, list_url, detail_url
+        selectors,
+        before,
+        targets,
+        cleaned_list,
+        cleaned_detail,
+        list_url,
+        detail_url,
+        hint=trimmed_hint,
     )
 
     proposal, attempts, usage, extra_notes = await _ask(resolved_client, model, prompt)
@@ -218,14 +289,20 @@ async def repair_from_html(
         targets=targets,
         changes=changes,
         unresolved=[name for name in targets if name in remaining],
-        notes=_notes(cleaned_list, cleaned_detail) + extra_notes,
+        notes=(
+            _notes(cleaned_list, cleaned_detail)
+            + hint_notes
+            + extra_notes
+            + _fragile_notes(changes)
+        ),
     )
     logger.info(
-        "셀렉터 고치기 model=%s 대상=%s 고쳐짐=%s 남은실패=%s",
+        "셀렉터 고치기 model=%s 대상=%s 고쳐짐=%s 남은실패=%s 힌트=%s",
         model,
         ", ".join(targets),
         ", ".join(outcome.repaired) or "없음",
         ", ".join(outcome.unresolved) or "없음",
+        f"{len(trimmed_hint)}자" if trimmed_hint else "없음",
     )
     return outcome
 
@@ -257,11 +334,16 @@ def build_prompt(
     cleaned_detail: CleanedHtml | None,
     list_url: str = "",
     detail_url: str = "",
+    *,
+    hint: str = "",
 ) -> str:
     """지금 셀렉터 전부와 실패한 필드의 사유를 함께 넣는다.
 
     지금 셀렉터를 통째로 주는 것은 모델이 **무엇이 이미 맞는지 알아야 그것을 피해 고르기**
     때문이다. 실패한 필드만 주면 이미 맞는 `list.title` 과 겹치는 셀렉터를 내놓는다.
+
+    `hint` 는 이미 `normalize_hint` 를 지나온 값이다. 비어 있으면 힌트 블록 자체가 붙지
+    않는다.
     """
     return _PROMPT.format(
         current=selectors.to_json(),
@@ -270,7 +352,51 @@ def build_prompt(
         list_html=cleaned_list.html,
         detail_url=detail_url or "(없음)",
         detail_html=cleaned_detail.html if cleaned_detail else "(상세 페이지를 가져오지 않았다)",
+        hint=_HINT.format(hint=hint) if hint else "",
     )
+
+
+def normalize_hint(hint: str) -> tuple[str, list[str]]:
+    """힌트를 상한 안으로 줄이고, 무엇을 했는지 설명과 함께 돌려준다.
+
+    자유 입력이라 페이지를 통째로 붙여 넣는 일이 생긴다. 그러면 정제해서 줄여 둔 HTML 옆에서
+    힌트가 입력의 대부분을 차지한다 (`.claude/rules/llm.md`). 앞부분을 남기는 것은 `Copy
+    selector` 경로도 설명 문장도 앞이 본론이기 때문이다.
+
+    자른 사실은 결과에 남긴다. 조용히 자르면 운영자는 자기가 준 단서가 다 갔다고 여긴다.
+    """
+    text = hint.strip()
+    if not text:
+        return "", []
+    if len(text) <= MAX_HINT_CHARS:
+        return text, [f"운영자 힌트 {len(text)}자를 함께 보냈다"]
+    return (
+        text[:MAX_HINT_CHARS],
+        [
+            f"운영자 힌트가 {len(text)}자라 상한 {MAX_HINT_CHARS}자까지만 보냈다. "
+            "뒷부분은 모델이 보지 못했다"
+        ],
+    )
+
+
+def _fragile_notes(changes: list[SelectorChange]) -> list[str]:
+    """고쳐진 셀렉터가 다음 배포에 깨질 모양이면 그 사실을 결과에 적는다.
+
+    막지는 않는다. 그 자리에 안정적인 것이 정말 없어서 위치로 잡을 수밖에 없는 사이트가 있고,
+    깨질 셀렉터라도 지금 값을 가져오는 편이 아무것도 못 가져오는 것보다 낫다. 대신 왜 그것
+    밖에 없었는지가 결과에 남아, 다음에 그 필드가 실패하면 여기부터 본다.
+    """
+    notes: list[str] = []
+    for change in changes:
+        reasons = [label for pattern, label in _FRAGILE if pattern.search(change.after)]
+        if not reasons:
+            continue
+        notes.append(
+            f"{change.name} 이 {' 와 '.join(reasons)} 로 고쳐졌다: {change.after} — "
+            "그 자리에 뜻이 있는 클래스나 data- 속성이 없었다는 뜻이다. "
+            "사이트를 다시 배포하면 깨질 수 있으니 다음에 이 필드가 실패하면 여기부터 본다"
+        )
+    return notes
 
 
 def _failure_lines(report: VerificationReport, targets: list[str]) -> str:
@@ -374,10 +500,13 @@ def _notes(cleaned_list: CleanedHtml, cleaned_detail: CleanedHtml | None) -> lis
 
 
 __all__ = [
+    "MAX_HINT_CHARS",
+    "MAX_PROMPT_CHARS",
     "RepairOutcome",
     "SelectorChange",
     "SelectorGenerationError",
     "SelectorRepairError",
+    "normalize_hint",
     "repair_for_urls",
     "repair_from_html",
     "repair_targets",
