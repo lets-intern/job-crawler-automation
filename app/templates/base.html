@@ -11,7 +11,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}크롤링 자동화{% endblock %}</title>
+  <title>{% block title %}{% endblock %} — 크롤링 자동화 운영 화면 made by seongbin</title>
   <script src="https://unpkg.com/htmx.org@2.0.7/dist/htmx.min.js"
           integrity="sha384-ZBXiYtYQ6hJ2Y0ZNoYuI+Nq5MqWBr+chMrS/RkXpNzQCApHEhOt2aY8EJgqwHLkJ"
           crossorigin="anonymous"></script>
@@ -157,7 +157,7 @@
   <header class="border-b border-slate-200 bg-white">
     <div class="mx-auto max-w-7xl px-6 py-4">
       <div class="flex flex-wrap items-center justify-between gap-3">
-        <h1 class="text-lg font-semibold tracking-tight text-slate-900">크롤링 자동화 운영 화면</h1>
+        <h1 class="text-lg font-semibold tracking-tight text-slate-900">크롤링 자동화 운영 화면 made by seongbin</h1>
         {# 잠금을 푸는 자리. 계정이 없으니 띄울 이름도 없다 (`app/api/auth.py`).
            유틸리티 클래스가 위 @layer components 의 제출 버튼 색을 덮는다 #}
         <form method="post" action="/logout" class="shrink-0">
