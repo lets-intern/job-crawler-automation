@@ -61,10 +61,19 @@ def client(tmp_path: pathlib.Path, conn: sqlite3.Connection) -> Iterator[TestCli
         app.dependency_overrides.clear()
 
 
-def use_repairer(result: Any) -> None:
+def use_repairer(result: Any) -> list[str]:
+    """고치기 의존성을 갈아끼우고, 화면이 실어 보낸 힌트를 기록한다."""
+    hints: list[str] = []
+
     async def repair(
-        list_url: str, detail_url: str, render_mode: str, selectors: SelectorSet
+        list_url: str,
+        detail_url: str,
+        render_mode: str,
+        selectors: SelectorSet,
+        *,
+        hint: str = "",
     ) -> Any:
+        hints.append(hint)
         if isinstance(result, Exception):
             raise result
         if callable(result):
@@ -72,6 +81,7 @@ def use_repairer(result: Any) -> None:
         return result
 
     app.dependency_overrides[crawlers_api.get_repairer] = lambda: repair
+    return hints
 
 
 # 버튼 ----------------------------------------------------------------------

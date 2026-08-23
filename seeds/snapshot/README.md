@@ -5,14 +5,19 @@
 
 | 테이블 | 건수 |
 |---|---|
-| raw_jobs | 138 |
-| normalized_jobs | 118 |
-| crawl_runs | 47 |
+| raw_jobs | 148 |
+| normalized_jobs | 148 |
+| crawl_runs | 여러 건 |
 | crawlers | 6 |
 | workflows | 5 |
-| normalization_rules | 24 |
+| normalization_rules | 25 |
+| job_field_overrides | 2 |
 
-파일 크기 557KB. 공고 한 건당 4KB 쯤이므로 1만 건이면 40MB 수준이다.
+파일 크기 724KB. 공고 한 건당 4KB 쯤이므로 1만 건이면 40MB 수준이다.
+
+2026-08-23 갱신. 이전 판(138건)에서는 SK 공고 30건이 `normalized_jobs` 에 없었다.
+마감일이 `July 15, 2026(Wed) ~ August 23, 2026(Sun)` 인데 `date_parse` 규칙이 한국식 형식만
+시도해 예외가 났고, 그 공고가 통째로 빠졌다. `%B %d, %Y` 를 더해 재정규화한 것이 지금 판이다.
 
 ## 어디서 온 것인가
 

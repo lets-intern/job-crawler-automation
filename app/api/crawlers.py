@@ -36,7 +36,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Awaitable, Callable, Iterator
-from typing import Annotated, Any
+from typing import Annotated, Any, Protocol
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -67,9 +67,24 @@ DEFAULT_RENDER_MODE = STATIC
 # 생성 함수가 매번 받는다.
 GenerateFn = Callable[[str, str, str], Awaitable[GenerationResult]]
 
-# 인자는 리스트 URL, 상세 URL, render_mode, 지금 저장된 셀렉터다. 고치기는 저장된 셀렉터를
-# 기준으로만 돈다 — 무엇이 이미 맞는지 알아야 그것을 피해 고른다.
-RepairFn = Callable[[str, str, str, SelectorSet], Awaitable[RepairOutcome]]
+
+class RepairFn(Protocol):
+    """고치기 경로. 저장된 셀렉터를 기준으로만 돈다 — 무엇이 이미 맞는지 알아야 피해서 고른다.
+
+    `hint` 는 운영자가 브라우저에서 보고 준 단서다. 비어 있으면 힌트가 생기기 전과 같은
+    프롬프트로 돈다 (`app/selector/repair.py`). 키워드 인자인 것은 앞의 넷이 어디서 왔는지
+    (DB 행) 와 이것이 어디서 왔는지(화면의 입력칸)가 다르기 때문이다.
+    """
+
+    async def __call__(
+        self,
+        list_url: str,
+        detail_url: str,
+        render_mode: str,
+        selectors: SelectorSet,
+        *,
+        hint: str = "",
+    ) -> RepairOutcome: ...
 
 
 class CrawlerCreate(BaseModel):
@@ -162,6 +177,17 @@ class SelectorChangeOut(BaseModel):
     name: str
     before: str
     after: str
+
+
+class RepairIn(BaseModel):
+    """고치기 요청. 본문 없이 불러도 된다 — 그때는 힌트 없이 지금까지처럼 돈다.
+
+    `hint` 는 자유 입력이다. F12 의 `Copy selector` 가 뱉은 경로일 수도 있고 "마감일은 목록
+    두 번째 줄에 있다" 같은 문장일 수도 있다. 어느 쪽이든 그냥 사람이 준 단서로 프롬프트에
+    실린다. 상한과 "그대로 베껴 쓰지 말라"는 지시는 `app/selector/repair.py` 가 건다.
+    """
+
+    hint: str = ""
 
 
 class RepairOut(BaseModel):
@@ -269,10 +295,15 @@ def get_repairer() -> RepairFn:
     """
 
     async def repair(
-        list_url: str, detail_url: str, render_mode: str, selectors: SelectorSet
+        list_url: str,
+        detail_url: str,
+        render_mode: str,
+        selectors: SelectorSet,
+        *,
+        hint: str = "",
     ) -> RepairOutcome:
         async with open_source(render_mode, get_fetcher()) as source:
-            return await repair_for_urls(list_url, detail_url, selectors, source=source)
+            return await repair_for_urls(list_url, detail_url, selectors, source=source, hint=hint)
 
     return repair
 
@@ -550,6 +581,7 @@ async def repair_selectors(
     crawler_id: int,
     conn: Annotated[sqlite3.Connection, Depends(get_connection)],
     repair: Annotated[RepairFn, Depends(get_repairer)],
+    payload: RepairIn | None = None,
 ) -> RepairOut:
     """실패한 필드만 모델에게 다시 고르게 한다. **저장하지 않는다.**
 
@@ -562,6 +594,10 @@ async def repair_selectors(
     누르기 전까지 DB 는 그대로다.
 
     고친 뒤에도 실패가 남으면 `unresolved` 에 그대로 적는다. 억지로 성공으로 만들지 않는다.
+
+    `payload.hint` 는 운영자가 브라우저에서 보고 준 단서다. 있으면 프롬프트에 함께 실리고,
+    없으면 지금까지와 같다. 힌트가 있어도 검증은 그대로다 — 고친 셀렉터는 같은 HTML 에 다시
+    돌린다.
     """
     row = conn.execute(
         "SELECT list_url, detail_url, selectors_json, status, render_mode "
@@ -586,7 +622,13 @@ async def repair_selectors(
 
     detail_url = str(row["detail_url"] or "")
     try:
-        outcome = await repair(str(row["list_url"]), detail_url, str(row["render_mode"]), selectors)
+        outcome = await repair(
+            str(row["list_url"]),
+            detail_url,
+            str(row["render_mode"]),
+            selectors,
+            hint=payload.hint if payload else "",
+        )
     except RobotsDisallowedError as exc:
         raise HTTPException(
             status_code=400, detail={"reason": "robots", "message": str(exc)}

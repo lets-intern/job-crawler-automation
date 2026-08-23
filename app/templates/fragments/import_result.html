@@ -1,0 +1,76 @@
+{# 데이터 파일 업로드 결과.
+
+   숫자를 항목별로 적는다. 뭉뚱그린 하나로는 무엇이 들어왔는지 알 수 없고, 크롤러가 안 들어와서
+   0건인 것과 이미 있어서 0건인 것은 다음에 할 일이 서로 다르다.
+
+   상태는 단어로 적고 픽토그램은 쓰지 않는다 (`.claude/rules/writing.md`). #}
+{% if error %}
+<p class="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-red-800">
+  <span class="font-semibold">거절</span> — {{ error.message }}
+</p>
+<p class="text-sm">사유: <code>{{ error.reason }}</code>. 아무것도 들어가지 않았다.</p>
+{% elif result %}
+<p><span class="state-ok">성공</span> — 마이그레이션 {{ result.version }} 파일을 더했다. 기존 데이터는 그대로다.</p>
+<div class="table-scroll">
+  <table class="data-table">
+    <caption>가져온 것</caption>
+    <thead>
+      <tr>
+        <th>항목</th>
+        <th class="num">새로 들어옴</th>
+        <th class="num">이미 있어 건너뜀</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>크롤러</td>
+        <td class="num">{{ result.crawlers_added }}</td>
+        <td class="num">{{ result.crawlers_skipped }}</td>
+      </tr>
+      <tr>
+        <td>워크플로우</td>
+        <td class="num">{{ result.workflows_added }}</td>
+        <td class="num">{{ result.workflows_skipped }}</td>
+      </tr>
+      <tr>
+        <td>정규화 규칙</td>
+        <td class="num">{{ result.rules_added }}</td>
+        <td class="num">{{ result.rules_skipped }}</td>
+      </tr>
+      <tr>
+        <td>공고</td>
+        <td class="num">{{ result.raw_added }}</td>
+        <td class="num">{{ result.raw_duplicate }}</td>
+      </tr>
+      <tr>
+        <td>사람이 검수한 값</td>
+        <td class="num">{{ result.overrides_added }}</td>
+        <td class="num">{{ result.overrides_skipped }}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<p>
+  가져온 공고를 이 서버의 규칙으로 정규화했다.
+  <span class="font-semibold text-slate-900">{{ result.normalized_added }}건</span> 만들었고
+  {% if result.normalize_failed %}
+  <span class="state-bad">{{ result.normalize_failed }}건 실패</span>했다.
+  실패한 건의 원본은 남아 있다. 규칙을 고쳐 재정규화하면 복구된다.
+  {% else %}
+  실패는 없다.
+  {% endif %}
+</p>
+{% if result.errors %}
+<details>
+  <summary>정규화 실패 사유 {{ result.errors | length }}건</summary>
+  <ul class="mt-2 list-disc pl-5 text-sm text-slate-600">
+    {% for message in result.errors %}
+    <li>{{ message }}</li>
+    {% endfor %}
+  </ul>
+</details>
+{% endif %}
+{% if result.workflows_added %}
+<p>워크플로우 {{ result.workflows_added }}개가 스케줄에 올랐다. 상태와 주기는 워크플로우 화면에서 본다.</p>
+{% endif %}
+{% endif %}
