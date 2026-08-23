@@ -111,3 +111,114 @@ def test_a_normal_record_still_prefers_the_detail_page() -> None:
 
     assert record["title"] == "상세 제목"
     assert record["deadline"] == "2026-12-31"
+
+
+# 목록 전용 크롤러의 상세 필드는 실패가 아니다 (20.2 보정) --------------------
+
+
+def test_the_test_screen_does_not_call_a_list_only_detail_field_a_failure() -> None:
+    """LG 실행에서 `detail.body` 가 `실패` 로 떴다. 고칠 수 없는 것을 고치라는 표시다.
+
+    상세로 갈 길이 없으면 상세 페이지를 아예 열지 않는다. `detail.title` 과
+    `detail.deadline` 에 값이 있는 것은 실행이 목록에서 읽은 값을 그 자리에 넣기 때문이고
+    (`app/crawler/runner.py` 의 `_record`), `body` 는 목록에 없어서 빌 뿐이다.
+    """
+    from app.api.ui_tests import _field_report
+    from app.selector.schema import validate_selectors
+
+    selectors = validate_selectors(
+        {
+            "list": {
+                "item": "ul.jobs > li",
+                "title": "h3",
+                "link": "",
+                "date": "span.d",
+                "link_template": "",
+            },
+            "detail": {
+                "title": "p.title",
+                "body": "div.body",
+                "requirements": "",
+                "deadline": "div.deadline",
+                "department": "",
+            },
+        }
+    )
+    items = [
+        _PreviewItem(
+            {
+                "list_title": "백엔드 개발자",
+                "list_date": "2026-09-30",
+                "title": "백엔드 개발자",
+                "deadline": "2026-09-30",
+                "body": "",
+            }
+        ),
+        _PreviewItem(
+            {
+                "list_title": "프론트엔드 개발자",
+                "list_date": "2026-10-15",
+                "title": "프론트엔드 개발자",
+                "deadline": "2026-10-15",
+                "body": "",
+            }
+        ),
+    ]
+
+    report = {row["path"]: row for row in _field_report(items, selectors)}
+
+    assert report["detail.body"]["state"] == "해당 없음"
+    assert "상세 페이지를 따라가지 않는" in report["detail.body"]["reason"]
+    # 값이 있는 자리도 상세에서 온 것이 아니다. 어디서 왔는지 사유에 적는다
+    assert report["detail.title"]["state"] == "해당 없음"
+    assert "목록에서 읽은 것이다" in report["detail.title"]["reason"]
+    # 목록 필드의 판정은 그대로다
+    assert report["list.title"]["state"] == "성공"
+
+
+def test_a_site_with_detail_links_still_fails_a_broken_detail_field() -> None:
+    """상세를 따라가는 크롤러에서 상세 필드가 비면 그것은 여전히 실패다."""
+    from app.api.ui_tests import _field_report
+    from app.selector.schema import validate_selectors
+
+    selectors = validate_selectors(
+        {
+            "list": {
+                "item": "ul.jobs > li",
+                "title": "h3",
+                "link": "h3 > a",
+                "date": "span.d",
+                "link_template": "",
+            },
+            "detail": {
+                "title": "p.title",
+                "body": "div.body",
+                "requirements": "",
+                "deadline": "",
+                "department": "",
+            },
+        }
+    )
+    items = [
+        _PreviewItem(
+            {
+                "list_title": "백엔드 개발자",
+                "list_date": "2026-09-30",
+                "title": "백엔드 개발자",
+                "body": "",
+            }
+        )
+    ]
+
+    report = {row["path"]: row for row in _field_report(items, selectors)}
+
+    assert report["detail.body"]["state"] == "실패"
+    assert "selector_miss" in report["detail.body"]["reason"]
+
+
+class _PreviewItem:
+    """`_field_report` 가 읽는 것만 흉내낸다."""
+
+    def __init__(self, fields: dict[str, str]) -> None:
+        self.fields = fields
+        self.state = "preview"
