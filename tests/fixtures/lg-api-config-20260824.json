@@ -1,0 +1,39 @@
+{
+  "list": {
+    "url": "https://api.careers.lg.com/rmk/job/retrieveJobNoticesList",
+    "method": "POST",
+    "body": {
+      "lnbSearch": "",
+      "hashTagText": "",
+      "recDate": "POST_START_DATE",
+      "order": "DESC",
+      "careerList": [],
+      "companyCodeList": [],
+      "desireLocList": [],
+      "jobGroupList": []
+    },
+    "items_path": "data.jobNoticeList",
+    "fields": {
+      "title": "jobNoticeName",
+      "date": "recEndDateTime",
+      "company": "companyName"
+    },
+    "id_field": "jobNoticeId",
+    "link_template": "https://careers.lg.com/apply/detail?id={id}"
+  },
+  "detail": {
+    "url": "https://api.careers.lg.com/rmk/job/retrieveJobNoticesDetail",
+    "method": "POST",
+    "body": {
+      "jobNoticeId": "{id}"
+    },
+    "fields": {
+      "title": "data.jobNoticesDetail.jobNoticesDetail.jobNoticeName",
+      "body": "data.jobNoticesDetail.recList.0.detailContext",
+      "requirements": "data.jobNoticesDetail.recList.0.requiredItem",
+      "deadline": "data.jobNoticesDetail.jobNoticesDetail.recEndDate",
+      "department": "data.jobNoticesDetail.recList.0.orgName",
+      "company": "data.jobNoticesDetail.jobNoticesDetail.companyName"
+    }
+  }
+}
