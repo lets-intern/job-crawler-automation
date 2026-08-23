@@ -43,10 +43,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app import db
+from app.crawler.collect import API, open_collectors
 from app.crawler.failures import SUCCESS
 from app.crawler.fetcher import FetchError, FetchPolicy, RobotsDisallowedError, get_fetcher
 from app.crawler.playwright import RENDER_MODES, STATIC, open_source
-from app.crawler.runner import TEST, RunTarget, run_once
+from app.crawler.runner import TEST, RunTarget, collect_selectors, run_once
+from app.selector.api_schema import ApiConfigError, parse_api_config
 from app.selector.generator import (
     GenerationResult,
     SelectorGenerationError,
@@ -713,30 +715,48 @@ async def test_run(
     이 응답의 미리보기뿐이다.
     """
     row = conn.execute(
-        "SELECT list_url, selectors_json, status, list_mode, detail_mode FROM crawlers "
-        "WHERE id = ?",
+        "SELECT list_url, selectors_json, status, list_mode, detail_mode, api_config_json "
+        "FROM crawlers WHERE id = ?",
         (crawler_id,),
     ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail={"message": f"크롤러 {crawler_id} 가 없다"})
-    if not row["selectors_json"]:
+
+    saved_mode, saved_detail_mode = str(row["list_mode"]), str(row["detail_mode"])
+    # 값을 줬을 때만 이번 실행의 경로가 갈린다. 목록과 상세를 함께 옮긴다 — 이 자리는 정적과
+    # 렌더를 비교하는 곳이고, 둘을 갈라 시험하는 화면은 Push 25 다. 저장값은 그대로다
+    override = _validated_render_mode(render_mode) if render_mode.strip() else ""
+    used_mode = override or saved_mode
+    used_detail_mode = override or saved_detail_mode
+
+    if not row["selectors_json"] and not (used_mode == API and used_detail_mode == API):
         raise HTTPException(
             status_code=409,
             detail={"reason": "no_selectors", "message": "셀렉터가 없는 크롤러는 실행할 수 없다"},
         )
 
     try:
-        selectors = validate_selectors(json.loads(row["selectors_json"]))
+        selectors = collect_selectors(row["selectors_json"], used_mode, used_detail_mode)
     except (json.JSONDecodeError, SelectorSchemaError) as exc:
         # 저장된 셀렉터가 스키마에 맞지 않는다. 추측해서 고치지 않고 그대로 알린다.
         raise HTTPException(
             status_code=409, detail={"reason": "invalid_selectors", "message": str(exc)}
         ) from exc
+    try:
+        api_config = parse_api_config(row["api_config_json"])
+    except ApiConfigError as exc:
+        raise HTTPException(
+            status_code=409, detail={"reason": "invalid_api_config", "message": str(exc)}
+        ) from exc
 
-    saved_mode = str(row["list_mode"])
-    # 값을 줬을 때만 이번 실행의 경로가 갈린다. 저장값은 어느 쪽이든 그대로다
-    used_mode = _validated_render_mode(render_mode) if render_mode.strip() else saved_mode
-    async with open_source(used_mode, fetcher) as source:
+    async with open_collectors(
+        list_mode=used_mode,
+        detail_mode=used_detail_mode,
+        list_url=row["list_url"],
+        selectors=selectors,
+        fetcher=fetcher,
+        api_config=api_config,
+    ) as collectors:
         result = await run_once(
             conn,
             RunTarget(
@@ -744,16 +764,15 @@ async def test_run(
                 selectors=selectors,
                 trigger=TEST,
                 crawler_id=crawler_id,
-                render_mode=used_mode,
             ),
-            fetcher=source,
+            collectors=collectors,
             limit=limit,
         )
 
     crawler_status = row["status"]
     # 다른 모드로 한 번 시험한 실행은 상태를 올리지 않는다. 저장된 모드로 돌 때 어떻게 되는지를
     # 말해 주지 않기 때문이다 — 그것으로 tested 를 주면 승격된 워크플로우가 첫 주기에 실패한다
-    if result.status == SUCCESS and crawler_status == "draft" and used_mode == saved_mode:
+    if result.status == SUCCESS and crawler_status == "draft" and not override:
         conn.execute("UPDATE crawlers SET status = 'tested' WHERE id = ?", (crawler_id,))
         crawler_status = "tested"
 
