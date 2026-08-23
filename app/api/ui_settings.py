@@ -15,18 +15,22 @@ from __future__ import annotations
 import logging
 import sqlite3
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
+from starlette.background import BackgroundTask
 
+from app import db
 from app import settings as store
 from app.api import import_data
 from app.api import settings as settings_api
 from app.api.ui import render
 from app.api.ui_crawlers import error_detail
 from app.api.workflows import get_workflow_scheduler
+from app.config import get_settings
 from app.scheduler import WorkflowScheduler
 
 logger = logging.getLogger(__name__)
@@ -132,3 +136,35 @@ def _spool(file: UploadFile, directory: Path) -> Path:
                 )
             target.write(chunk)
     return path
+
+
+@router.get("/ui/settings/export")
+def export_snapshot() -> FileResponse:
+    """지금 DB 를 파일 하나로 내려받는다.
+
+    `VACUUM INTO` 로 뜬다. 파일을 그대로 복사하면 쓰기 도중의 페이지가 섞여 열리지 않는
+    파일이 나온다. 워크플로우가 30분마다 도는 서버에서 그 순간을 피할 방법은 없다.
+
+    받은 파일은 그대로 다른 서버의 `데이터 파일 가져오기` 에 올릴 수 있다. 그쪽이 검증하고
+    없는 것만 더한다.
+    """
+    source = get_settings().database_path
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M")
+    target = Path(tempfile.gettempdir()) / f"jobs-{stamp}.db"
+    target.unlink(missing_ok=True)
+
+    conn = db.connect(source)
+    try:
+        # 경로를 문자열로 끼워 넣는다. SQLite 가 이 자리에 바인딩을 받지 않는다.
+        # 값은 우리가 만든 임시 경로라 밖에서 오지 않는다
+        conn.execute(f"VACUUM INTO '{target}'")
+    finally:
+        conn.close()
+
+    logger.info("스냅샷 내보내기 %s (%d bytes)", target.name, target.stat().st_size)
+    return FileResponse(
+        target,
+        media_type="application/vnd.sqlite3",
+        filename=target.name,
+        background=BackgroundTask(target.unlink, missing_ok=True),
+    )
