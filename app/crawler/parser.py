@@ -81,6 +81,9 @@ class ListItem:
     company: str = ""
     # 상세 페이지가 없는 사이트다. 실행이 상세를 따라가지 않는다
     detail_absent: bool = False
+    # 상세 API 에 넘길 공고 id. 목록이 API 면 응답의 `id_field` 값이고, HTML 이면 상세
+    # 링크의 마지막 경로 조각이다. 상세가 API 가 아니면 아무도 읽지 않는다
+    detail_key: str = ""
 
 
 @dataclass(frozen=True)
