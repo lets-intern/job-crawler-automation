@@ -51,14 +51,30 @@ SSH 와 `docker cp` 로 파일을 밀어 넣게 되고, 그것은 이 서비스�
 
 from __future__ import annotations
 
+import json
+import logging
 import sqlite3
+from dataclasses import dataclass
 from pathlib import Path
 
 from app import db
+from app.crawler.hashing import content_hash
+from app.normalize.engine import (
+    NormalizeError,
+    RawJobMissingError,
+    insert_normalized,
+    load_rules,
+)
+
+logger = logging.getLogger(__name__)
 
 # 올릴 수 있는 파일 크기 상한. 공고 한 건이 4KB 쯤이므로 64MB 는 1만 건을 훨씬 넘는다
 # (`seeds/snapshot/README.md`). 상한이 없으면 디스크가 상한이 된다
 MAX_UPLOAD_BYTES = 64 * 1024 * 1024
+
+# 실패 사유를 몇 건까지 들고 있을지. 규칙 하나가 틀리면 같은 문장이 만 번 쌓인다
+# (`app/normalize/backfill.py` 와 같은 이유, 같은 값)
+MAX_ERRORS = 20
 
 # SQLite 파일의 첫 16바이트. 확장자가 아니라 내용으로 판정한다
 SQLITE_MAGIC = b"SQLite format 3\x00"
@@ -204,3 +220,376 @@ def _check_tables(source: sqlite3.Connection, tables: set[str]) -> None:
                 "missing_column",
                 f"{table} 에 컬럼이 없다: {', '.join(missing)}",
             )
+
+
+@dataclass(frozen=True)
+class ImportResult:
+    """무엇이 몇 건 들어왔는지. 화면이 이 숫자를 항목별로 그대로 적는다.
+
+    뭉뚱그린 숫자 하나로는 무엇이 들어왔는지 알 수 없다. 크롤러가 안 들어와서 0건인 것과
+    이미 있어서 0건인 것은 운영자가 할 일이 서로 다르다.
+    """
+
+    version: str
+    crawlers_added: int = 0
+    crawlers_skipped: int = 0
+    workflows_added: int = 0
+    workflows_skipped: int = 0
+    rules_added: int = 0
+    rules_skipped: int = 0
+    raw_added: int = 0
+    raw_duplicate: int = 0
+    overrides_added: int = 0
+    overrides_skipped: int = 0
+    normalized_added: int = 0
+    normalize_failed: int = 0
+    errors: tuple[str, ...] = ()
+
+
+def import_database(conn: sqlite3.Connection, path: Path) -> ImportResult:
+    """올린 파일을 검증하고 이 서버의 데이터에 더한다. 트랜잭션 하나다.
+
+    중간에 무엇이 틀어지든 아무것도 남지 않는다. 크롤러만 들어오고 공고는 안 들어온 절반짜리
+    상태는 운영자가 손으로 풀 수 없다.
+
+    한 건의 정규화 실패는 이 트랜잭션을 되돌리지 않는다. `raw_jobs` 는 남고
+    `normalized_jobs` 만 비는데, 그것은 크롤링이 이미 그렇게 동작하고(`app/crawler/runner.py`)
+    규칙을 고쳐 재정규화하면 복구되는 상태다. 수집 데이터를 통째로 되돌리는 쪽이 손해가 크다.
+    """
+    version = inspect_upload(path, server_version=server_version(conn))
+    source = _open_read_only(path)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            result = _merge(conn, source, version)
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+        conn.execute("COMMIT")
+    finally:
+        source.close()
+    logger.info("데이터 가져오기: %s", result)
+    return result
+
+
+def _merge(conn: sqlite3.Connection, source: sqlite3.Connection, version: str) -> ImportResult:
+    """열린 트랜잭션 안에서 도는 병합 본체.
+
+    순서가 정해져 있다. 크롤러가 있어야 워크플로우가 매달리고, 워크플로우가 있어야 공고가
+    매달린다. 규칙과 보정은 정규화보다 앞에 와야 방금 들여온 공고에 적용된다.
+    """
+    crawler_ids, crawlers_added, crawlers_skipped = _merge_crawlers(conn, source)
+    workflow_ids, workflows_added, workflows_skipped = _merge_workflows(conn, source, crawler_ids)
+    rules_added, rules_skipped = _merge_rules(conn, source)
+    raw_ids, new_raw_ids, raw_duplicate = _merge_raw_jobs(conn, source, workflow_ids)
+    overrides_added, overrides_skipped = _merge_overrides(conn, source, raw_ids)
+    normalized_added, normalize_failed, errors = _normalize(conn, new_raw_ids)
+    return ImportResult(
+        version=version,
+        crawlers_added=crawlers_added,
+        crawlers_skipped=crawlers_skipped,
+        workflows_added=workflows_added,
+        workflows_skipped=workflows_skipped,
+        rules_added=rules_added,
+        rules_skipped=rules_skipped,
+        raw_added=len(new_raw_ids),
+        raw_duplicate=raw_duplicate,
+        overrides_added=overrides_added,
+        overrides_skipped=overrides_skipped,
+        normalized_added=normalized_added,
+        normalize_failed=normalize_failed,
+        errors=tuple(errors),
+    )
+
+
+def _merge_crawlers(
+    conn: sqlite3.Connection, source: sqlite3.Connection
+) -> tuple[dict[int, int], int, int]:
+    """크롤러를 더한다. 이름과 리스트 URL 이 같으면 같은 크롤러로 본다.
+
+    셀렉터를 포함해 통째로 가져온다. `selectors_json` 에는 사람이 손으로 고친 것이 섞여 있고,
+    `render_mode` 를 놓치면 JS 로 그려지는 사이트가 정적으로 돌아 0건이 나온다. `status` 도
+    그대로다 — `promoted` 인 크롤러를 `draft` 로 들여오면 워크플로우가 매달릴 곳이 없다.
+    """
+    known = {
+        (str(row["name"]), str(row["list_url"])): int(row["id"])
+        for row in conn.execute("SELECT id, name, list_url FROM crawlers ORDER BY id DESC")
+    }
+    mapping: dict[int, int] = {}
+    added = skipped = 0
+    for row in source.execute(
+        """
+        SELECT id, name, list_url, detail_url, selectors_json, render_mode, status,
+               default_company
+          FROM crawlers ORDER BY id
+        """
+    ):
+        key = (str(row["name"]), str(row["list_url"]))
+        existing = known.get(key)
+        if existing is not None:
+            mapping[int(row["id"])] = existing
+            skipped += 1
+            continue
+        cursor = conn.execute(
+            """
+            INSERT INTO crawlers (name, list_url, detail_url, selectors_json, render_mode,
+                                  status, default_company)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                row["name"],
+                row["list_url"],
+                row["detail_url"],
+                row["selectors_json"],
+                row["render_mode"],
+                row["status"],
+                row["default_company"],
+            ),
+        )
+        new_id = int(cursor.lastrowid or 0)
+        known[key] = new_id
+        mapping[int(row["id"])] = new_id
+        added += 1
+    return mapping, added, skipped
+
+
+def _merge_workflows(
+    conn: sqlite3.Connection, source: sqlite3.Connection, crawler_ids: dict[int, int]
+) -> tuple[dict[int, int], int, int]:
+    """워크플로우를 더한다. 크롤러가 같고 이름이 같으면 같은 워크플로우로 본다.
+
+    누적 카운트와 마지막 실행 시각은 가져오지 않는다. 저쪽 서버의 실행 기록이고, 이 서버에서
+    일어나지 않은 실행을 이 서버의 통계에 섞으면 자동 중지 판정까지 흔들린다. `crawl_runs` 를
+    가져오지 않는 것과 같은 이유다.
+    """
+    known = {
+        (int(row["crawler_id"]), str(row["name"])): int(row["id"])
+        for row in conn.execute("SELECT id, crawler_id, name FROM workflows ORDER BY id DESC")
+    }
+    mapping: dict[int, int] = {}
+    added = skipped = 0
+    for row in source.execute(
+        """
+        SELECT id, crawler_id, name, interval_minutes, status, auto_stop_threshold
+          FROM workflows ORDER BY id
+        """
+    ):
+        crawler_id = crawler_ids.get(int(row["crawler_id"]))
+        if crawler_id is None:
+            raise ImportRejected(
+                "broken_reference",
+                f"워크플로우 {row['name']!r} 가 없는 크롤러 {row['crawler_id']} 를 가리킨다",
+            )
+        key = (crawler_id, str(row["name"]))
+        existing = known.get(key)
+        if existing is not None:
+            mapping[int(row["id"])] = existing
+            skipped += 1
+            continue
+        cursor = conn.execute(
+            """
+            INSERT INTO workflows (crawler_id, name, interval_minutes, status,
+                                   auto_stop_threshold)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                crawler_id,
+                row["name"],
+                row["interval_minutes"],
+                row["status"],
+                row["auto_stop_threshold"],
+            ),
+        )
+        new_id = int(cursor.lastrowid or 0)
+        known[key] = new_id
+        mapping[int(row["id"])] = new_id
+        added += 1
+    return mapping, added, skipped
+
+
+def _merge_rules(conn: sqlite3.Connection, source: sqlite3.Connection) -> tuple[int, int]:
+    """정규화 규칙을 더한다. 이미 있는 규칙은 건드리지 않는다.
+
+    같은 규칙인지는 `field_name`, `rule_type`, `rule_config_json`, `priority` 넷으로 가른다.
+    `note` 는 사람이 읽는 이름표라 판정에 넣지 않는다 — 넣으면 메모만 다른 같은 규칙이 두 벌
+    쌓이고, 정규화는 그 둘을 차례로 태운다.
+    """
+    columns = "field_name, rule_type, rule_config_json, priority"
+    known = {
+        (str(row[0]), str(row[1]), str(row[2]), int(row[3]))
+        for row in conn.execute(f"SELECT {columns} FROM normalization_rules")
+    }
+    added = skipped = 0
+    for row in source.execute(
+        f"SELECT {columns}, enabled, note FROM normalization_rules ORDER BY id"
+    ):
+        key = (
+            str(row["field_name"]),
+            str(row["rule_type"]),
+            str(row["rule_config_json"]),
+            int(row["priority"]),
+        )
+        if key in known:
+            skipped += 1
+            continue
+        conn.execute(
+            """
+            INSERT INTO normalization_rules (field_name, rule_type, rule_config_json, priority,
+                                             enabled, note)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (*key, row["enabled"], row["note"]),
+        )
+        known.add(key)
+        added += 1
+    return added, skipped
+
+
+def _merge_raw_jobs(
+    conn: sqlite3.Connection, source: sqlite3.Connection, workflow_ids: dict[int, int]
+) -> tuple[dict[int, int], list[int], int]:
+    """공고를 더한다. 없는 것만 넣고 기존 행은 한 글자도 고치지 않는다.
+
+    `content_hash` 는 올린 파일에 적힌 값을 믿지 않고 `raw_data_json` 에서 다시 계산한다.
+    그래야 이 서버가 이미 가진 행과 같은 잣대로 비교된다 (`app/crawler/hashing.py`).
+
+    중복 판정 범위는 워크플로우 안이다. 크롤링이 쓰는 범위와 같다 — 여기서만 전역으로 보면
+    같은 파일을 두 번 올린 결과와 크롤링이 한 번 더 돈 결과가 서로 달라진다.
+
+    돌려주는 것은 셋이다. 올린 파일의 id 에서 이 서버의 id 로 가는 지도(보정이 쓴다), 새로
+    들어온 id 목록(정규화가 쓴다), 중복이라 건너뛴 건수.
+    """
+    known = {
+        (int(row["workflow_id"]), str(row["content_hash"])): int(row["id"])
+        for row in conn.execute(
+            "SELECT id, workflow_id, content_hash FROM raw_jobs ORDER BY id DESC"
+        )
+    }
+    mapping: dict[int, int] = {}
+    added: list[int] = []
+    duplicate = 0
+    for row in source.execute(
+        """
+        SELECT id, workflow_id, source_url, raw_data_json, crawled_at
+          FROM raw_jobs ORDER BY id
+        """
+    ):
+        workflow_id = workflow_ids.get(int(row["workflow_id"]))
+        if workflow_id is None:
+            raise ImportRejected(
+                "broken_reference",
+                f"공고 {row['id']} 가 없는 워크플로우 {row['workflow_id']} 를 가리킨다",
+            )
+        digest = content_hash(_raw_fields(row))
+        key = (workflow_id, digest)
+        existing = known.get(key)
+        if existing is not None:
+            mapping[int(row["id"])] = existing
+            duplicate += 1
+            continue
+        cursor = conn.execute(
+            """
+            INSERT INTO raw_jobs (workflow_id, source_url, raw_data_json, content_hash,
+                                  crawled_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (workflow_id, row["source_url"], row["raw_data_json"], digest, row["crawled_at"]),
+        )
+        new_id = int(cursor.lastrowid or 0)
+        known[key] = new_id
+        mapping[int(row["id"])] = new_id
+        added.append(new_id)
+    return mapping, added, duplicate
+
+
+def _raw_fields(row: sqlite3.Row) -> dict[str, object]:
+    """`raw_data_json` 을 필드 묶음으로 읽는다. 읽히지 않으면 거절한다.
+
+    저장은 원문 그대로 하고 읽기만 한다. 여기서 고쳐 넣으면 append-only 로 쌓인 값이 옮기는
+    도중에 바뀐다.
+    """
+    try:
+        data = json.loads(str(row["raw_data_json"]))
+    except json.JSONDecodeError as exc:
+        raise ImportRejected(
+            "broken_row", f"공고 {row['id']} 의 raw_data_json 을 읽지 못했다: {exc}"
+        ) from exc
+    if not isinstance(data, dict):
+        raise ImportRejected(
+            "broken_row",
+            f"공고 {row['id']} 의 raw_data_json 이 객체가 아니다: {type(data).__name__}",
+        )
+    return data
+
+
+def _merge_overrides(
+    conn: sqlite3.Connection, source: sqlite3.Connection, raw_ids: dict[int, int]
+) -> tuple[int, int]:
+    """사람이 검수한 값을 가져온다. 다시 만들 수 없는 값이라 빠뜨리지 않는다.
+
+    이 서버에 이미 그 공고의 그 필드가 있으면 건너뛴다. 이쪽 사람이 고쳐 둔 값을 저쪽 값으로
+    덮지 않는다.
+
+    중복이라 건너뛴 공고에 붙은 보정도 가져온다. 그 공고의 확정 값은 다음 재정규화에서 바뀐다 —
+    보정을 저장하는 검수 화면이 이미 그 순서로 동작한다 (`app/api/review.py`).
+    """
+    known = {
+        (int(row["raw_job_id"]), str(row["field_name"]))
+        for row in conn.execute("SELECT raw_job_id, field_name FROM job_field_overrides")
+    }
+    added = skipped = 0
+    for row in source.execute(
+        """
+        SELECT raw_job_id, field_name, value, created_at, updated_at
+          FROM job_field_overrides ORDER BY id
+        """
+    ):
+        raw_job_id = raw_ids.get(int(row["raw_job_id"]))
+        if raw_job_id is None:
+            raise ImportRejected(
+                "broken_reference",
+                f"보정이 없는 공고 {row['raw_job_id']} 를 가리킨다",
+            )
+        key = (raw_job_id, str(row["field_name"]))
+        if key in known:
+            skipped += 1
+            continue
+        conn.execute(
+            """
+            INSERT INTO job_field_overrides (raw_job_id, field_name, value, created_at,
+                                             updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (raw_job_id, row["field_name"], row["value"], row["created_at"], row["updated_at"]),
+        )
+        known.add(key)
+        added += 1
+    return added, skipped
+
+
+def _normalize(conn: sqlite3.Connection, raw_ids: list[int]) -> tuple[int, int, list[str]]:
+    """새로 들어온 공고를 **이 서버의** 규칙으로 정규화한다.
+
+    올린 파일의 `normalized_jobs` 는 읽지 않는다. `delivered_at` 도 쓰지 않는다 — 여기서
+    부르는 `insert_normalized` 가 그 컬럼을 적지 않는 것이 그 보장이다
+    (`.claude/rules/data-safety.md`).
+    """
+    if not raw_ids:
+        return 0, 0, []
+    try:
+        rules = load_rules(conn)
+    except NormalizeError as exc:
+        # 규칙을 못 읽으면 어떤 건도 정규화할 수 없다. 수집 데이터는 그대로 들어간다
+        return 0, len(raw_ids), [f"정규화 규칙을 읽지 못했다: {exc}"]
+
+    added = failed = 0
+    errors: list[str] = []
+    for raw_id in raw_ids:
+        try:
+            insert_normalized(conn, raw_id, rules)
+            added += 1
+        except (NormalizeError, RawJobMissingError) as exc:
+            failed += 1
+            if len(errors) < MAX_ERRORS:
+                errors.append(f"raw_jobs {raw_id}: {exc}")
+    return added, failed, errors
