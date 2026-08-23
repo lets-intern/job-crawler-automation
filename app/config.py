@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     # 렌더 1회의 상한. 정적 타임아웃보다 길지만 무한정 기다리지 않는다
     render_timeout_seconds: float = 60.0
 
+    # 화면
+    # 저장은 UTC 그대로 두고, 화면에 그릴 때만 이 시간대로 옮긴다 (`app/api/ui.py`).
+    # 제공 API 는 계약대로 UTC 다 — `.claude/docs/api-contract.md`
+    display_timezone: str = "Asia/Seoul"
+
     # 실행
     # 동시 실행 상한의 초기값. 한 번 app_settings 에 들어간 뒤로는 DB 값이 이긴다
     # (`app/settings.py`). 초기값으로 들어갈 값이라 여기서 범위를 지킨다
