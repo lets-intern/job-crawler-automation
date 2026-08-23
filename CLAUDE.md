@@ -39,6 +39,7 @@ detail.
 │   ├── api-worker.md         Routes, schema, migrations, normalization, delivery API
 │   ├── ui-worker.md          Jinja2 templates and HTMX fragments
 │   ├── test-runner.md        Runs and analyses tests
+│   ├── push-lead.md          Splits one push and runs the workers. Never implements
 │   └── task-executor.md      Single autonomous executor for a small task file
 │
 ├── skills/                   Reusable procedures
@@ -49,8 +50,9 @@ detail.
 │   ├── site-recipe/          Per-site findings, written down once
 │   ├── quality-check/        ruff, mypy, pytest on changed files
 │   ├── local-env/            Start, inspect and stop the local server
-│   ├── task-maker/           PRD -> task files
-│   └── task-runner/          Execute task files
+│   ├── task-maker/           PRD -> push files with per-type verification
+│   ├── task-runner/          Reads a task file and delegates. Picks mode A or B
+│   └── task-cleaner/         Archive a finished feature into done/<name>/
 │
 ├── commands/                 Slash-command entry points
 │   ├── new-site.md           /new-site <list-url> <detail-url>
@@ -83,7 +85,7 @@ detail.
 | A selector stopped matching | `site-recipes/<domain>.md`, `skills/crawl-test/SKILL.md` |
 | A workflow is failing | `commands/fix-workflow.md`, `skills/workflow-ops/SKILL.md` |
 | Changing the fetch client, retry or scheduler | `rules/crawling.md`, `docs/architecture.md` |
-| Writing or changing an Anthropic API call | `rules/llm.md`, then the `claude-api` skill |
+| Writing or changing a Gemini API call | `rules/llm.md`, then the current Gemini API docs |
 | Changing a table or writing a migration | `rules/data-safety.md`, `docs/data-model.md` |
 | Changing what the job board receives | `docs/api-contract.md` |
 | A data question ("did it actually store it") | `skills/db-inspect/SKILL.md` |
@@ -94,7 +96,8 @@ detail.
 | Committing or pushing | `rules/git-safety.md` |
 | Why a technology was or was not chosen | `docs/tech-stack.md` |
 | PRD -> tasks | `skills/task-maker/SKILL.md` |
-| Executing tasks | `skills/task-runner/SKILL.md` |
+| Executing tasks | `skills/task-runner/SKILL.md`, then `agents/push-lead.md` for mode A |
+| Archiving a finished feature | `skills/task-cleaner/SKILL.md` |
 | Writing any document | `rules/writing.md` |
 | Something learned about one site | `skills/site-recipe/SKILL.md` |
 | Unexplained or open issue | `troubleshooting/README.md` |

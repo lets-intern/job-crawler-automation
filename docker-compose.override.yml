@@ -1,0 +1,25 @@
+# 개발용. compose 가 docker-compose.yml 위에 자동으로 겹쳐 읽는다.
+#
+# 소스를 컨테이너에 바인드 마운트하고 uvicorn 을 --reload 로 띄운다. 파일을 저장하면 즉시
+# 반영되므로 화면을 확인하려고 매번 다시 빌드하지 않아도 된다.
+#
+# 의존성이 바뀌었을 때만 다시 빌드한다 (pyproject.toml, Dockerfile).
+# 배포 구성 그대로 띄우려면 이 파일을 빼고 실행한다:
+#     docker compose -f docker-compose.yml up -d --build
+#
+# 주의: --reload 는 파일이 바뀔 때마다 프로세스를 다시 띄우고 APScheduler 도 같이 재등록된다.
+# 스케줄 동작을 확인할 때는 배포 구성으로 띄운다 (.claude/skills/local-env/SKILL.md).
+services:
+  api:
+    volumes:
+      - jobs-data:/data
+      # 읽기 전용으로 붙인다. 컨테이너가 소스를 고칠 일은 없다.
+      - ./app:/app/app:ro
+      - ./migrations:/app/migrations:ro
+    command:
+      - sh
+      - -c
+      - >-
+        python -m app.cli migrate up &&
+        exec uvicorn app.main:app --host 0.0.0.0 --port 8000
+        --reload --reload-dir /app/app

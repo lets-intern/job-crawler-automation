@@ -1,0 +1,205 @@
+{# 결과 영역. 생성 결과·편집기·거절 사유가 모두 이 조각 하나로 들어간다 #}
+{% if error %}
+<h3>실패</h3>
+<dl>
+  <dt>사유</dt><dd>{{ error.reason }}</dd>
+  <dt>내용</dt><dd>{{ error.message }}</dd>
+  {% if next_step(error.reason) %}<dt>다음</dt><dd>{{ next_step(error.reason) }}</dd>{% endif %}
+</dl>
+{% endif %}
+
+{% if notice %}
+<p>{{ notice }}</p>
+{% endif %}
+
+{% if generation %}
+<h3>생성 결과</h3>
+<div class="table-scroll">
+<table class="data-table">
+  <caption>필드별 매칭 수 (생성 시점 HTML 기준)</caption>
+  <thead><tr><th scope="col">필드</th><th scope="col" class="num">매칭</th><th scope="col">판정</th></tr></thead>
+  <tbody>
+    {% for field, count in generation.matches.items() %}
+    <tr>
+      <td>{{ field }}</td>
+      <td class="num">{{ count }}</td>
+      <td>
+        {# 판정은 셋이다. 건너뜀은 매칭 0개지만 실패가 아니다 — 셀렉터가 비어 있거나
+           돌려볼 HTML 이 없어 판정하지 않았다는 뜻이고, 고칠 셀렉터가 없다 #}
+        {% if field in generation.skipped_fields %}
+        <span class="state-idle">건너뜀</span>
+        {% elif field in generation.failed_fields %}
+        <span class="state-bad">실패</span>
+        {% else %}
+        <span class="state-ok">성공</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% if generation.failed_fields %}
+<p class="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-red-800">
+  <span class="font-semibold">손으로 고쳐야 하는 필드</span>: {{ generation.failed_fields | join(", ") }}
+  — 셀렉터는 있는데 생성 시점 HTML 에서 아무것도 잡지 못했다.
+</p>
+{% else %}
+<p><span class="state-ok">판정한 필드가 모두 생성 시점 HTML 에서 값을 찾았다.</span></p>
+{% endif %}
+{% if generation.skipped_fields %}
+<p class="rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-slate-700">
+  <span class="font-semibold">건너뛴 필드</span>: {{ generation.skipped_fields | join(", ") }}
+  — 셀렉터가 비어 있거나 돌려볼 HTML 이 없어 판정하지 않았다. 매칭 0개지만 실패가 아니다.
+  어느 쪽인지는 아래 설명에 있다.
+</p>
+{% endif %}
+{% if generation.notes %}
+<ul>{% for note in generation.notes %}<li>{{ note }}</li>{% endfor %}</ul>
+{% endif %}
+<p>
+  모델 {{ generation.usage.model }},
+  입력 {{ generation.usage.input_tokens }} 토큰,
+  출력 {{ generation.usage.output_tokens }} 토큰,
+  {{ generation.usage.latency_ms }} ms
+</p>
+{% endif %}
+
+{% if repair %}
+<h3>AI 수정 결과</h3>
+<div class="table-scroll">
+<table class="data-table">
+  <caption>고치기 전과 후 (지금 가져온 같은 HTML 기준)</caption>
+  <thead><tr>
+    <th scope="col">필드</th>
+    <th scope="col" class="num">고치기 전</th>
+    <th scope="col" class="num">고친 뒤</th>
+    <th scope="col">판정</th>
+    <th scope="col">대상</th>
+  </tr></thead>
+  <tbody>
+    {% for field, count in repair.after_matches.items() %}
+    <tr>
+      <td>{{ field }}</td>
+      <td class="num">{{ repair.before_matches.get(field, 0) }}</td>
+      <td class="num">{{ count }}</td>
+      <td>
+        {% if field in repair.skipped_fields %}
+        <span class="state-idle">건너뜀</span>
+        {% elif field in repair.failed_fields %}
+        <span class="state-bad">실패</span>
+        {% else %}
+        <span class="state-ok">성공</span>
+        {% endif %}
+      </td>
+      <td>
+        {# 대상이 아니었던 필드는 응답에 무엇이 왔든 원래 셀렉터가 그대로다 #}
+        {% if field in repair.repaired %}
+        <span class="state-ok">고침</span>
+        {% elif field in repair.unresolved %}
+        <span class="state-bad">못 고침</span>
+        {% else %}
+        <span class="state-idle">그대로</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+{% if repair.changes %}
+<div class="table-scroll">
+<table class="data-table">
+  <caption>바뀐 셀렉터</caption>
+  <thead><tr>
+    <th scope="col">필드</th>
+    <th scope="col">고치기 전</th>
+    <th scope="col">고친 뒤</th>
+  </tr></thead>
+  <tbody>
+    {% for change in repair.changes %}
+    <tr>
+      <td>{{ change.name }}</td>
+      <td class="cell-text">{{ change.before or "(비어 있음)" }}</td>
+      <td class="cell-text">{{ change.after }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p class="rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-slate-700">
+  모델이 바꾼 셀렉터가 없다. 같은 답이 왔거나 고칠 방법이 이 HTML 에 없다는 응답이다.
+  다음 수단은 손으로 고치는 것이다.
+</p>
+{% endif %}
+
+{% if repair.unresolved %}
+<p class="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-red-800">
+  <span class="font-semibold">고친 뒤에도 실패로 남은 필드</span>: {{ repair.unresolved | join(", ") }}
+  — 모델이 고르지 못했다. 손으로 고친다.
+</p>
+{% else %}
+<p><span class="state-ok">고치려 한 필드가 모두 값을 찾았다.</span> 저장하면 반영된다.</p>
+{% endif %}
+{% if repair.notes %}
+<ul>{% for note in repair.notes %}<li>{{ note }}</li>{% endfor %}</ul>
+{% endif %}
+<p>
+  모델 {{ repair.usage.model }},
+  입력 {{ repair.usage.input_tokens }} 토큰,
+  출력 {{ repair.usage.output_tokens }} 토큰,
+  {{ repair.usage.latency_ms }} ms
+</p>
+{% endif %}
+
+{% if crawler_id %}
+{# 실패한 필드가 있을 때만 보인다. 없으면 고칠 것이 없다 #}
+{% set repairable = (generation and generation.failed_fields) or (repair and repair.failed_fields) %}
+{% if repairable %}
+<h3>AI 수정</h3>
+<p>
+  저장된 셀렉터를 기준으로 <span class="font-semibold">실패한 필드만</span> 모델에게 다시 물어본다.
+  잘 되는 필드는 그대로 둔다. 결과는 화면에만 남고, 반영하려면 아래에서 셀렉터 저장을 누른다.
+</p>
+<form hx-post="/ui/crawlers/{{ crawler_id }}/repair"
+      hx-target="#crawler-result"
+      hx-swap="innerHTML"
+      hx-disabled-elt="find button"
+      hx-indicator="#repair-wait, #crawler-result-wait">
+  <p>
+    <button type="submit">AI 수정</button>
+    <span id="repair-wait" class="wait-note">페이지를 다시 가져와 실패한 필드를 고치는 중. 10초쯤 걸린다</span>
+  </p>
+</form>
+{% endif %}
+
+<h3>셀렉터 편집</h3>
+<form hx-put="/ui/crawlers/{{ crawler_id }}/selectors"
+      hx-target="#crawler-result"
+      hx-swap="innerHTML"
+      hx-disabled-elt="find button"
+      hx-indicator="#selectors-save-wait, #crawler-result-wait">
+  <fieldset>
+    <legend>크롤러 {{ crawler_id }}{% if status %} (상태 {{ status }}){% endif %}</legend>
+    <label for="selectors-json">셀렉터 JSON</label>
+    <br>
+    <textarea id="selectors-json" name="selectors_json" rows="24" cols="90"
+              spellcheck="false" class="w-full">{{ selectors_json }}</textarea>
+    <br>
+    <button type="submit">셀렉터 저장</button>
+    <span id="selectors-save-wait" class="wait-note">셀렉터를 저장하는 중</span>
+  </fieldset>
+</form>
+<p>
+  <a href="/tests">테스트 실행 화면으로 이동</a>
+</p>
+{% endif %}
+
+{% if crawlers is not none %}
+{# 등록·저장으로 목록의 상태가 바뀐다. 결과 영역과 함께 목록도 갈아 끼운다 #}
+<div id="crawler-list" hx-swap-oob="true">
+  {% include "fragments/crawler_list.html" %}
+</div>
+{% endif %}

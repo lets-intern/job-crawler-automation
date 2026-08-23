@@ -1,0 +1,83 @@
+"""FastAPI 앱. 라우터 등록과 스케줄러 기동."""
+
+import logging
+import sqlite3
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+
+from app import db
+from app.api import (
+    crawlers,
+    jobs,
+    review,
+    rules,
+    settings,
+    ui,
+    ui_crawlers,
+    ui_jobs,
+    ui_rules,
+    ui_rules_preview,
+    ui_settings,
+    ui_tests,
+    ui_workflows,
+    workflows,
+)
+from app.crawler.fetcher import close_fetcher
+from app.crawler.runner import close_orphan_runs
+from app.scheduler import get_scheduler, shutdown_scheduler
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    """기동 시 `workflows` 테이블에서 잡을 등록한다. 스키마 적용은 CLI 가 한다."""
+    conn = db.connect()
+    try:
+        orphans = close_orphan_runs(conn)
+        if orphans:
+            logger.warning("지난 프로세스가 남긴 미완 실행 %d건을 timeout 으로 닫았다", orphans)
+        try:
+            get_scheduler().start(conn)
+        except sqlite3.OperationalError:
+            # 스키마가 아직 없는 DB 다. 등록할 워크플로우도 없다.
+            #
+            # 운영에서는 컨테이너가 uvicorn 앞에서 마이그레이션을 돌리므로 여기 오지 않는다
+            # (`Dockerfile` 의 CMD). 여기서 예외를 올리면 스키마가 없다는 이유로 앱이 아예
+            # 뜨지 않아, 마이그레이션을 돌릴 화면도 API 도 못 쓰게 된다.
+            logger.warning("스키마가 없어 워크플로우를 등록하지 못했다. 마이그레이션이 필요하다")
+    finally:
+        conn.close()
+    try:
+        yield
+    finally:
+        shutdown_scheduler()
+        await close_fetcher()
+
+
+app = FastAPI(title="job-crawler-automation", lifespan=lifespan)
+app.include_router(crawlers.router)
+app.include_router(jobs.router)
+app.include_router(workflows.router)
+app.include_router(settings.router)
+app.include_router(rules.router)
+# 화면. API 라우터 뒤에 붙인다 — `/api/...` 가 먼저 잡힌다
+app.include_router(ui.router)
+app.include_router(ui_crawlers.router)
+app.include_router(ui_tests.router)
+app.include_router(ui_workflows.router)
+app.include_router(ui_rules.router)
+app.include_router(ui_rules_preview.router)
+app.include_router(ui_jobs.router)
+app.include_router(review.router)
+app.include_router(ui_settings.router)
+# 조각 요청의 실패는 200 과 오류 조각으로 나간다. HTMX 가 4xx·5xx 를 갈아 끼우지 않아
+# 그대로 두면 화면이 조용해진다. `/api/...` 의 상태 코드는 건드리지 않는다
+ui.install_ui_error_handlers(app)
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "ok"}

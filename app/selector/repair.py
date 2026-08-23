@@ -1,0 +1,384 @@
+"""실패한 필드만 다시 골라 달라고 모델에게 요청한다.
+
+2026-08-22 QA 에서 롯데 등록 때 모델이 계열사 링크 목록(`ul.family-group li`)을 `list.item`
+으로 잡았다. 사람이 브라우저로 HTML 을 열어 `ul.job-card-list` 를 찾아 손으로 넣었다. 그 일을
+모델에게 맡기는 것이 이 모듈이다.
+
+`.claude/rules/llm.md` 가 손 편집을 첫 수단으로 두고 **요청 없이 재생성하지 말라**고 못박고
+있다. 그래서 이 경로는 자동이 아니라 운영자가 누르는 버튼으로만 들어온다. 저장도 하지 않는다 —
+고치기 전과 후를 나란히 돌려줄 뿐이고, `crawlers.selectors_json` 을 바꾸는 것은 지금까지처럼
+`PUT /api/crawlers/{id}/selectors` 하나뿐이다.
+
+## 고치는 범위
+
+**실패한 필드만이다.** 잘 되는 필드는 응답에 무엇이 오든 원래 값을 그대로 쓴다. 모델이 한 번
+맞춘 것을 두 번째 호출에서 잃는 일이 없어야 하고, 그것을 프롬프트의 부탁이 아니라 코드로
+보장한다(`_overlay`).
+
+`건너뜀` 은 대상이 아니다. 셀렉터가 비어 있는 선택 필드는 "사이트에 그 항목이 없다"는 응답이라
+고칠 셀렉터가 없다. 억지로 채우면 잘못된 값이 공고마다 붙는다.
+
+돌려볼 HTML 이 없는 필드도 대상이 아니다. 상세 URL 없이 등록한 크롤러의 상세 필드가 그렇다 —
+0개 매칭이지만 판정하지 못한 것이지 틀린 것이 아니다.
+
+모델이 못 고친 필드는 원래 값이 남는다. 빈 문자열로 덮지 않는다.
+
+## 두 번째 API 경로를 만들지 않는다
+
+정제(`app/selector/cleaner.py`), 호출과 로그(`generator.call_model`), 스키마 검증
+(`app/selector/schema.py`)을 생성과 그대로 공유한다. 모델 ID·토큰·지연 로그와 "깨진 응답만
+1회 재시도" 규칙이 여기에도 같이 적용된다.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+from typing import Any
+
+from app.config import Settings, get_settings
+from app.crawler.fetcher import PageSource, get_fetcher
+from app.selector.cleaner import CleanedHtml, clean_html
+from app.selector.generator import (
+    MAX_ATTEMPTS,
+    SelectorGenerationError,
+    Usage,
+    build_client,
+    call_model,
+)
+from app.selector.schema import (
+    SelectorSchemaError,
+    SelectorSet,
+    parse_selectors,
+    parse_selectors_allowing_empty,
+)
+from app.selector.verify import FieldMatch, VerificationReport, verify_selectors
+
+logger = logging.getLogger(__name__)
+
+_PROMPT = """아래 채용 사이트의 셀렉터 중 몇 개가 지금 HTML 에서 아무것도 잡지 못한다.
+못 잡는 필드만 다시 골라라.
+
+규칙:
+- 고칠 필드는 "고쳐야 하는 필드" 에 적힌 것뿐이다. 나머지 필드는 "현재 셀렉터" 의 값을
+  그대로 옮겨 적는다. 다른 필드를 바꿔도 반영되지 않는다.
+- 주어진 HTML 에 실제로 있는 것만 쓴다. 본 적 없는 클래스명을 지어내지 않는다.
+- 이미 틀린 것으로 판정된 셀렉터를 그대로 다시 내지 않는다. 같은 답이면 고친 것이 아니다.
+- list.item 은 공고 하나에 해당하는 반복 요소다. 목록 전체를 감싸는 컨테이너가 아니고,
+  계열사 링크 목록이나 배너처럼 공고가 아닌 반복 요소도 아니다. 그 안에 공고 제목이 있는
+  반복 요소를 고른다.
+- list.title, list.link, list.date, list.company 는 list.item 안에서 찾을 수 있는
+  셀렉터로 쓴다.
+- list.link 는 상세 페이지로 가는 a 태그를 가리켜야 한다. 그 a 의 href 가 실제 주소여야 한다.
+  항목 안에 그런 a 가 없거나 href 가 javascript: 나 # 뿐이면 빈 문자열로 둔다.
+- link_template 은 항상 빈 문자열로 둔다. 상세 URL 형식은 이 HTML 만으로 알 수 없다.
+- 고칠 방법이 이 HTML 에 없으면 그 필드를 빈 문자열로 둔다. 억지로 아무 요소나 고르지 않는다.
+  잘못 고른 셀렉터는 못 고친 것보다 나쁘다 — 조용히 틀린 값이 공고마다 붙는다.
+
+[현재 셀렉터]
+{current}
+
+[고쳐야 하는 필드]
+{failures}
+
+[목록 페이지 {list_url}]
+{list_html}
+
+[상세 페이지 {detail_url}]
+{detail_html}
+"""
+
+
+class SelectorRepairError(RuntimeError):
+    """고치기 실패. `reason` 으로 다음 행동이 갈린다.
+
+    | reason | 다음 행동 |
+    |---|---|
+    | `nothing_to_repair` | 실패한 필드가 없다. 고칠 것이 없으니 호출하지 않는다 |
+    | 그 외 | `SelectorGenerationError` 와 같다. 생성 쪽 표를 본다 |
+    """
+
+    def __init__(self, reason: str, message: str) -> None:
+        super().__init__(message)
+        self.reason = reason
+
+
+@dataclass(frozen=True)
+class SelectorChange:
+    """필드 하나가 어떻게 바뀌었는지. 화면이 전/후를 나란히 적는 데 쓴다."""
+
+    name: str
+    before: str
+    after: str
+
+
+@dataclass(frozen=True)
+class RepairOutcome:
+    """고치기 결과. 저장하지 않는다 — 저장은 운영자가 버튼으로 한다.
+
+    `before` 와 `after` 는 **같은 HTML** 에 돌린 판정이다. 그래야 매칭 개수의 차이가 셀렉터
+    변화 때문이라고 말할 수 있다.
+    """
+
+    selectors: SelectorSet
+    before: VerificationReport
+    after: VerificationReport
+    usage: Usage
+    attempts: int
+    targets: list[str]
+    changes: list[SelectorChange]
+    # 고친 뒤에도 남은 실패. `after` 를 `targets` 와 같은 기준으로 다시 판정한 결과다 —
+    # 억지로 성공으로 만들지 않는다
+    unresolved: list[str]
+    notes: list[str] = field(default_factory=list)
+
+    @property
+    def repaired(self) -> list[str]:
+        """고쳐진 필드. 대상이었고 지금은 실패가 아니다."""
+        remaining = set(self.unresolved)
+        return [name for name in self.targets if name not in remaining]
+
+    @property
+    def ok(self) -> bool:
+        return not self.unresolved
+
+
+async def repair_for_urls(
+    list_url: str,
+    detail_url: str,
+    selectors: SelectorSet,
+    *,
+    source: PageSource | None = None,
+    settings: Settings | None = None,
+    client: Any | None = None,
+) -> RepairOutcome:
+    """저장된 URL 을 다시 가져와 고친다.
+
+    HTML 은 어디에도 보관하지 않으므로(`.claude/rules/data-safety.md`) 고칠 때 다시 가져온다.
+    가져오는 것은 공용 fetch 클라이언트이거나 렌더러다 — 어느 쪽인지는 `crawlers.render_mode`
+    를 읽는 호출부가 정한다 (`.claude/rules/crawling.md`).
+    """
+    resolved_source = source or get_fetcher()
+    list_html = (await resolved_source.fetch(list_url)).text
+    detail_html = ""
+    if detail_url.strip():
+        detail_html = (await resolved_source.fetch(detail_url)).text
+    return await repair_from_html(
+        list_html,
+        detail_html,
+        selectors,
+        list_url=list_url,
+        detail_url=detail_url,
+        settings=settings,
+        client=client,
+    )
+
+
+async def repair_from_html(
+    list_html: str,
+    detail_html: str,
+    selectors: SelectorSet,
+    *,
+    list_url: str = "",
+    detail_url: str = "",
+    settings: Settings | None = None,
+    client: Any | None = None,
+) -> RepairOutcome:
+    """이미 가져온 HTML 로 고친다. 저장된 픽스처로 돌릴 수 있는 경로다."""
+    resolved = settings or get_settings()
+    before = verify_selectors(selectors, list_html, detail_html)
+    targets = repair_targets(before, has_detail_html=bool(detail_html.strip()))
+    if not targets:
+        raise SelectorRepairError(
+            "nothing_to_repair",
+            "실패한 필드가 없다. 건너뛴 필드는 사이트에 그 항목이 없다는 뜻이라 고칠 셀렉터가 없다",
+        )
+
+    resolved_client = client or build_client(resolved)
+    model = resolved.gemini_model
+    cleaned_list = clean_html(list_html)
+    cleaned_detail = clean_html(detail_html) if detail_html.strip() else None
+    prompt = build_prompt(
+        selectors, before, targets, cleaned_list, cleaned_detail, list_url, detail_url
+    )
+
+    proposal, attempts, usage, extra_notes = await _ask(resolved_client, model, prompt)
+
+    repaired, changes = _overlay(selectors, proposal, targets)
+    after = verify_selectors(repaired, list_html, detail_html)
+    # 고친 뒤 판정을 대상 고르기와 같은 함수로 다시 돌린다. 두 벌로 판정하면 "고쳤다"고
+    # 적힌 필드가 다음 실행에서 다시 실패로 나온다
+    remaining = set(repair_targets(after, has_detail_html=bool(detail_html.strip())))
+    outcome = RepairOutcome(
+        selectors=repaired,
+        before=before,
+        after=after,
+        usage=usage,
+        attempts=attempts,
+        targets=targets,
+        changes=changes,
+        unresolved=[name for name in targets if name in remaining],
+        notes=_notes(cleaned_list, cleaned_detail) + extra_notes,
+    )
+    logger.info(
+        "셀렉터 고치기 model=%s 대상=%s 고쳐짐=%s 남은실패=%s",
+        model,
+        ", ".join(targets),
+        ", ".join(outcome.repaired) or "없음",
+        ", ".join(outcome.unresolved) or "없음",
+    )
+    return outcome
+
+
+def repair_targets(report: VerificationReport, *, has_detail_html: bool) -> list[str]:
+    """고칠 필드 이름. 실패한 것만이고 순서는 화면의 표와 같다.
+
+    `건너뜀` 은 빠진다 — `report.failed` 가 이미 그것을 제외한다. 상세 HTML 이 없을 때
+    상세 필드도 빠진다. 볼 페이지가 없어 0개 매칭인 것이지 셀렉터가 틀린 것이 아니라,
+    고쳐 봐야 맞는지 확인할 방법이 없다.
+
+    예외가 하나 있다. `list.item` 이 노드를 잡았는데 그 안의 제목·링크·날짜가 **전부** 실패면
+    항목 셀렉터도 대상이다(`VerificationReport.list_fields_missing`). 2026-08-22 롯데가 그
+    모양이었다 — 계열사 링크 목록을 항목으로 잡아서 항목은 4건 잡히고 그 안은 비어 있었다.
+    항목을 그대로 두면 그 안의 셀렉터를 무엇으로 바꿔도 잡을 것이 없다. 셋 중 하나만 실패한
+    경우에는 건드리지 않는다 — 그때는 항목이 맞고 그 필드 하나가 틀린 것이다.
+    """
+    failed = [name for name in report.failed if has_detail_html or not name.startswith("detail.")]
+    if report.list_fields_missing and "list.item" not in failed:
+        return ["list.item", *failed]
+    return failed
+
+
+def build_prompt(
+    selectors: SelectorSet,
+    report: VerificationReport,
+    targets: list[str],
+    cleaned_list: CleanedHtml,
+    cleaned_detail: CleanedHtml | None,
+    list_url: str = "",
+    detail_url: str = "",
+) -> str:
+    """지금 셀렉터 전부와 실패한 필드의 사유를 함께 넣는다.
+
+    지금 셀렉터를 통째로 주는 것은 모델이 **무엇이 이미 맞는지 알아야 그것을 피해 고르기**
+    때문이다. 실패한 필드만 주면 이미 맞는 `list.title` 과 겹치는 셀렉터를 내놓는다.
+    """
+    return _PROMPT.format(
+        current=selectors.to_json(),
+        failures=_failure_lines(report, targets),
+        list_url=list_url,
+        list_html=cleaned_list.html,
+        detail_url=detail_url or "(없음)",
+        detail_html=cleaned_detail.html if cleaned_detail else "(상세 페이지를 가져오지 않았다)",
+    )
+
+
+def _failure_lines(report: VerificationReport, targets: list[str]) -> str:
+    """필드 이름 + 지금 셀렉터 + 왜 실패했는지. 사유가 있어야 무엇을 바꿀지 정해진다."""
+    by_name: dict[str, FieldMatch] = {item.name: item for item in report.fields}
+    lines: list[str] = []
+    for name in targets:
+        item = by_name.get(name)
+        if item is None:
+            continue
+        current = item.selector or "(비어 있음)"
+        reason = item.message or _no_message_reason(item)
+        lines.append(f"- {name}: 지금 `{current}` — {reason}")
+    return "\n".join(lines)
+
+
+def _no_message_reason(item: FieldMatch) -> str:
+    """사유가 비어 있는 대상. `list.item` 이 잡기는 했는데 그 안이 빈 경우가 여기다."""
+    if item.ok:
+        return (
+            f"노드 {item.matches}건을 잡았지만 그 안에서 제목·링크·날짜를 하나도 뽑지 못했다. "
+            "공고 목록이 아닌 다른 반복 요소를 잡았을 수 있다"
+        )
+    return "매칭 0개"
+
+
+async def _ask(client: Any, model: str, prompt: str) -> tuple[SelectorSet, int, Usage, list[str]]:
+    """모델에게 묻고 스키마로 검증한다. 재시도 규칙은 생성과 같다 — 깨진 응답만 1회."""
+    last_error: SelectorSchemaError | None = None
+    last_text = ""
+    usage: Usage | None = None
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        last_text, usage = await call_model(client, model, prompt, attempt, kind="고치기")
+        try:
+            return parse_selectors(last_text), attempt, usage, []
+        except SelectorSchemaError as exc:
+            logger.warning(
+                "셀렉터 고치기 응답 거절 model=%s attempt=%d reason=%s message=%s",
+                model,
+                attempt,
+                exc.reason,
+                exc,
+            )
+            if exc.reason == "unknown_field":
+                # 스키마에 없는 필드를 지어냈다. 무엇이었을지 추측하지 않는다
+                raise SelectorRepairError(exc.reason, str(exc)) from exc
+            last_error = exc
+
+    assert last_error is not None  # 루프는 최소 한 번 돈다
+    assert usage is not None
+
+    if last_error.reason == "missing_field":
+        # 모양은 맞는데 어떤 자리가 비었다. 통째로 버리지 않는다 — 비어 있는 자리는 `_overlay`
+        # 가 원래 값으로 되돌리므로, 고쳐진 필드만 얹고 나머지는 그대로 남는다
+        proposal, empty = parse_selectors_allowing_empty(last_text)
+        return (
+            proposal,
+            MAX_ATTEMPTS,
+            usage,
+            [f"모델이 비워 둔 필드: {', '.join(empty)}. 그 자리는 원래 셀렉터가 그대로 남는다"],
+        )
+
+    raise SelectorRepairError(
+        "unparsable", f"{MAX_ATTEMPTS}회 모두 스키마에 맞지 않았다: {last_error}"
+    ) from last_error
+
+
+def _overlay(
+    original: SelectorSet, proposal: SelectorSet, targets: list[str]
+) -> tuple[SelectorSet, list[SelectorChange]]:
+    """실패한 필드만 새 값으로 갈아 끼운다.
+
+    이 함수가 "잘 되는 필드를 잃지 않는다" 를 보장하는 자리다. 프롬프트에 부탁해 두는 것으로는
+    보장이 되지 않는다 — 모델이 맞던 `list.title` 을 다른 값으로 내놓아도 여기서 버린다.
+
+    빈 값도 버린다. 모델이 못 고쳤다는 뜻이고, 원래 셀렉터가 남아 있어야 운영자가 손으로 고칠
+    대상이 된다 (`.claude/rules/llm.md`).
+    """
+    data = original.model_dump()
+    proposed = proposal.model_dump()
+    changes: list[SelectorChange] = []
+    for name in targets:
+        section, _, key = name.partition(".")
+        if section not in data or key not in data[section]:
+            continue
+        current = str(data[section][key])
+        candidate = str(proposed.get(section, {}).get(key, "")).strip()
+        if not candidate or candidate == current:
+            continue
+        data[section][key] = candidate
+        changes.append(SelectorChange(name=name, before=current, after=candidate))
+    return SelectorSet(**data), changes
+
+
+def _notes(cleaned_list: CleanedHtml, cleaned_detail: CleanedHtml | None) -> list[str]:
+    """입력을 좁혔거나 잘랐으면 결과에 남긴다 (`.claude/rules/llm.md`)."""
+    notes = [f"목록: {note}" for note in cleaned_list.notes()]
+    if cleaned_detail is not None:
+        notes.extend(f"상세: {note}" for note in cleaned_detail.notes())
+    return notes
+
+
+__all__ = [
+    "RepairOutcome",
+    "SelectorChange",
+    "SelectorGenerationError",
+    "SelectorRepairError",
+    "repair_for_urls",
+    "repair_from_html",
+    "repair_targets",
+]

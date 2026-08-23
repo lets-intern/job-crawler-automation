@@ -1,0 +1,274 @@
+"""셀렉터 JSON 을 HTML 에 적용해 목록 항목과 상세 필드를 뽑는다.
+
+여기서 하는 것은 "셀렉터가 잡은 노드에서 값을 꺼내는 것"까지다. 꺼낸 텍스트는 손대지 않는다 —
+앞뒤 공백, 줄바꿈, 사이에 낀 광고 문구를 여기서 지우면 지저분한 값 하나 때문에 셀렉터가
+사이트 구조가 아니라 그 사이트의 텍스트에 묶인다. 정제는 정규화 규칙의 몫이다 (`CLAUDE.md`).
+
+이 모듈은 네트워크를 모른다. HTML 문자열을 받아서 결과나 예외를 돌려줄 뿐이고, 가져오는 일은
+`app/crawler/fetcher.py` 가 한다.
+
+실패는 두 가지로 나뉘고, 조치가 다르다 (`.claude/rules/crawling.md`).
+
+| 예외 | 뜻 | 조치 |
+|---|---|---|
+| `SelectorMissError` | 가져오기는 됐는데 item 셀렉터가 0개 매칭 | 재시도 금지. 셀렉터 재작성 |
+| `FieldParseError` | 매칭은 됐는데 필요한 필드를 못 읽음 | 그 필드만 보정 |
+
+목록 항목 0건은 실패다. 신규 0건인 정상 실행과 같은 결과로 남기지 않는다.
+
+상세 링크를 어디서 뽑는지는 `app/selector/link.py` 가 정한다. `href` 를 읽는 것이 기본이고,
+`list.link_template` 이 있으면 항목의 속성값으로 URL 을 만든다. 어느 쪽이든 여기서는 목록
+URL 과 합쳐 절대 URL 로 만들 뿐이고, 따라가도 되는 URL 인지는 공용 fetch 클라이언트가 다시
+본다.
+"""
+
+from __future__ import annotations
+
+import copy
+from dataclasses import dataclass
+from urllib.parse import urljoin
+
+from bs4 import BeautifulSoup
+from bs4.element import Tag
+from soupsieve import SelectorSyntaxError
+
+from app.selector.link import LinkResult, resolve_link
+from app.selector.schema import DETAIL_FIELDS, DetailSelectors, ListSelectors
+
+# 이 값이 없으면 공고를 식별할 수도, 상세로 따라갈 수도 없다. 나머지는 비어도 항목이 남는다.
+REQUIRED_LIST_FIELDS: tuple[str, ...] = ("title", "link")
+
+# 상세에서 이 둘이 비면 적재할 내용이 없다. 나머지는 사이트에 항목 자체가 없을 수 있다.
+REQUIRED_DETAIL_FIELDS: tuple[str, ...] = ("title", "body")
+
+
+class CrawlDataError(Exception):
+    """가져오기는 성공한 뒤에 생긴 실패. `error_class` 는 `crawl_runs.error_class` 로 간다."""
+
+    error_class = "parse"
+
+
+class SelectorMissError(CrawlDataError):
+    """item 셀렉터가 0개 매칭. 사이트 구조가 바뀌었거나 JS 렌더링이다."""
+
+    error_class = "selector_miss"
+
+
+class FieldParseError(CrawlDataError):
+    """노드는 잡았는데 필드를 읽지 못했다."""
+
+    error_class = "parse"
+
+
+@dataclass(frozen=True)
+class FieldFailure:
+    """항목 하나에서 실패한 필드 하나. `index` 는 목록에서의 순번이다."""
+
+    index: int
+    field: str
+    message: str
+
+
+@dataclass(frozen=True)
+class ListItem:
+    """목록에서 뽑은 항목 하나. `link` 만 절대 URL 로 만들고 나머지는 원문 그대로다."""
+
+    index: int
+    title: str
+    link: str
+    date: str
+    # 셀렉터가 없거나 못 찾으면 빈 문자열이다. 회사명이 없는 사이트가 흔하다
+    company: str = ""
+    # 상세 페이지가 없는 사이트다. 실행이 상세를 따라가지 않는다
+    detail_absent: bool = False
+
+
+@dataclass(frozen=True)
+class ListParseResult:
+    matched: int
+    items: list[ListItem]
+    failures: list[FieldFailure]
+
+
+@dataclass(frozen=True)
+class DetailParseResult:
+    """`fields` 는 상세 셀렉터 이름 그대로다. `missing` 은 셀렉터는 있는데 0개 매칭인 선택 필드."""
+
+    fields: dict[str, str]
+    missing: list[str]
+
+
+def list_only(selectors: ListSelectors) -> bool:
+    """상세로 갈 길이 아예 없는 사이트인가.
+
+    `link` 와 `link_template` 이 둘 다 비어 있으면 모델이 "이 목록에는 상세 링크가 없다" 고
+    답한 것이다. 삼성처럼 상세를 JS 로 그려 별도 주소가 없는 사이트가 그렇다.
+
+    셀렉터가 비어 있는 것과, 셀렉터가 있는데 0개 매칭인 것은 다르다. 앞의 것은 없는 것이고
+    뒤의 것은 실패다 — 화면의 `건너뜀` / `실패` 구분과 같은 기준이다.
+    """
+    return not selectors.link.strip() and not selectors.link_template.strip()
+
+
+def parse_list(html: str, selectors: ListSelectors, base_url: str) -> ListParseResult:
+    """목록 페이지에서 항목을 뽑는다. 0개 매칭은 `SelectorMissError` 다.
+
+    상세 링크가 없는 사이트는 목록에서 읽은 것만으로 항목을 만든다. `link` 는 목록 페이지
+    주소가 되고, 상세는 따라가지 않는다.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    nodes = _select(soup, selectors.item, "list.item")
+    if not nodes:
+        raise SelectorMissError(
+            f"list.item `{selectors.item}` 이 0개 매칭됐다. 사이트 구조가 바뀌었거나 JS 렌더링이다"
+        )
+
+    items: list[ListItem] = []
+    failures: list[FieldFailure] = []
+    link_absent = list_only(selectors)
+
+    for index, node in enumerate(nodes):
+        title = _text(node, selectors.title, f"list.title[{index}]")
+        link = _link(node, selectors, index)
+        date = _text(node, selectors.date, f"list.date[{index}]")
+        company = (
+            _text(node, selectors.company, f"list.company[{index}]") if selectors.company else ""
+        )
+
+        problems: list[FieldFailure] = []
+        if not title:
+            problems.append(
+                FieldFailure(
+                    index=index, field="title", message="셀렉터가 항목 안에서 값을 찾지 못했다"
+                )
+            )
+        if not link.ok and not link_absent:
+            # 링크는 왜 못 뽑았는지가 조치를 가른다. href 가 없는 것과 속성이 없는 것은
+            # 다른 문제다 (`app/selector/link.py`)
+            problems.append(FieldFailure(index=index, field="link", message=link.reason))
+        if problems:
+            failures.extend(problems)
+            continue
+
+        items.append(
+            ListItem(
+                index=index,
+                title=title,
+                # 상세로 갈 길이 없으면 목록 주소를 남긴다. 공고를 가리키는 주소는 그것뿐이고,
+                # 같은 값이어도 content_hash 는 title·deadline·body 로 공고를 가른다
+                link=base_url if link_absent else urljoin(base_url, link.url),
+                date=date,
+                company=company,
+                detail_absent=link_absent,
+            )
+        )
+
+    if not items:
+        # 실제로 못 읽은 필드만 적는다. 필수 필드 이름을 통째로 적으면 title 은 멀쩡한데
+        # link 만 없는 사이트에서 운영자가 두 필드를 다 뒤지게 된다
+        unread = [name for name in REQUIRED_LIST_FIELDS if any(f.field == name for f in failures)]
+        # 첫 항목의 사유까지 붙인다. 이 문구가 crawl_runs.error_message 로 남아서, 다음
+        # 사람이 실행을 다시 돌리지 않고도 무엇이 없었는지 알게 된다
+        raise FieldParseError(
+            f"item {len(nodes)}건을 잡았지만 어느 항목에서도 {', '.join(unread)} 를 "
+            f"읽지 못했다: {failures[0].message}"
+        )
+
+    return ListParseResult(matched=len(nodes), items=items, failures=failures)
+
+
+def parse_detail(html: str, selectors: DetailSelectors) -> DetailParseResult:
+    """상세 페이지에서 필드를 뽑는다. 필수 필드를 못 읽으면 `FieldParseError` 다."""
+    soup = BeautifulSoup(html, "html.parser")
+    fields: dict[str, str] = {}
+    missing: list[str] = []
+
+    for name in DETAIL_FIELDS:
+        selector = getattr(selectors, name)
+        if not selector:
+            # 사이트에 그 항목이 없다는 응답이다. 빈 값이지 실패가 아니다.
+            fields[name] = ""
+            continue
+
+        value = _text(soup, selector, f"detail.{name}")
+        fields[name] = value
+        if not value:
+            missing.append(name)
+
+    unreadable = [name for name in REQUIRED_DETAIL_FIELDS if not fields[name]]
+    if unreadable:
+        raise FieldParseError(f"상세에서 필수 필드를 읽지 못했다: {', '.join(unreadable)}")
+
+    return DetailParseResult(fields=fields, missing=missing)
+
+
+def _select(scope: BeautifulSoup | Tag, selector: str, name: str) -> list[Tag]:
+    try:
+        return list(scope.select(selector))
+    except SelectorSyntaxError as exc:
+        raise FieldParseError(f"{name} 셀렉터 문법 오류: {exc}") from exc
+
+
+# 줄이 바뀌어야 하는 태그. 이 목록에 없는 것(strong, span, a 같은 인라인)은 앞뒤 글자와
+# 이어져야 한다 — 거기까지 줄을 넣으면 문장 하나가 여러 줄로 쪼개진다.
+BLOCK_TAGS: frozenset[str] = frozenset(
+    {
+        "address",
+        "article",
+        "blockquote",
+        "br",
+        "dd",
+        "div",
+        "dl",
+        "dt",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "hr",
+        "li",
+        "ol",
+        "p",
+        "pre",
+        "section",
+        "table",
+        "td",
+        "th",
+        "tr",
+        "ul",
+    }
+)
+
+
+def _text(scope: BeautifulSoup | Tag, selector: str, name: str) -> str:
+    """첫 매칭 노드의 텍스트. 매칭이 없으면 빈 문자열이다.
+
+    블록 태그 경계에 줄바꿈을 넣고 뽑는다. `get_text()` 를 그냥 부르면 `<h3>조직소개</h3>`
+    와 뒤따르는 `<p>` 가 한 줄로 이어붙어, 본문 전체가 한 문단처럼 보인다. 실제로
+    현대자동차 공고 본문 1,955자가 그렇게 들어왔다.
+
+    이것을 정규화로는 고칠 수 없다. 정규화가 값을 받는 시점에는 어디가 문단 경계였는지가
+    이미 사라진 뒤다. 구조를 아는 것은 여기뿐이다.
+
+    남는 빈 줄은 여기서 정리하지 않는다. `\n{3,}` 를 줄이는 것은 정규화 규칙의 일이다.
+    """
+    nodes = _select(scope, selector, name)
+    if not nodes:
+        return ""
+
+    # 원본을 복사해서 손댄다. 같은 트리에서 다른 필드도 뽑으므로 트리를 바꾸면 안 된다.
+    node = copy.copy(nodes[0])
+    for tag in node.find_all(BLOCK_TAGS):
+        tag.insert_before("\n")
+        tag.insert_after("\n")
+    return node.get_text()
+
+
+def _link(node: Tag, selectors: ListSelectors, index: int) -> LinkResult:
+    """상세 링크. 뽑는 방식과 실패 사유는 `app/selector/link.py` 가 정한다."""
+    try:
+        return resolve_link(node, selectors)
+    except SelectorSyntaxError as exc:
+        raise FieldParseError(f"list.link[{index}] 셀렉터 문법 오류: {exc}") from exc

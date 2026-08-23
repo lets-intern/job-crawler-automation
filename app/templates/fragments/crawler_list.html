@@ -1,0 +1,69 @@
+{# 등록된 크롤러 표. 페이지 로드 때 한 번, 등록·저장 뒤 OOB 로 다시 들어온다 #}
+<div class="table-scroll">
+<table class="data-table">
+  <caption>등록된 크롤러</caption>
+  <thead>
+    <tr>
+      <th scope="col" class="num">번호</th>
+      <th scope="col">이름</th>
+      <th scope="col">상태</th>
+      <th scope="col">렌더</th>
+      <th scope="col">회사명</th>
+      <th scope="col">리스트 URL</th>
+      <th scope="col">동작</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for crawler in crawlers %}
+    <tr>
+      <td class="num">{{ crawler.id }}</td>
+      <td class="cell-text">{{ crawler.name }}</td>
+      <td>
+        {% if crawler.status == "promoted" %}<span class="badge badge-ok">승격됨</span>
+        {% elif crawler.status == "tested" %}<span class="badge badge-idle">테스트됨</span>
+        {% else %}<span class="badge badge-idle">초안</span>{% endif %}
+        <span class="text-xs text-slate-500">({{ crawler.status }})</span>
+      </td>
+      <td>
+        {{ crawler.render_mode }}
+        {# 승격은 운영자가 정한다. 자동으로 렌더로 올라가는 경로는 없다 #}
+        <form hx-put="/ui/crawlers/{{ crawler.id }}/render-mode"
+              hx-target="#crawler-result"
+              hx-swap="innerHTML"
+              hx-disabled-elt="find button"
+              hx-indicator="closest form, #crawler-result-wait">
+          <input type="hidden" name="render_mode"
+                 value="{% if crawler.render_mode == 'playwright' %}static{% else %}playwright{% endif %}">
+          <button type="submit">{% if crawler.render_mode == 'playwright' %}정적으로{% else %}렌더로{% endif %}</button>
+          <span class="wait-note">바꾸는 중</span>
+        </form>
+      </td>
+      <td>{{ crawler.default_company or "안 적음" }}</td>
+      <td class="cell-url">
+        <span class="cell-url-value" title="{{ crawler.list_url }}">{{ crawler.list_url }}</span>
+      </td>
+      <td>
+        <button type="button"
+                hx-get="/ui/crawlers/{{ crawler.id }}/editor"
+                hx-target="#crawler-result"
+                hx-swap="innerHTML"
+                hx-disabled-elt="this"
+                hx-indicator="#crawler-result-wait">셀렉터 편집</button>
+        {# 삭제는 되돌릴 수 없다. 누르기 전에 hx-confirm 이 한 번 확인을 받는다.
+           승격된 크롤러인지는 여기서 판정하지 않는다 — API 가 409 로 거절하고 그 사유가
+           결과 영역에 그대로 들어온다 (`app/api/crawlers.py`) #}
+        <button type="button"
+                hx-delete="/ui/crawlers/{{ crawler.id }}"
+                hx-confirm="크롤러 {{ crawler.id }}({{ crawler.name }}) 를 지운다. 되돌릴 수 없다."
+                hx-target="#crawler-result"
+                hx-swap="innerHTML"
+                hx-disabled-elt="this"
+                hx-indicator="#crawler-result-wait">삭제</button>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" class="cell-text text-slate-600">등록된 크롤러가 없다. 위 <span class="font-medium">새 크롤러</span> 에 리스트 URL 과 상세 URL 을 넣어 셀렉터를 생성하면 여기에 들어온다</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>

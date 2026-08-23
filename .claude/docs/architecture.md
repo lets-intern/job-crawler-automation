@@ -50,20 +50,22 @@ app/
 ├── main.py             FastAPI 앱, 라우터 등록, 스케줄러 기동
 ├── config.py           환경변수
 ├── db.py               SQLite 연결, 마이그레이션 실행
+├── settings.py         DB 에 저장되는 운영 설정 (동시 실행 상한)
 ├── models/             테이블 모델
 ├── crawler/
 │   ├── fetcher.py      공용 HTTP 클라이언트. 유일한 외부 요청 경로
 │   ├── parser.py       셀렉터 JSON 적용
 │   ├── runner.py       1회 실행 = crawl_runs 행 하나
-│   └── playwright.py   JS 렌더링이 필요한 사이트 전용
+│   └── playwright.py   브라우저 렌더. 사이트별로 올린 크롤러만 이 경로로 간다
 ├── selector/
 │   ├── cleaner.py      HTML 정제·샘플링
-│   ├── generator.py    Anthropic API 호출
+│   ├── generator.py    Gemini API 호출
 │   └── schema.py       셀렉터 JSON 스키마와 검증
 ├── scheduler.py        APScheduler 등록·갱신·동시성 상한
 ├── normalize/
 │   ├── engine.py       규칙 적용
-│   └── rules.py        규칙 타입 정의
+│   ├── rules.py        규칙 타입 정의
+│   └── backfill.py     수동 재정규화
 ├── api/                라우터
 ├── templates/          Jinja2
 └── cli.py              운영 명령 (test-run, workflow, fetch)
@@ -78,6 +80,17 @@ tests/
 딜레이·User-Agent·robots 확인·재시도가 전부 여기 있고, 다른 경로가 생기는 순간 레포에 적힌
 어떤 rate limit 도 사실이 아니게 된다. `.claude/rules/crawling.md` 참조.
 
+## 가져오는 방식은 크롤러마다 갈린다
+
+`crawlers.render_mode` 가 정적(httpx)과 렌더(Playwright) 중 하나를 고른다. 새 크롤러의 기본은
+정적이다 — 렌더는 실행마다 브라우저 하나(150~300MB)와 몇 초를 쓰고, 정적은 사실상 그 비용이
+없다.
+
+올리는 일은 자주 있다. 측정한 사이트 6개 중 4개가 JS 로 목록을 그려서 정적으로는 빈 목록이
+온다. 그래도 기본값이 아니라 사이트별 승격으로 두는 이유는 비용이고, 어느 쪽이 필요한지는
+테스트 실행 화면에서 같은 크롤러를 두 모드로 돌려 필드별 매칭 수를 비교해 정한다. 브라우저
+수명은 어느 쪽이든 실행 하나 안이다 (`app/crawler/playwright.py` 의 `open_source()`).
+
 ## 실행 1회의 흐름
 
 1. 스케줄러가 워크플로우를 깨운다. 이미 실행 중이면 스킵하고 로그를 남긴다
@@ -91,10 +104,31 @@ tests/
 
 어떤 경로로 끝나든 8번은 실행된다. 행이 없는 실행은 아무도 디버깅할 수 없다.
 
+## 동시 실행 상한
+
+고정값이 아니라 어드민 화면에서 바꾸는 운영 설정이다 (2026-08-21 결정).
+
+`.env` 의 `MAX_CONCURRENT_RUNS` 는 값이 아직 없을 때 한 번 넣어 주는 초기값이고, 그 뒤로는
+`app_settings` 테이블이 진실이다. 값이 바뀌면 프로세스를 다시 띄우지 않고 다음 실행부터
+새 상한이 적용된다. 이미 돌고 있는 실행은 끊지 않는다.
+
+읽고 쓰는 곳은 `app/settings.py`, 상한을 실제로 거는 곳은 `app/scheduler.py` 다.
+
+## 기존 데이터 재정규화
+
+규칙을 저장해도 기존 `normalized_jobs` 는 그대로다 (2026-08-21 결정). 운영자가 재정규화를
+명시적으로 실행했을 때만 `raw_jobs` 를 다시 읽어 갱신한다.
+
+규칙 저장에 재처리를 묶지 않는 이유는 하나다. 규칙 다섯 개를 손보는 동안 같은 데이터를
+다섯 번 다시 쓰게 된다.
+
+재정규화는 크롤링 실행이 아니라 `crawl_runs` 에 쓰지 않고, `delivered_at` 도 건드리지 않는다.
+진행 상황은 한 프로세스 안의 메모리에 두고, 돌고 있는 동안 들어온 요청은 거부한다.
+
+동작은 `app/normalize/backfill.py`, 트리거는 `app/api/rules.py` 의 `/api/rules/renormalize` 다.
+
 ## 미결정 사항
 
 PRD 9장의 항목들. 결정되면 이 문서와 해당 rule 을 같이 고친다.
 
-- 동시 실행 상한값 (세마포어 크기)
-- 정규화 규칙 변경 시 기존 데이터 일괄 재처리 방식
 - 셀렉터 생성 실패 시 재시도 정책의 상세 — 현재는 `rules/llm.md` 의 "깨진 응답만 1회"

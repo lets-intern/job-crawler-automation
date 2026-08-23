@@ -1,0 +1,15 @@
+{# 조각 라우트가 걸러내지 못한 실패. 대상 영역에 들어가고, 같은 내용을 화면 위 한 자리에도
+   OOB 로 띄운다. 대상이 표 행처럼 이 조각을 받기 어려운 자리일 때도 실패가 보여야 한다 #}
+<div class="rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
+  <p><span class="font-semibold">실패</span> — {{ error.reason }}</p>
+  <p class="mt-1">{{ error.message }}</p>
+  {% if error.next %}<p class="mt-1 text-red-700">다음: {{ error.next }}</p>{% endif %}
+</div>
+
+<div id="global-error" hx-swap-oob="true" role="alert"
+     class="mx-auto max-w-7xl px-6 pt-4">
+  <div class="rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
+    <p><span class="font-semibold">실패</span> — {{ error.reason }}: {{ error.message }}</p>
+    {% if error.next %}<p class="mt-1 text-red-700">다음: {{ error.next }}</p>{% endif %}
+  </div>
+</div>

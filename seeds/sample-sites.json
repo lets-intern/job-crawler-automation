@@ -1,0 +1,87 @@
+{
+  "note": "국내 대기업 채용 사이트 테스트 입력값. 셀렉터 생성과 테스트 실행을 시험할 때 쓴다. 사이트 특성을 알아내면 .claude/site-recipes/ 에 따로 기록한다.",
+  "recorded_at": "2026-08-22",
+  "sites": [
+    {
+      "name": "삼성",
+      "list_url": "https://www.samsungcareers.com/hr/",
+      "detail_url": null,
+      "notes": "상세 페이지가 JS DOM 으로 그려져 별도 상세 URL 이 없다. 리스트 항목에 따라갈 링크가 없는 구조다. 현재 셀렉터 스키마는 list.link 를 필수로 요구하므로 이 사이트는 그대로 등록되지 않는다.",
+      "expected_issues": [
+        "detail_link_absent",
+        "js_render"
+      ],
+      "measured": {
+        "static_text_chars": 816,
+        "repeating_items": 4,
+        "verdict": "정적 확인 필요"
+      }
+    },
+    {
+      "name": "SK",
+      "list_url": "https://www.skcareers.com/Recruit",
+      "detail_url": "https://www.skcareers.com/Recruit/Detail/R261580",
+      "notes": "상세 URL 이 /Recruit/Detail/<공고ID> 형태의 경로 기반이다.",
+      "expected_issues": [],
+      "measured": {
+        "static_text_chars": 608,
+        "repeating_items": 0,
+        "verdict": "JS 렌더"
+      }
+    },
+    {
+      "name": "한화",
+      "list_url": "https://www.hanwhain.com/portal/apply/recruit",
+      "detail_url": "https://www.hanwhain.com/portal/apply/recruit/detail?rtSeq=19477",
+      "notes": "상세 URL 이 rtSeq 쿼리 파라미터로 공고를 구분한다.",
+      "expected_issues": [],
+      "measured": {
+        "static_text_chars": 70,
+        "repeating_items": 0,
+        "verdict": "JS 렌더"
+      }
+    },
+    {
+      "name": "현대자동차",
+      "list_url": "https://talent.hyundai.com/theme/hall.hc",
+      "detail_url": "https://talent.hyundai.com/apply/applyView.hc?recuYy=2026&recuType=N2&recuCls=316",
+      "notes": "상세 URL 이 recuYy, recuType, recuCls 세 파라미터의 조합이다. 단일 ID 가 아니라 링크 추출 시 쿼리 전체를 보존해야 한다.",
+      "expected_issues": [
+        "multi_param_detail_url"
+      ],
+      "measured": {
+        "static_text_chars": 13,
+        "repeating_items": 0,
+        "verdict": "JS 렌더"
+      }
+    },
+    {
+      "name": "롯데",
+      "list_url": "https://recruit.lotte.co.kr/apply/announcement",
+      "detail_url": "https://recruit.lotte.co.kr/apply/announcement/detail/21931885?compcd=?id=bookmark1003",
+      "notes": "사용자가 준 상세 URL 에 물음표가 두 번 들어 있다(compcd=?id=bookmark1003). 받은 값을 그대로 적었다. 실제 크롤링 시 정규 형태를 확인해야 한다.",
+      "expected_issues": [
+        "malformed_query_in_sample"
+      ],
+      "measured": {
+        "static_text_chars": 5685,
+        "repeating_items": 6,
+        "verdict": "정적으로 목록 있음"
+      }
+    },
+    {
+      "name": "LG",
+      "list_url": "https://careers.lg.com/apply",
+      "detail_url": "https://careers.lg.com/apply/detail?id=1002099",
+      "notes": "사용자 메시지에서 리스트와 상세 라벨이 바뀌어 있었다. /apply 를 리스트, /apply/detail?id= 를 상세로 읽었다.",
+      "expected_issues": [],
+      "measured": {
+        "static_text_chars": 10,
+        "repeating_items": 0,
+        "verdict": "JS 렌더"
+      }
+    }
+  ],
+  "measured_at": "2026-08-22",
+  "measurement_note": "공용 fetch 클라이언트로 리스트 URL 을 각 1회 받아, script/style/nav/header/footer 제거 후 남은 본문 길이와 반복 항목 수를 셌다. 반복 항목 3개 미만이면 정적 목록이 없다고 본다."
+}

@@ -1,0 +1,144 @@
+{# 테스트 실행 결과. 상태는 단어로만 적는다 #}
+{% if error %}
+<h3>실행할 수 없다</h3>
+<dl>
+  <dt>사유</dt><dd>{{ error.reason }}</dd>
+  <dt>내용</dt><dd>{{ error.message }}</dd>
+  {% if next_step(error.reason) %}<dt>다음</dt><dd>{{ next_step(error.reason) }}</dd>{% endif %}
+</dl>
+{% else %}
+<h3>실행 요약</h3>
+<div class="table-scroll">
+<table class="data-table">
+  <tbody>
+    <tr><th scope="row">실행 번호</th><td>{{ result.run_id }}</td></tr>
+    {# 어느 경로로 돌았는지를 단어로 적는다. 저장값과 다르면 이번 한 번만 시험한 것이고,
+       그 실행은 크롤러 상태를 올리지 않는다 (`app/api/crawlers.py`) #}
+    <tr><th scope="row">실행 모드</th>
+        <td>
+          <span class="font-medium">{{ mode_word(result.render_mode) }}</span>
+          <span class="text-xs text-slate-500">({{ result.render_mode }})</span>
+          {% if result.render_mode != result.saved_render_mode %}
+          <span class="state-warn">이번 실행만</span>
+          <span class="text-sm text-slate-600">저장 모드는 {{ mode_word(result.saved_render_mode) }} 그대로다</span>
+          {% else %}
+          <span class="text-sm text-slate-600">저장 모드 그대로다</span>
+          {% endif %}
+        </td></tr>
+    <tr><th scope="row">종료 상태</th>
+        <td>
+          {% if result.status == "success" %}<span class="badge badge-ok">성공</span>
+          {% elif result.status == "timeout" %}<span class="badge badge-warn">시간 초과</span>
+          {% else %}<span class="badge badge-bad">실패</span>{% endif %}
+          <span class="text-xs text-slate-500">({{ result.status }})</span>
+        </td></tr>
+    <tr><th scope="row">크롤러 상태</th><td>{{ result.crawler_status }}</td></tr>
+    <tr><th scope="row">목록 매칭</th><td>{{ result.matched }}건</td></tr>
+    <tr><th scope="row">정상 처리</th><td>{{ result.success_count }}건</td></tr>
+    <tr><th scope="row">실패</th>
+        <td class="{% if result.fail_count %}state-bad{% else %}state-idle{% endif %}">{{ result.fail_count }}건</td></tr>
+    <tr><th scope="row">실패 분류</th><td>{{ result.error_class or "없음" }}</td></tr>
+    <tr><th scope="row">실패 사유</th><td class="cell-text">{{ result.error_message or "없음" }}</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>필드별 판정</h3>
+<div class="table-scroll">
+<table class="data-table">
+  <caption>값이 있는 항목 수와 실패 사유</caption>
+  <thead>
+    <tr>
+      <th scope="col">필드</th>
+      <th scope="col">셀렉터</th>
+      <th scope="col" class="num">값 있음</th>
+      <th scope="col">판정</th>
+      <th scope="col">사유</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in report %}
+    <tr>
+      <td>{{ row.path }}</td>
+      <td class="cell-text">{{ row.selector or "없음" }}</td>
+      <td class="num">{{ row.filled }} / {{ row.total }}</td>
+      <td>
+        {% if row.state == "성공" %}<span class="state-ok">{{ row.state }}</span>
+        {% elif row.state == "실패" %}<span class="state-bad">{{ row.state }}</span>
+        {% else %}<span class="state-idle">{{ row.state }}</span>{% endif %}
+      </td>
+      <td class="cell-text">{{ row.reason or "없음" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<h3>항목 미리보기</h3>
+<div class="table-scroll">
+<table class="data-table">
+  <caption>추출된 값 그대로 (정제 전)</caption>
+  <thead>
+    <tr>
+      <th scope="col">상태</th>
+      <th scope="col">원문 URL</th>
+      {% for key, path in fields %}<th scope="col">{{ path }}</th>{% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in result.items %}
+    <tr>
+      <td>
+        {% if item.state == "stored" %}<span class="state-ok">저장됨</span>
+        {% elif item.state == "known" %}<span class="state-idle">이미 있음</span>
+        {% else %}<span class="state-idle">미리보기</span>{% endif %}
+        <span class="text-xs text-slate-500">({{ item.state }})</span>
+      </td>
+      <td class="cell-url">
+        <a class="cell-url-value" href="{{ item.source_url }}" target="_blank"
+           rel="noreferrer" title="{{ item.source_url }}">{{ item.source_url }}</a>
+      </td>
+      {% for key, path in fields %}
+      {% set value = item.fields.get(key, "") %}
+      <td class="cell-text">{{ value[:preview_limit] }}{% if value|length > preview_limit %} ... (이하 생략){% endif %}</td>
+      {% endfor %}
+    </tr>
+    {% else %}
+    <tr><td colspan="{{ fields|length + 2 }}">미리보기가 없다. 실행이 항목을 하나도 남기지 못했다</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<h3>항목별 실패</h3>
+{% if result.failures %}
+<div class="table-scroll">
+<table class="data-table">
+  <caption>이 실행에서만 볼 수 있는 값이다 (crawl_runs 에는 남지 않는다)</caption>
+  <thead>
+    <tr><th scope="col">원문 URL</th><th scope="col">분류</th><th scope="col">사유</th></tr>
+  </thead>
+  <tbody>
+    {% for failure in result.failures %}
+    <tr>
+      <td class="cell-url">
+        <span class="cell-url-value" title="{{ failure.source_url }}">{{ failure.source_url }}</span>
+      </td>
+      <td><span class="state-bad">{{ failure.error_class or "분류 없음" }}</span></td>
+      <td class="cell-text">{{ failure.message }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p>항목별 실패는 없다.</p>
+{% endif %}
+
+{% if targets is defined and targets is not none %}
+{# 실행으로 크롤러 상태가 바뀔 수 있다. 대상 목록도 같이 갈아 끼운다 #}
+<div id="test-targets" hx-swap-oob="true">
+  {% with crawlers = targets %}{% include "fragments/test_targets.html" %}{% endwith %}
+</div>
+{% endif %}
+{% endif %}

@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}크롤러 등록{% endblock %}
+{% block heading %}크롤러 등록과 셀렉터 편집{% endblock %}
+{% block content %}
+<section>
+  <h3>새 크롤러</h3>
+  {# 생성은 실측 5.6~10.5초가 걸린다. 누른 뒤 아무 변화가 없으면 눌렸는지 알 수 없다.
+     요청이 도는 동안 버튼을 잠그고, 버튼 옆과 결과 영역 두 곳에 무엇을 기다리는지 적는다 #}
+  <form hx-post="/ui/crawlers" hx-target="#crawler-result" hx-swap="innerHTML"
+        hx-disabled-elt="find button"
+        hx-indicator="#generate-wait, #crawler-result-wait">
+    <fieldset>
+      <legend>리스트 URL 로 셀렉터를 생성한다. 상세 URL 은 있으면 같이 본다</legend>
+      <p>
+        <label for="list-url">리스트 URL</label>
+        <br>
+        <input id="list-url" name="list_url" type="url" size="80" required class="w-full">
+      </p>
+      <p>
+        <label for="detail-url">상세 URL (선택)</label>
+        <br>
+        <input id="detail-url" name="detail_url" type="url" size="80" class="w-full">
+        <br>
+        <span class="text-sm text-slate-500">상세를 JS 로 그려서 공고마다 주소가 따로 없는 사이트는 비워 둔다.
+        비우면 목록 페이지만 보고 만들고, 상세 셀렉터는 확인하지 않은 채로 남는다.</span>
+      </p>
+      <p>
+        <label for="crawler-name">이름 (비우면 도메인)</label>
+        <br>
+        <input id="crawler-name" name="name" type="text" size="40" class="w-full max-w-md">
+      </p>
+      <p>
+        <label for="crawler-company">회사명 (선택)</label>
+        <br>
+        <input id="crawler-company" name="default_company" type="text" size="40" class="w-full max-w-md">
+        <br>
+        <span class="text-sm text-slate-500">공고에서 회사명을 뽑지 못한 건에만 쓰인다. 페이지에 회사명이 있는 사이트는 비워 둔다.</span>
+      </p>
+      <p>
+        <fieldset>
+          <legend>가져오는 방식</legend>
+          <label><input type="radio" name="render_mode" value="static" checked> 정적</label>
+          <label><input type="radio" name="render_mode" value="playwright"> 렌더(Playwright)</label>
+          <br>
+          <span class="text-sm text-slate-500">기본은 정적이다. 렌더는 실행마다 브라우저 하나를 띄운다.
+          정적으로 목록이 나오지 않는 사이트는 <a class="font-medium underline" href="/tests">테스트 실행</a>
+          화면에서 두 모드를 비교해 확인한 뒤 렌더로 올린다.</span>
+        </fieldset>
+      </p>
+      <p>
+        <button type="submit">셀렉터 생성</button>
+        <span id="generate-wait" class="wait-note">페이지를 가져와 셀렉터를 생성하는 중. 10초쯤 걸린다</span>
+      </p>
+    </fieldset>
+  </form>
+</section>
+
+<section>
+  <h3>결과</h3>
+  {# 대기 문구는 결과 영역 바로 앞에 둔다. 이 자리에 있어야 다음 형제인 결과가 흐려진다 #}
+  <p id="crawler-result-wait" class="wait-note">응답을 기다리는 중. 아래는 이전 결과다</p>
+  <div id="crawler-result" class="wait-dim">
+    <p>생성하거나 목록에서 크롤러를 고르면 여기에 결과와 편집기가 들어온다.</p>
+  </div>
+</section>
+
+<section>
+  <h3>등록된 크롤러</h3>
+  <div id="crawler-list" hx-get="/ui/crawlers" hx-trigger="load" hx-swap="innerHTML">
+    <p>목록을 불러오는 중</p>
+  </div>
+</section>
+{% endblock %}

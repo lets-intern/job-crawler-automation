@@ -1,0 +1,85 @@
+{# 공고 한 건. 모달 틀(<dialog>)은 base.html 에 있고 이 조각이 그 안을 채운다.
+
+   읽기 전용이다. 고치는 것은 검수 화면의 일이고 두 화면의 역할을 섞지 않는다 — 조회는
+   "뭐가 들어왔나" 를 보는 자리고, 검수는 "이 값이 맞나" 를 판정하는 자리다.
+
+   본문과 자격요건은 자르지 않는다. 길면 이 안(.modal-scroll)에서 스크롤되고 페이지는
+   움직이지 않는다.
+
+   원문 링크는 수집한 값 그대로다 #}
+{# 회사명이 어디서 왔는지. 상태는 단어로 적는다 (`.claude/rules/writing.md`) #}
+{% set company_source_label = {"parsed": "파싱", "operator": "입력"} %}
+<div class="modal-body">
+{% if job is none %}
+  <header class="modal-head">
+    <h3 id="app-modal-title" class="text-base font-semibold text-slate-900">공고 {{ job_id }}</h3>
+  </header>
+  <div class="modal-scroll" tabindex="-1" autofocus>
+    <p class="text-sm">
+      <span class="state-bad">실패</span> — 공고 {{ job_id }} 가 없다. 목록을 다시 불러 확인한다
+    </p>
+  </div>
+  <footer class="modal-foot">
+    <button type="button" data-modal-close>닫기</button>
+  </footer>
+{% else %}
+  <header class="modal-head">
+    <h3 id="app-modal-title" class="text-base font-semibold text-slate-900">{{ job.title or "제목 값 없음" }}</h3>
+    <p class="mt-1 text-sm text-slate-600">
+      공고 {{ job.id }} · {{ job.company or "회사 값 없음" }} ·
+      워크플로우 {{ job.workflow_id }} - {{ job.workflow_name }}
+    </p>
+  </header>
+
+  <div class="modal-scroll" tabindex="-1" autofocus>
+    <p class="mb-3 text-sm text-slate-600">
+      읽기 전용이다. 값을 고치는 것은
+      <a class="font-medium underline" href="/review">데이터 검수</a> 화면에서 한다.
+    </p>
+
+    <div class="table-scroll">
+    <table class="data-table">
+      <tbody>
+        <tr><th scope="row">번호</th><td>{{ job.id }}</td></tr>
+        <tr><th scope="row">회사</th><td class="cell-text">{{ job.company or "값 없음" }}</td></tr>
+        <tr><th scope="row">회사명 출처</th>
+            <td>{{ company_source_label.get(job.company_source, "값 없음") }}</td></tr>
+        <tr><th scope="row">부서</th><td>{{ job.department or "값 없음" }}</td></tr>
+        <tr><th scope="row">마감</th><td>{{ job.deadline or "값 없음" }}</td></tr>
+        <tr><th scope="row">수집 시각</th><td>{{ raw.crawled_at | as_time }}</td></tr>
+        <tr><th scope="row">정규화 시각</th><td>{{ job.normalized_at | as_time }}</td></tr>
+        <tr><th scope="row">전달</th>
+            <td>
+              {% if job.delivered_at %}
+              <span class="badge badge-idle">전달됨</span>
+              <span class="text-xs text-slate-500">{{ job.delivered_at | as_time }}</span>
+              {% else %}
+              <span class="badge badge-warn">미전달</span>
+              {% endif %}
+            </td></tr>
+        <tr><th scope="row">원본 행</th>
+            <td class="cell-url">
+              <span class="cell-url-value" title="{{ raw.content_hash }}">raw_jobs {{ raw.raw_job_id }} ({{ raw.content_hash }})</span>
+            </td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <h5 class="mb-1 mt-5 text-sm font-semibold text-slate-700">본문</h5>
+    <pre>{{ raw.body or "값 없음" }}</pre>
+
+    <h5 class="mb-1 mt-5 text-sm font-semibold text-slate-700">자격 요건</h5>
+    <pre>{{ raw.requirements or "값 없음" }}</pre>
+  </div>
+
+  <footer class="modal-foot">
+    {# 원문은 늘 보이는 자리에 둔다. 표 안의 행은 긴 본문을 지나면 위로 밀려 올라간다 #}
+    <a class="inline-flex items-center rounded-md border border-slate-300 bg-white px-2.5 py-1
+              text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+       href="{{ job.source_url }}" target="_blank" rel="noreferrer">원문 열기</a>
+    <span class="max-w-[32rem] truncate text-xs text-slate-500"
+          title="{{ job.source_url }}">{{ job.source_url }}</span>
+    <button type="button" data-modal-close>닫기</button>
+  </footer>
+{% endif %}
+</div>

@@ -12,7 +12,7 @@
 | 스케줄 | APScheduler | 인프로세스. 브로커가 필요 없다 |
 | 정적 크롤링 | httpx + BeautifulSoup | 대부분의 채용 페이지에 충분하다 |
 | JS 렌더링 | Playwright (Python) | 사이트별 개별 승격. 기본값 아님 |
-| LLM | Anthropic API | 셀렉터 생성. `.claude/rules/llm.md` |
+| LLM | Gemini API (google-genai) | 셀렉터 생성. `.claude/rules/llm.md` |
 | DB | SQLite | 파일 하나. 볼륨 마운트로 영속화 |
 | 품질 | ruff, mypy, pytest | |
 | 배포 | Docker Compose, 컨테이너 1개 | |
@@ -37,7 +37,8 @@ Node 를 따로 두면 프로세스와 배포가 두 스택으로 갈라진다. 
 
 | 이름 | 용도 |
 |---|---|
-| ANTHROPIC_API_KEY | 셀렉터 생성 |
+| GEMINI_API_KEY | 셀렉터 생성 |
+| GEMINI_MODEL | 셀렉터 생성에 쓸 모델 ID. 비우면 기본값 |
 | DATABASE_PATH | SQLite 파일 경로 |
 | CRAWL_USER_AGENT | 이름과 연락처를 담는다. 브라우저 위장 금지 |
 | CRAWL_DELAY_SECONDS | 같은 호스트 요청 간 최소 간격 |

@@ -1,8 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(uv run:*)",
-      "Bash(uv sync:*)",
+      "Bash(.venv/bin/python:*)",
+      "Bash(.venv/bin/pip install:*)",
       "Bash(ruff:*)",
       "Bash(mypy:*)",
       "Bash(pytest:*)",

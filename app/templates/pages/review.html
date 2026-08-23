@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}데이터 검수{% endblock %}
+{% block heading %}데이터 검수{% endblock %}
+{% block content %}
+<section>
+  <div id="review-filters" hx-get="/ui/review/filters" hx-trigger="load" hx-swap="innerHTML">
+    <p>조회 조건을 불러오는 중</p>
+  </div>
+</section>
+
+<section>
+  <h3>검수 대상</h3>
+  <p>
+    미전달 건이 먼저 나온다. 이미 전달된 행을 고쳐도 소비 측이 가진 값은 그대로다 —
+    수동 수정은 전달 표시를 되돌리지 않는다. 검수는 전달 전에 하는 것이 정상 경로다.
+  </p>
+  <p>
+    고친 값은 보정으로 쌓이고 규칙이 만든 값을 지우지 않는다. 확정 값에는 다음 정규화부터
+    반영되므로, 지금 반영하려면 <a class="font-medium underline" href="/rules">정규화 규칙</a>
+    화면에서 재정규화를 돌린다.
+  </p>
+  <p>
+    행의 <span class="font-medium">수정</span> 을 누르면 그 공고가 통째로 모달에 열린다. 여섯
+    필드를 한자리에서 보고 여러 개를 고친 뒤 한 번에 저장한다 — 고친 필드만 보정으로 쌓이고,
+    손대지 않은 칸에는 보정이 생기지 않는다. 저장하면 모달이 닫히고 표의 그 행만 갈린다.
+  </p>
+  <div id="review-table" hx-get="/ui/review" hx-trigger="load" hx-swap="innerHTML">
+    <p>목록을 불러오는 중</p>
+  </div>
+</section>
+{% endblock %}

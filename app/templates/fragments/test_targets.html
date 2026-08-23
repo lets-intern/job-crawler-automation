@@ -1,0 +1,120 @@
+{# 실행 대상 목록. 실행 뒤에는 크롤러 상태(draft -> tested)가 바뀌므로 OOB 로 다시 들어온다.
+
+   모드는 두 자리로 갈린다. "저장 모드" 열은 `crawlers.render_mode` 를 바꾸고, 실행 폼의
+   "가져오는 방식" 은 이번 실행 한 번만 다른 경로로 돈다. 비교가 이 화면의 일이라 시험할
+   때마다 저장값이 따라 바뀌면 안 된다 (`app/api/ui_tests.py`).
+
+   승격 줄은 테스트를 통과한 크롤러 바로 아래에 붙는다. 실행 결과가 이 표를 다시 들여보내므로,
+   방금 `tested` 가 된 크롤러의 승격 수단이 실행 직후 같은 화면에 나타난다
+   (`app/api/ui_workflows.py`). #}
+<div class="table-scroll">
+<table class="data-table">
+  {# 방금 한 일은 캡션 자리에 적는다. 표 위에 문단으로 끼워 넣으면 그 높이만큼 표가 내려가고,
+     그것이 13.3 에서 고친 "표가 밀린다" 와 같은 문제다. 캡션은 늘 있는 줄이라 안 밀린다 #}
+  <caption>실행할 크롤러{% if notice is defined and notice %} — <span class="just-changed font-medium text-slate-700">{{ notice }}</span>{% endif %}{% if notice_href is defined and notice_href %} <a class="font-medium underline" href="{{ notice_href }}">워크플로우 화면으로</a>{% endif %}</caption>
+  <thead>
+    <tr>
+      <th scope="col" class="num">번호</th>
+      <th scope="col">이름</th>
+      <th scope="col">상태</th>
+      <th scope="col">저장 모드</th>
+      <th scope="col">리스트 URL</th>
+      <th scope="col">동작</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for crawler in crawlers %}
+    <tr>
+      <td class="num">{{ crawler.id }}</td>
+      <td class="cell-text">{{ crawler.name }}</td>
+      <td>
+        {% if crawler.status == "promoted" %}<span class="badge badge-ok">승격됨</span>
+        {% elif crawler.status == "tested" %}<span class="badge badge-idle">테스트됨</span>
+        {% else %}<span class="badge badge-idle">초안</span>{% endif %}
+        <span class="text-xs text-slate-500">({{ crawler.status }})</span>
+      </td>
+      <td>
+        {# 워크플로우 실행이 읽는 값이다. 여기서 바꾸면 다음 주기부터 그 경로로 돈다 #}
+        <span class="font-medium">{{ mode_word(crawler.render_mode) }}</span>
+        <span class="text-xs text-slate-500">({{ crawler.render_mode }})</span>
+        <form hx-put="/ui/test-targets/{{ crawler.id }}/render-mode"
+              hx-target="#test-targets"
+              hx-swap="innerHTML"
+              hx-disabled-elt="find button"
+              hx-indicator="closest form">
+          <input type="hidden" name="render_mode"
+                 value="{% if crawler.render_mode == 'playwright' %}static{% else %}playwright{% endif %}">
+          <button type="submit">{% if crawler.render_mode == 'playwright' %}정적으로 저장{% else %}렌더로 저장{% endif %}</button>
+          <span class="wait-note">바꾸는 중</span>
+        </form>
+      </td>
+      <td class="cell-url">
+        <span class="cell-url-value" title="{{ crawler.list_url }}">{{ crawler.list_url }}</span>
+      </td>
+      <td>
+        {# 실행은 사이트를 실제로 가져오므로 오래 걸린다. 버튼을 잠가 같은 실행이 두 번 나가지
+           않게 하고, 이 자리와 결과 영역 두 곳에 기다리는 중임을 적는다 #}
+        <form hx-post="/ui/crawlers/{{ crawler.id }}/test-run"
+              hx-target="#test-result"
+              hx-swap="innerHTML"
+              hx-disabled-elt="find button"
+              hx-indicator="closest form, #test-result-wait">
+          <label for="mode-{{ crawler.id }}">가져오는 방식</label>
+          {# 저장값을 바꾸지 않고 한 번만 시험하는 자리다. 정적으로 되는지 렌더가 필요한지는
+             같은 크롤러를 양쪽으로 돌려 필드별 매칭 수를 비교해서 안다 #}
+          <select id="mode-{{ crawler.id }}" name="render_mode">
+            <option value="">저장 모드로 ({{ mode_word(crawler.render_mode) }})</option>
+            <option value="static">이번만 정적으로</option>
+            <option value="playwright">이번만 렌더로</option>
+          </select>
+          <label for="limit-{{ crawler.id }}">상세 건수</label>
+          <input id="limit-{{ crawler.id }}" name="limit" type="number" value="3" min="1" max="20"
+                 size="3">
+          <button type="submit">테스트 실행</button>
+          <span class="wait-note">실행 중</span>
+        </form>
+      </td>
+    </tr>
+    {# 승격 수단은 `tested` 에만 나온다. `POST /api/workflows` 가 다른 상태를 409 로 막으므로
+       화면에서도 같은 자리에서 막는다 — 눌러서 거절당하는 버튼은 안내가 아니다.
+
+       열을 더하지 않고 전폭 행으로 두는 이유는 폭이다. 위 표는 1440px 에서 이미 가로로
+       흐르고 있어서, 열을 하나 더하면 승격 버튼이 가로 스크롤 밖으로 나간다. 화면에 없어서
+       멈췄던 것을 고치는 자리라 보이지 않는 자리에 두면 안 고친 것과 같다 #}
+    {% if crawler.status == "tested" %}
+    <tr>
+      <td colspan="6" class="bg-slate-50">
+        <form hx-post="/ui/workflows"
+              hx-target="#test-targets"
+              hx-swap="innerHTML"
+              hx-disabled-elt="find button"
+              hx-indicator="closest form">
+          <input type="hidden" name="crawler_id" value="{{ crawler.id }}">
+          <span class="font-medium">크롤러 {{ crawler.id }} 는 테스트를 통과했다. 워크플로우로 승격한다</span>
+          <label for="wf-name-{{ crawler.id }}">이름</label>
+          <input id="wf-name-{{ crawler.id }}" name="name" type="text" value="{{ crawler.name }}"
+                 size="20">
+          <label for="wf-interval-{{ crawler.id }}">주기(분)</label>
+          {# 기본값 360 은 `.claude/docs/data-model.md` 와 `WorkflowCreate.interval_minutes` 가
+             정한다. 비우고 보내면 API 기본값이 그대로 쓰인다 #}
+          <input id="wf-interval-{{ crawler.id }}" name="interval_minutes" type="number"
+                 value="360" min="1" size="5">
+          <button type="submit">워크플로우로 승격</button>
+          <span class="wait-note">승격하는 중</span>
+        </form>
+      </td>
+    </tr>
+    {% elif crawler.status == "promoted" %}
+    <tr>
+      <td colspan="6" class="bg-slate-50 text-slate-600">
+        크롤러 {{ crawler.id }} 는 워크플로우로 승격돼 있다. 주기 실행과 1회 실행은
+        <a class="font-medium underline" href="/workflows">워크플로우 화면</a>에서 한다
+      </td>
+    </tr>
+    {% endif %}
+    {% else %}
+    <tr><td colspan="6" class="cell-text text-slate-600">실행할 크롤러가 없다. <a class="font-medium underline" href="/">크롤러 등록</a> 화면에서 셀렉터를 먼저 만든다</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>

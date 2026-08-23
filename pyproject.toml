@@ -1,0 +1,60 @@
+[project]
+name = "job-crawler-automation"
+version = "0.1.0"
+description = "채용공고 크롤링 자동화 백엔드. 정규화된 데이터를 별도 채용공고 사이트에 REST 로 제공한다"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "jinja2",
+    # 화면 폼 전송(application/x-www-form-urlencoded) 파싱에 FastAPI 가 요구한다
+    "python-multipart",
+    "httpx",
+    "beautifulsoup4",
+    "apscheduler>=3.10,<4",
+    "google-genai",
+    "pydantic-settings",
+    # JS 로 그려지는 사이트만 쓴다. 기본 경로는 정적이다 — .claude/rules/crawling.md
+    "playwright",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "ruff",
+    "mypy",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+disallow_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+
+[[tool.mypy.overrides]]
+# APScheduler 는 타입 스텁을 배포하지 않는다
+module = "apscheduler.*"
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "live: 실제 외부 사이트에 요청하는 테스트. 기본 실행에서 제외한다",
+]

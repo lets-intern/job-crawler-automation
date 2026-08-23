@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}운영 설정{% endblock %}
+{% block heading %}운영 설정{% endblock %}
+{% block content %}
+<section>
+  <p>
+    저장한 값은 다음에 값을 읽는 쪽부터 적용된다. 재시작하지 않는다.
+    한 번 저장된 뒤로는 환경변수를 고쳐도 이 값이 이긴다.
+  </p>
+  <div id="settings-form" hx-get="/ui/settings" hx-trigger="load" hx-swap="innerHTML">
+    <p>설정을 불러오는 중</p>
+  </div>
+</section>
+{% endblock %}
