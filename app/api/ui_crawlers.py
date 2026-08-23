@@ -50,8 +50,12 @@ def crawler_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return list(conn.execute(_LIST_QUERY).fetchall())
 
 
-def _pretty(selectors_json: str) -> str:
-    """저장된 JSON 을 사람이 고칠 수 있게 편다. 못 읽는 값은 그대로 보여준다."""
+def pretty_selectors(selectors_json: str) -> str:
+    """저장된 JSON 을 사람이 고칠 수 있게 편다. 못 읽는 값은 그대로 보여준다.
+
+    테스트 실행 화면의 편집기도 이 함수를 쓴다. 두 화면의 편집기에 다른 모양이 뜨면
+    같은 값을 보고 있는지 화면에서 알 수 없다.
+    """
     try:
         return json.dumps(json.loads(selectors_json), ensure_ascii=False, indent=2)
     except (TypeError, ValueError):
@@ -182,7 +186,7 @@ async def repair_selectors_fragment(
             request,
             crawler_id=crawler_id if row is not None else None,
             status=str(row["status"]) if row is not None else "",
-            selectors_json=_pretty(row["selectors_json"] or "") if row is not None else "",
+            selectors_json=pretty_selectors(row["selectors_json"] or "") if row is not None else "",
             error=error_detail(exc),
         )
 
@@ -292,7 +296,7 @@ def selector_editor_fragment(
         request,
         crawler_id=int(row["id"]),
         status=str(row["status"]),
-        selectors_json=_pretty(row["selectors_json"] or ""),
+        selectors_json=pretty_selectors(row["selectors_json"] or ""),
     )
 
 

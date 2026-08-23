@@ -1,4 +1,6 @@
-{# 결과 영역. 생성 결과·편집기·거절 사유가 모두 이 조각 하나로 들어간다 #}
+{# 결과 영역. 생성 결과·편집기·거절 사유가 모두 이 조각 하나로 들어간다.
+   AI 수정의 결과 표와 힌트 입력칸은 테스트 실행 화면과 같은 매크로를 쓴다 #}
+{% from "fragments/selector_repair_macro.html" import hint_field, repair_report %}
 {% if error %}
 <h3>실패</h3>
 <dl>
@@ -66,92 +68,7 @@
 {% endif %}
 
 {% if repair %}
-<h3>AI 수정 결과</h3>
-<div class="table-scroll">
-<table class="data-table">
-  <caption>고치기 전과 후 (지금 가져온 같은 HTML 기준)</caption>
-  <thead><tr>
-    <th scope="col">필드</th>
-    <th scope="col" class="num">고치기 전</th>
-    <th scope="col" class="num">고친 뒤</th>
-    <th scope="col">판정</th>
-    <th scope="col">대상</th>
-  </tr></thead>
-  <tbody>
-    {% for field, count in repair.after_matches.items() %}
-    <tr>
-      <td>{{ field }}</td>
-      <td class="num">{{ repair.before_matches.get(field, 0) }}</td>
-      <td class="num">{{ count }}</td>
-      <td>
-        {% if field in repair.skipped_fields %}
-        <span class="state-idle">건너뜀</span>
-        {% elif field in repair.failed_fields %}
-        <span class="state-bad">실패</span>
-        {% else %}
-        <span class="state-ok">성공</span>
-        {% endif %}
-      </td>
-      <td>
-        {# 대상이 아니었던 필드는 응답에 무엇이 왔든 원래 셀렉터가 그대로다 #}
-        {% if field in repair.repaired %}
-        <span class="state-ok">고침</span>
-        {% elif field in repair.unresolved %}
-        <span class="state-bad">못 고침</span>
-        {% else %}
-        <span class="state-idle">그대로</span>
-        {% endif %}
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-</div>
-
-{% if repair.changes %}
-<div class="table-scroll">
-<table class="data-table">
-  <caption>바뀐 셀렉터</caption>
-  <thead><tr>
-    <th scope="col">필드</th>
-    <th scope="col">고치기 전</th>
-    <th scope="col">고친 뒤</th>
-  </tr></thead>
-  <tbody>
-    {% for change in repair.changes %}
-    <tr>
-      <td>{{ change.name }}</td>
-      <td class="cell-text">{{ change.before or "(비어 있음)" }}</td>
-      <td class="cell-text">{{ change.after }}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-</div>
-{% else %}
-<p class="rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-slate-700">
-  모델이 바꾼 셀렉터가 없다. 같은 답이 왔거나 고칠 방법이 이 HTML 에 없다는 응답이다.
-  다음 수단은 손으로 고치는 것이다.
-</p>
-{% endif %}
-
-{% if repair.unresolved %}
-<p class="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-red-800">
-  <span class="font-semibold">고친 뒤에도 실패로 남은 필드</span>: {{ repair.unresolved | join(", ") }}
-  — 모델이 고르지 못했다. 손으로 고친다.
-</p>
-{% else %}
-<p><span class="state-ok">고치려 한 필드가 모두 값을 찾았다.</span> 저장하면 반영된다.</p>
-{% endif %}
-{% if repair.notes %}
-<ul>{% for note in repair.notes %}<li>{{ note }}</li>{% endfor %}</ul>
-{% endif %}
-<p>
-  모델 {{ repair.usage.model }},
-  입력 {{ repair.usage.input_tokens }} 토큰,
-  출력 {{ repair.usage.output_tokens }} 토큰,
-  {{ repair.usage.latency_ms }} ms
-</p>
+{{ repair_report(repair) }}
 {% endif %}
 
 {% if crawler_id %}

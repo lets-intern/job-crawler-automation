@@ -208,6 +208,9 @@ class RepairOut(BaseModel):
     selectors: SelectorSet
     before_matches: dict[str, int]
     after_matches: dict[str, int]
+    # `failed` 면 실패한 필드를 고친 것이고, `hinted` 면 실패는 없는데 운영자가 힌트로 지적한
+    # 자리를 고친 것이다. 화면이 뭐라고 적을지가 여기서 갈린다
+    mode: str
     targets: list[str]
     repaired: list[str]
     unresolved: list[str]
@@ -664,6 +667,7 @@ async def repair_selectors(
         selectors=outcome.selectors,
         before_matches=outcome.before.summary(),
         after_matches=after_matches,
+        mode="hinted" if outcome.hinted_only else "failed",
         targets=outcome.targets,
         repaired=outcome.repaired,
         unresolved=outcome.unresolved,
