@@ -1,6 +1,7 @@
 """FastAPI 앱. 라우터 등록과 스케줄러 기동."""
 
 import logging
+import sqlite3
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -38,7 +39,15 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         orphans = close_orphan_runs(conn)
         if orphans:
             logger.warning("지난 프로세스가 남긴 미완 실행 %d건을 timeout 으로 닫았다", orphans)
-        get_scheduler().start(conn)
+        try:
+            get_scheduler().start(conn)
+        except sqlite3.OperationalError:
+            # 스키마가 아직 없는 DB 다. 등록할 워크플로우도 없다.
+            #
+            # 운영에서는 컨테이너가 uvicorn 앞에서 마이그레이션을 돌리므로 여기 오지 않는다
+            # (`Dockerfile` 의 CMD). 여기서 예외를 올리면 스키마가 없다는 이유로 앱이 아예
+            # 뜨지 않아, 마이그레이션을 돌릴 화면도 API 도 못 쓰게 된다.
+            logger.warning("스키마가 없어 워크플로우를 등록하지 못했다. 마이그레이션이 필요하다")
     finally:
         conn.close()
     try:

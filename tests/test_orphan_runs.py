@@ -65,3 +65,28 @@ def test_finished_runs_are_left_alone(conn: sqlite3.Connection) -> None:
 
 def test_nothing_to_close_is_not_an_error(conn: sqlite3.Connection) -> None:
     assert close_orphan_runs(conn) == 0
+
+
+def test_a_database_without_the_schema_is_not_an_error(tmp_path: Path) -> None:
+    """기동 시 뒷정리가 기동을 막으면 안 된다.
+
+    2026-08-23 에 CI 가 잡았다. 마이그레이션이 아직 안 돈 DB 에 이 함수가 돌면서 앱이
+    뜨지 못해 37건이 무더기로 깨졌다. 로컬에는 이미 스키마가 있는 DB 가 있어 보이지 않았다.
+    """
+    bare = db.connect(tmp_path / "bare.db")
+
+    assert close_orphan_runs(bare) == 0
+
+
+def test_the_app_starts_against_a_database_without_the_schema(tmp_path: Path) -> None:
+    """스키마가 없다는 이유로 앱이 안 뜨면 마이그레이션을 돌릴 화면도 못 쓴다.
+
+    2026-08-23 에 CI 가 잡았다. 로컬에는 이미 스키마가 있는 DB 가 있어 보이지 않았고,
+    저장소에 그 파일이 없는 CI 에서만 37건이 무더기로 깨졌다.
+    """
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    with TestClient(app) as client:
+        assert client.get("/health").status_code == 200

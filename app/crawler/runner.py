@@ -507,15 +507,23 @@ def close_orphan_runs(conn: sqlite3.Connection) -> int:
     `timeout` 으로 적는다. 얼마나 돌았는지 모르는 채 끝난 실행이고, 성공이 아닌 것은 실패로
     센다는 규칙과 어긋나지 않는다. 그때까지 적재한 `raw_jobs` 는 건드리지 않는다 — append-only 다.
     """
-    cursor = conn.execute(
-        """
-        UPDATE crawl_runs
-           SET status = 'timeout',
-               finished_at = datetime('now'),
-               error_message = '프로세스가 끝나기 전에 사라져 결과를 남기지 못했다'
-         WHERE status IS NULL
-        """
-    )
+    try:
+        cursor = conn.execute(
+            """
+            UPDATE crawl_runs
+               SET status = 'timeout',
+                   finished_at = datetime('now'),
+                   error_message = '프로세스가 끝나기 전에 사라져 결과를 남기지 못했다'
+             WHERE status IS NULL
+            """
+        )
+    except sqlite3.OperationalError:
+        # 스키마가 아직 없는 DB 다. 정리할 것도 없다.
+        #
+        # 이 함수는 기동 시 뒷정리이지 기동 조건이 아니다. 여기서 예외가 올라가면 앱이
+        # 아예 뜨지 않는데, 정작 못 한 일은 지난 실행 행 몇 개를 닫는 것뿐이다.
+        # 마이그레이션은 컨테이너가 uvicorn 앞에서 따로 돌린다 (`Dockerfile` 의 CMD).
+        return 0
     return int(cursor.rowcount or 0)
 
 
