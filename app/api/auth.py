@@ -54,15 +54,24 @@ CLOCK_SKEW_SECONDS = 60
 PUBLIC_PATHS = frozenset({"/health", "/login", "/logout"})
 
 
+def _password() -> str:
+    """설정된 비밀번호. 비어 있으면 설정하지 않은 것으로 본다.
+
+    `.env.example` 을 그대로 `.env` 로 복사하면 이름만 있고 값이 빈 줄이 생긴다. 그것을
+    빈 비밀번호로 받으면 아무것도 입력하지 않고 열리면서, 기본값 경고도 뜨지 않는다 —
+    잠갔다고 믿는 채로 열려 있는 가장 나쁜 상태다.
+    """
+    return get_settings().admin_password or DEFAULT_PASSWORD
+
+
 def admin_password_is_default() -> bool:
     """기본 비밀번호로 떠 있는가. 화면 경고와 기동 로그가 이것을 본다."""
-    return get_settings().admin_password == DEFAULT_PASSWORD
+    return _password() == DEFAULT_PASSWORD
 
 
 def _signing_key() -> bytes:
     """비밀번호에서 서명 키를 만든다. 비밀번호가 바뀌면 나간 쿠키가 전부 무효가 된다."""
-    password = get_settings().admin_password
-    return hashlib.sha256(f"job-crawler-admin-v1:{password}".encode()).digest()
+    return hashlib.sha256(f"job-crawler-admin-v1:{_password()}".encode()).digest()
 
 
 def _sign(payload: str) -> str:
@@ -96,7 +105,7 @@ def token_is_valid(token: str | None) -> bool:
 
 def password_matches(supplied: str) -> bool:
     # 바이트로 견준다. 한글이 든 비밀번호를 str 로 견주면 TypeError 로 로그인이 500 이 된다
-    return hmac.compare_digest(supplied.encode(), get_settings().admin_password.encode())
+    return hmac.compare_digest(supplied.encode(), _password().encode())
 
 
 def is_authenticated(request: Request) -> bool:

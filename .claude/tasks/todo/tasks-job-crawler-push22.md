@@ -68,10 +68,10 @@ PRD 비목표에 "다중 사용자 권한/인증 체계" 가 있지만, 이것�
         - [x] 22.2.V 검증: 로컬에서 잠긴 화면에 바로 들어가면 로그인으로 보내는지, 맞는 비밀번호로
           들어가지는지, 틀린 것이 거절되는지, `/health` 가 잠기지 않았는지, 쿠키를 지어내면 거절되는지 확인
 
-    - [ ] 22.3 배포 구성과 문서
+    - [x] 22.3 배포 구성과 문서
         - `docker-compose.coolify.yml` 과 `.env.example` 에 `ADMIN_PASSWORD` 를 넣는다.
           값을 적지 않는다 — 이름만 문서화한다 (`.claude/rules/llm.md` 의 키 규칙과 같다)
         - `.claude/docs/api-contract.md` 에 제공 API 도 잠긴다는 것과, 소비 측 자격증명은
           아직 정하지 않았다는 것을 적는다
-        - [ ] 22.3.V 검증: `docker compose -f docker-compose.coolify.yml config` 가 통과하는지,
+        - [x] 22.3.V 검증: `docker compose -f docker-compose.coolify.yml config` 가 통과하는지,
           문서에 비밀번호 값이 들어가지 않았는지 확인

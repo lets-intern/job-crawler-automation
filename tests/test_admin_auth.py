@@ -149,6 +149,25 @@ def test_korean_password_is_accepted(locked: TestClient) -> None:
     assert locked.get("/").status_code == 200
 
 
+def test_empty_password_is_treated_as_unset(locked: TestClient) -> None:
+    """`.env.example` 을 그대로 복사하면 이름만 있고 값이 빈 줄이 생긴다.
+
+    그것을 빈 비밀번호로 받으면 아무것도 입력하지 않고 열리면서 경고도 뜨지 않는다.
+    """
+    os.environ["ADMIN_PASSWORD"] = ""
+    get_settings.cache_clear()
+
+    # 빈 값으로는 열리지 않는다. 폼 검사가 먼저 걷어내므로 303 이 아니기만 하면 된다
+    assert locked.post("/login", data={"password": "", "next": "/"}).status_code != 303
+    assert locked.get("/api/crawlers").status_code == 401
+    # 설정하지 않은 것으로 보므로 기본값 경고가 뜨고, 기본값으로 열린다
+    assert auth.admin_password_is_default() is True
+    assert (
+        locked.post("/login", data={"password": auth.DEFAULT_PASSWORD, "next": "/"}).status_code
+        == 303
+    )
+
+
 def test_login_page_is_open(locked: TestClient) -> None:
     response = locked.get("/login")
 
