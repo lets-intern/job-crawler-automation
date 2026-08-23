@@ -28,8 +28,11 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import sqlite3
+from collections.abc import Iterator, Sequence
+from dataclasses import dataclass
 from typing import Annotated, Any
 from urllib.parse import urlencode
 
@@ -39,6 +42,8 @@ from fastapi.responses import HTMLResponse
 from app.api import crawlers
 from app.api.ui import render, render_page
 from app.normalize.engine import OVERRIDABLE_FIELDS
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["ui"], include_in_schema=False)
 
@@ -65,6 +70,17 @@ LONG_FIELDS: frozenset[str] = frozenset({"body", "requirements"})
 
 # 모달을 닫으라고 화면에 알리는 이벤트 이름. `base.html` 의 여닫는 스크립트가 이것을 듣는다
 MODAL_DONE_EVENT = "app-modal-done"
+
+# 지울 대상을 무엇으로 고른 것인지. "이 페이지에서 고른 20건" 과 "필터에 걸린 148건" 이 같은
+# 단추 뒤에 숨어 있으면 운영자는 20건인 줄 알고 148건을 지운다. 범위는 이름을 갖고, 화면은
+# 그 이름과 건수를 늘 함께 적는다
+SCOPE_SELECTED = "selected"
+SCOPE_FILTERED = "filtered"
+SCOPE_WORKFLOW = "workflow"
+SCOPES: tuple[str, ...] = (SCOPE_SELECTED, SCOPE_FILTERED, SCOPE_WORKFLOW)
+
+# `IN (?, ?, ...)` 에 한 번에 넣을 id 수. SQLite 의 바인딩 개수 상한에 걸리지 않게 끊는다
+_ID_CHUNK = 500
 
 _BASE = """
     SELECT n.id            AS id,
@@ -320,6 +336,7 @@ def review_table_fragment(
         last_index=(current - 1) * size + len(rows),
         page_numbers=_page_numbers(current, total_pages),
         page_url=lambda number: _page_url(criteria, number),
+        criteria=criteria,
     )
 
 
@@ -475,3 +492,166 @@ async def save_review_job_fragment(
         swap_row=True,
         close=True,
     )
+
+
+def _chunks(ids: Sequence[int]) -> Iterator[tuple[list[int], str]]:
+    """id 목록을 바인딩 가능한 크기로 끊는다. 묶음마다 물음표 자리도 함께 낸다."""
+    for start in range(0, len(ids), _ID_CHUNK):
+        part = list(ids[start : start + _ID_CHUNK])
+        yield part, ",".join("?" for _ in part)
+
+
+@dataclass(frozen=True)
+class DeleteTarget:
+    """지울 대상 한 묶음. 세 표에서 각각 몇 행이 사라지는지까지 들고 있다.
+
+    건수를 화면이 아니라 서버가 낸다. 확인 창이 보여준 숫자와 실제로 지워지는 행이 다르면,
+    `raw_jobs` 는 다시 만들 수 없으므로 되돌릴 방법이 없다.
+    """
+
+    scope: str
+    label: str
+    criteria: str
+    raw_job_ids: tuple[int, ...]
+    normalized: int
+    overrides: int
+    delivered: int
+
+    @property
+    def raw(self) -> int:
+        return len(self.raw_job_ids)
+
+
+def _criteria_text(workflow_label: str, company: str, query: str) -> str:
+    """지금 걸린 조회 조건을 한 줄로. 비어 있는 조건도 `전체` 라고 적는다."""
+    return (
+        f"워크플로우 {workflow_label or '전체'} · "
+        f"회사 {company or '전체'} · "
+        f"검색어 {query or '없음'}"
+    )
+
+
+def _count(conn: sqlite3.Connection, sql: str, ids: Sequence[int]) -> int:
+    """id 묶음에 걸리는 행 수. 묶음을 끊어 세고 더한다."""
+    total = 0
+    for part, marks in _chunks(ids):
+        row = conn.execute(sql.format(marks=marks), part).fetchone()
+        total += int(row[0]) if row is not None else 0
+    return total
+
+
+def _build_target(
+    conn: sqlite3.Connection,
+    *,
+    scope: str,
+    ids: Sequence[int],
+    workflow_id: int | None,
+    company: str,
+    query: str,
+) -> DeleteTarget:
+    """범위를 실제 `raw_jobs.id` 목록으로 바꾸고, 세 표에서 사라질 행을 센다.
+
+    화면이 보낸 건수는 쓰지 않는다. 고른 뒤 크롤이 한 번 더 돌았다면 그 사이에 행이 늘어
+    있고, 지우는 것은 지금 DB 에 있는 것이다.
+    """
+    workflow_label = ""
+    if workflow_id is not None:
+        found = conn.execute("SELECT name FROM workflows WHERE id = ?", (workflow_id,)).fetchone()
+        workflow_label = f"{workflow_id} - {found['name']}" if found else str(workflow_id)
+
+    if scope == SCOPE_WORKFLOW:
+        rows = conn.execute(
+            "SELECT id FROM raw_jobs WHERE workflow_id = ? ORDER BY id", (workflow_id,)
+        ).fetchall()
+        raw_job_ids = tuple(int(row["id"]) for row in rows)
+        label = f"워크플로우 {workflow_label or workflow_id} 가 모은 공고 전부"
+    elif scope == SCOPE_FILTERED:
+        where, params = _filters(workflow_id, company, query)
+        rows = conn.execute(
+            f"SELECT DISTINCT r.id AS id FROM normalized_jobs n"
+            f" JOIN raw_jobs r ON r.id = n.raw_job_id{where} ORDER BY r.id",
+            params,
+        ).fetchall()
+        raw_job_ids = tuple(int(row["id"]) for row in rows)
+        label = "지금 조회 조건에 걸린 전부"
+    else:
+        # 고른 것. 이미 사라진 id 가 섞여 오면 그 자리에서 떨어뜨린다
+        wanted = list(dict.fromkeys(int(value) for value in ids))
+        found_ids: list[int] = []
+        for part, marks in _chunks(wanted):
+            found_ids.extend(
+                int(row["id"])
+                for row in conn.execute(
+                    f"SELECT id FROM raw_jobs WHERE id IN ({marks})", part
+                ).fetchall()
+            )
+        raw_job_ids = tuple(sorted(found_ids))
+        label = "표에서 고른 공고"
+
+    return DeleteTarget(
+        scope=scope,
+        label=label,
+        criteria=_criteria_text(workflow_label, company, query),
+        raw_job_ids=raw_job_ids,
+        normalized=_count(
+            conn,
+            "SELECT count(*) FROM normalized_jobs WHERE raw_job_id IN ({marks})",
+            raw_job_ids,
+        ),
+        overrides=_count(
+            conn,
+            "SELECT count(*) FROM job_field_overrides WHERE raw_job_id IN ({marks})",
+            raw_job_ids,
+        ),
+        delivered=_count(
+            conn,
+            "SELECT count(*) FROM normalized_jobs"
+            " WHERE delivered_at IS NOT NULL AND raw_job_id IN ({marks})",
+            raw_job_ids,
+        ),
+    )
+
+
+def _form_ids(values: Sequence[Any]) -> list[int]:
+    """체크박스가 보낸 id. 숫자가 아닌 값은 버린다."""
+    found: list[int] = []
+    for value in values:
+        text = str(value).strip()
+        if text.isdigit():
+            found.append(int(text))
+    return found
+
+
+async def _delete_request(request: Request) -> dict[str, Any]:
+    """지우기 폼 한 벌. 확인 창과 실제 삭제가 같은 폼을 읽는다."""
+    form = await request.form()
+    raw_workflow = str(form.get("workflow_id") or "").strip()
+    scope = str(form.get("scope") or "").strip()
+    if scope not in SCOPES:
+        # 범위를 따로 싣지 않으면 `필터 전체` 체크박스가 정한다
+        scope = SCOPE_FILTERED if form.get("all_filtered") else SCOPE_SELECTED
+    return {
+        "scope": scope,
+        "ids": _form_ids(form.getlist("raw_job_id")),
+        "workflow_id": int(raw_workflow) if raw_workflow.isdigit() else None,
+        "company": str(form.get("company") or "").strip(),
+        "query": str(form.get("q") or "").strip(),
+    }
+
+
+@router.post("/ui/review/delete/confirm", response_class=HTMLResponse)
+async def review_delete_confirm_fragment(
+    request: Request,
+    conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
+) -> HTMLResponse:
+    """지우기 전에 무엇이 몇 건 사라지는지 보여주는 모달.
+
+    브라우저 `confirm()` 을 쓰지 않는다. 저장소의 다른 확인과 같은 `<dialog>` 다 — 여기에
+    적어야 하는 것이 한 줄로 끝나지 않아서다. 세 표에서 각각 몇 행이 사라지는지, 그중 이미
+    전달된 것이 몇 건인지, 되돌릴 수 없다는 것까지 들어간다.
+
+    GET 이 아니라 POST 로 받는다. 고른 id 가 백 개를 넘으면 주소에 실을 수 없다.
+    """
+    payload = await _delete_request(request)
+    target = _build_target(conn, **payload)
+    return render(request, "fragments/review_delete.html", target=target, done=None)

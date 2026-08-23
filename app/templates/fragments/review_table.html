@@ -9,11 +9,41 @@
   {% if total %}{{ first_index }}-{{ last_index }}번째{% else %}0건{% endif %}.
   {{ page }} / {{ total_pages }} 페이지 (한 페이지 {{ page_size }}건)
 </p>
+{# 고르기와 지우기. 표를 이 폼이 감싼다 — 체크박스와 지금 걸린 조회 조건이 같은 폼으로
+   확인 모달에 실려 간다. 조건을 숨은 칸으로 함께 보내는 이유는 `필터에 걸린 전체` 가 지금
+   화면에 보이는 것과 정확히 같은 조건이어야 하기 때문이다 #}
+<form id="review-select-form" data-total="{{ total }}"
+      hx-post="/ui/review/delete/confirm" hx-target="#app-modal-body" hx-swap="innerHTML">
+  <input type="hidden" name="workflow_id" value="{{ criteria.workflow_id }}">
+  <input type="hidden" name="company" value="{{ criteria.company }}">
+  <input type="hidden" name="q" value="{{ criteria.q }}">
+  <fieldset>
+    <legend>고른 공고 지우기</legend>
+    <p>
+      <label for="review-select-filtered" class="inline-flex items-center gap-2">
+        <input id="review-select-filtered" type="checkbox" name="all_filtered" value="1">
+        필터에 걸린 {{ total }}건 전체 고르기 (이 페이지 밖의 건도 포함한다)
+      </label>
+    </p>
+    <p class="flex flex-wrap items-center gap-3">
+      <span id="review-select-count" class="text-sm font-semibold text-slate-900"
+            role="status">이 페이지에서 0건을 골랐다 (이 페이지 {{ jobs | length }}건)</span>
+      <button type="submit" id="review-delete-open" data-modal-open disabled
+              class="border-red-300 bg-white text-red-700 hover:bg-red-50"
+              title="지우기 전에 몇 건이 사라지는지 확인 창에서 보여준다">고른 공고 지우기</button>
+      <span class="wait-note">확인 창을 여는 중</span>
+    </p>
+  </fieldset>
 <div class="table-scroll">
 <table class="data-table">
   <caption>검수 대상 공고</caption>
   <thead>
     <tr>
+      <th scope="col">
+        <input type="checkbox" data-select-page
+               aria-label="이 페이지 {{ jobs | length }}건 모두 고르기"
+               title="이 페이지에 보이는 {{ jobs | length }}건만 고른다">
+      </th>
       <th scope="col" class="num">번호</th>
       <th scope="col">고치기</th>
       <th scope="col">전달</th>
@@ -28,6 +58,10 @@
     {% for item in jobs %}
     {% set job = item.job %}
     <tr>
+      <td>
+        <input type="checkbox" name="raw_job_id" value="{{ job.raw_job_id }}" data-select-row
+               aria-label="수집 건 {{ job.raw_job_id }} 고르기">
+      </td>
       <td class="num">{{ job.id }}</td>
       <td>{{ review_open_button(job) }}</td>
       <td>{{ review_delivery(job.raw_job_id, job.delivered_at, item.override_count) }}</td>
@@ -41,11 +75,12 @@
       </td>
     </tr>
     {% else %}
-    <tr><td colspan="13" class="cell-text text-slate-600">조건에 맞는 공고가 없다. 조회 조건을 넓히거나, 워크플로우가 한 번이라도 실행됐는지 <a class="font-medium underline" href="/workflows">워크플로우</a> 화면에서 확인한다</td></tr>
+    <tr><td colspan="14" class="cell-text text-slate-600">조건에 맞는 공고가 없다. 조회 조건을 넓히거나, 워크플로우가 한 번이라도 실행됐는지 <a class="font-medium underline" href="/workflows">워크플로우</a> 화면에서 확인한다</td></tr>
     {% endfor %}
   </tbody>
 </table>
 </div>
+</form>
 
 {% if total_pages > 1 %}
 <nav aria-label="페이지 이동" class="flex flex-wrap items-center gap-1">
