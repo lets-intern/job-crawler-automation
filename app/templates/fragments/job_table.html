@@ -30,6 +30,21 @@
               title="지우기 전에 몇 건이 사라지는지 확인 창에서 보여준다">고른 공고 지우기</button>
       <span class="wait-note">확인 창을 여는 중</span>
     </p>
+    {% if workflow %}
+    {# 한 사이트의 수집분을 통째로 비우는 길. 백여 건을 화면 단위로 고르게 하지 않는다.
+       체크박스와 나머지 조회 조건을 보지 않고 그 워크플로우가 모은 전부를 고른다 —
+       자기 값을 따로 실어 보내야 해서 폼의 제출이 아니라 자기 요청으로 간다 #}
+    <p class="flex flex-wrap items-center gap-3">
+      <button type="button" id="job-delete-workflow" data-modal-open
+              hx-post="/ui/jobs/delete/confirm" hx-include="#job-select-form"
+              hx-vals='{"scope": "workflow"}'
+              hx-target="#app-modal-body" hx-swap="innerHTML"
+              hx-indicator="#job-delete-workflow-wait"
+              class="border-red-300 bg-white text-red-700 hover:bg-red-50"
+              title="이 워크플로우가 모은 것만 지운다. 워크플로우 자체는 남는다">워크플로우 {{ workflow }} 의 수집분 전부 지우기</button>
+      <span id="job-delete-workflow-wait" class="wait-note">확인 창을 여는 중</span>
+    </p>
+    {% endif %}
   </fieldset>
 <div class="table-scroll">
 <table class="data-table">

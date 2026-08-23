@@ -250,3 +250,87 @@ def test_지운_건수와_요청자를_로그에_남긴다(
     assert "raw_jobs=1" in logged
     assert "job_field_overrides=2" in logged
     assert "요청=" in logged
+
+
+def test_워크플로우를_고르면_그_수집분을_통째로_비우는_길이_열린다(client: TestClient) -> None:
+    """148건을 화면 단위로 고르게 하지 않는다. 한 사이트를 통째로 비우는 경우가 잦다."""
+    without = client.get("/ui/jobs").text
+    with_workflow = client.get("/ui/jobs", params={"workflow_id": "1"}).text
+
+    assert 'id="job-delete-workflow"' not in without
+    assert 'id="job-delete-workflow"' in with_workflow
+    assert "워크플로우 1 - LG 의 수집분 전부 지우기" in with_workflow
+    assert '"scope": "workflow"' in with_workflow
+
+
+def test_워크플로우_범위는_나머지_조건을_보지_않는다(client: TestClient) -> None:
+    """회사를 좁혀 놨어도 그 워크플로우가 모은 전부가 대상이다. 그 사실을 확인 창이 적는다."""
+    html = client.post(
+        "/ui/jobs/delete/confirm",
+        data={"scope": "workflow", "workflow_id": "1", "company": "엘지화학"},
+    ).text
+
+    assert "워크플로우 1 - LG 가 모은 공고 전부" in html
+    assert "나머지 조회 조건은 걸리지 않는다" in html
+    assert "워크플로우 자체는 지우지 않는다" in html
+    # 회사로 좁히면 1건이지만 워크플로우 전부는 3건이다
+    assert "3건</td>" in html
+
+
+def test_워크플로우_범위는_정규화되지_않은_수집_건도_포함한다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """표는 정규화된 것만 보여준다. 남겨 두면 다음 재정규화에서 되살아난다."""
+    conn.execute(
+        """
+        INSERT INTO raw_jobs (id, workflow_id, source_url, raw_data_json, content_hash)
+        VALUES (9, 1, 'https://example.com/9/', '{}', 'hash-9')
+        """
+    )
+
+    html = client.post(
+        "/ui/jobs/delete/confirm", data={"scope": "workflow", "workflow_id": "1"}
+    ).text
+
+    assert 'name="raw_job_id" value="9"' in html
+    # 수집 4건인데 정규화 행은 3건이다
+    assert "4건</td>" in html
+
+
+def test_워크플로우_하나만_사라지고_다른_것은_그대로다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    confirm = client.post(
+        "/ui/jobs/delete/confirm", data={"scope": "workflow", "workflow_id": "1"}
+    ).text
+    assert 'name="raw_job_id" value="1"' in confirm
+
+    client.post(
+        "/ui/jobs/delete",
+        data={"scope": "workflow", "workflow_id": "1", "raw_job_id": ["1", "2", "3"]},
+    )
+
+    assert raw_ids(conn) == [4, 5]
+    assert counts(conn) == (2, 2, 0)
+    # 워크플로우 자체는 남는다
+    assert int(conn.execute("SELECT count(*) FROM workflows").fetchone()[0]) == 2
+
+
+def test_워크플로우를_고르지_않고_그_범위로_보내면_지우지_않는다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    html = client.post("/ui/jobs/delete/confirm", data={"scope": "workflow"}).text
+
+    assert "지울 대상이 없다" in html
+    assert counts(conn) == (5, 5, 2)
+
+
+def test_워크플로우_범위는_걸리지_않는_조건을_적지_않는다(client: TestClient) -> None:
+    """걸리지도 않는 회사 이름이 건수 옆에 있으면 그 회사 것만 지워지는 줄로 읽힌다."""
+    html = client.post(
+        "/ui/jobs/delete/confirm",
+        data={"scope": "workflow", "workflow_id": "1", "company": "엘지화학"},
+    ).text
+
+    assert "워크플로우 1 - LG · 나머지 조건은 걸리지 않는다" in html
+    assert "회사 엘지화학" not in html

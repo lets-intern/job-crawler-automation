@@ -69,12 +69,15 @@ DELIVERY_STATES: dict[str, str] = {
 # 이름과 건수를 늘 함께 적는다
 SCOPE_SELECTED = "selected"
 SCOPE_FILTERED = "filtered"
-SCOPES: tuple[str, ...] = (SCOPE_SELECTED, SCOPE_FILTERED)
+SCOPE_WORKFLOW = "workflow"
+SCOPES: tuple[str, ...] = (SCOPE_SELECTED, SCOPE_FILTERED, SCOPE_WORKFLOW)
 
-# 범위를 사람이 읽는 한 줄로. 확인 창의 첫 줄이고 로그에도 같은 문장이 남는다
+# 범위를 사람이 읽는 한 줄로. 확인 창의 첫 줄이고 로그에도 같은 문장이 남는다.
+# `{workflow}` 는 그 워크플로우의 번호와 이름으로 채워진다
 SCOPE_LABELS: dict[str, str] = {
     SCOPE_SELECTED: "표에서 고른 공고",
     SCOPE_FILTERED: "지금 조회 조건에 걸린 전부",
+    SCOPE_WORKFLOW: "워크플로우 {workflow} 가 모은 공고 전부",
 }
 
 # 표를 다시 부르라고 알리는 이벤트 이름. 지우고 나면 표에 없는 행이 남아 있다
@@ -279,6 +282,8 @@ def job_table_fragment(
         shown=len(rows),
         row_limit=ROW_LIMIT,
         criteria=picked.as_form(),
+        # 워크플로우를 골랐을 때만 그 사이트의 수집분을 통째로 비우는 길이 열린다
+        workflow=workflow_label(conn, picked.workflow_id),
     )
 
 
@@ -337,18 +342,27 @@ def _count_ids(conn: sqlite3.Connection, sql: str, ids: Sequence[int]) -> int:
     return total
 
 
-def _describe(conn: sqlite3.Connection, picked: JobFilter) -> str:
-    """지금 걸린 조건을 한 줄로. 비어 있는 조건도 `전체` 라고 적는다.
+def workflow_label(conn: sqlite3.Connection, workflow_id: int | None) -> str:
+    """워크플로우를 번호와 이름으로. 고르지 않았으면 빈 문자열이다."""
+    if workflow_id is None:
+        return ""
+    found = conn.execute("SELECT name FROM workflows WHERE id = ?", (workflow_id,)).fetchone()
+    return f"{workflow_id} - {found['name']}" if found else str(workflow_id)
 
-    확인 창의 첫 줄이고 로그에도 같은 문장이 남는다. 무엇을 지웠는지 나중에 묻는 사람은
-    건수가 아니라 이 줄을 본다.
+
+def _describe(conn: sqlite3.Connection, picked: JobFilter, scope: str) -> str:
+    """지우는 데 실제로 걸린 조건을 한 줄로. 비어 있는 조건도 `전체` 라고 적는다.
+
+    확인 창에 적히고 로그에도 같은 문장이 남는다. 무엇을 지웠는지 나중에 묻는 사람은 건수가
+    아니라 이 줄을 본다.
+
+    워크플로우 범위는 나머지 조건을 보지 않으므로 그 조건들을 적지 않는다. 걸리지도 않는
+    `회사 D&D Property Solution` 이 지우기 건수 바로 옆에 적혀 있으면, 그 회사 것만 지워지는
+    줄로 읽힌다.
     """
-    workflow = "전체"
-    if picked.workflow_id is not None:
-        found = conn.execute(
-            "SELECT name FROM workflows WHERE id = ?", (picked.workflow_id,)
-        ).fetchone()
-        workflow = f"{picked.workflow_id} - {found['name']}" if found else str(picked.workflow_id)
+    workflow = workflow_label(conn, picked.workflow_id) or "전체"
+    if scope == SCOPE_WORKFLOW:
+        return f"워크플로우 {workflow} · 나머지 조건은 걸리지 않는다"
 
     def span(start: str, end: str) -> str:
         if not start and not end:
@@ -412,13 +426,24 @@ def _build_target(
             params,
         ).fetchall()
         raw_job_ids = tuple(int(row["id"]) for row in rows)
+    elif resolve and scope == SCOPE_WORKFLOW:
+        # 그 워크플로우가 모은 전부다. 나머지 조회 조건은 걸지 않는다 — 한 사이트의 수집분을
+        # 통째로 비우는 자리고, 조건이 섞이면 무엇이 남는지 화면에서 알 수 없다.
+        # `raw_jobs` 에서 바로 고른다. 표는 정규화된 것만 보여주는데, 정규화되지 않은 수집 건을
+        # 남겨 두면 다음 재정규화에서 지운 공고가 되살아난다
+        rows = conn.execute(
+            "SELECT id FROM raw_jobs WHERE workflow_id = ? ORDER BY id", (picked.workflow_id,)
+        ).fetchall()
+        raw_job_ids = tuple(int(row["id"]) for row in rows)
     else:
         raw_job_ids = _existing_ids(conn, ids)
 
     return DeleteTarget(
         scope=scope,
-        label=SCOPE_LABELS[scope],
-        criteria=_describe(conn, picked),
+        label=SCOPE_LABELS[scope].format(
+            workflow=workflow_label(conn, picked.workflow_id) or "고르지 않음"
+        ),
+        criteria=_describe(conn, picked, scope),
         picked=picked,
         raw_job_ids=raw_job_ids,
         normalized=_count_ids(
