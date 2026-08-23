@@ -232,15 +232,31 @@ async def test_a_hinted_answer_that_works_is_counted_on_the_same_html() -> None:
     assert "list.item" in outcome.repaired
 
 
-async def test_the_hint_does_not_widen_what_gets_repaired() -> None:
-    """대상은 실패한 필드뿐이다. 힌트가 들어와도 잘 되는 필드는 건드리지 않는다."""
-    outcome, _ = await repair(
-        answer(item="div.MuiBox-root", title="p", link="p.css-1pvxq8e"),
-        hint=HINT_PATH,
-    )
+async def test_without_a_hint_only_the_failed_field_can_change() -> None:
+    """힌트가 없으면 대상은 실패한 필드뿐이다. 맞던 셀렉터를 두 번째 호출에서 잃지 않는다."""
+    outcome, _ = await repair(answer(item="div.MuiBox-root", title="p"))
 
     assert outcome.targets == ["list.link"]
+    assert outcome.changes == []
     assert outcome.selectors.list.item == LG["list"]["item"]
+    assert outcome.selectors.list.title == LG["list"]["title"]
+
+
+async def test_a_hint_widens_the_targets_beyond_the_failed_field() -> None:
+    """운영자가 지적하는 자리는 실패한 필드가 아닐 수 있다. LG 는 `list.link` 가 늘 실패라,
+    대상을 실패한 것으로만 두면 다른 필드는 영영 힌트로 고칠 수 없다."""
+    outcome, _ = await repair(answer(title="p.css-1swfevn"), hint="제목이 회사명을 물고 온다")
+
+    assert "list.title" in outcome.targets
+    assert [change.name for change in outcome.changes] == ["list.title"]
+    assert outcome.failed_targets == ["list.link"]
+
+
+async def test_a_widened_target_the_model_left_alone_stays_put() -> None:
+    """넓혔다고 다 바뀌는 것이 아니다. 같은 값이 오면 변경으로 세지 않는다."""
+    outcome, _ = await repair(answer(), hint="제목이 회사명을 물고 온다")
+
+    assert outcome.changes == []
     assert outcome.selectors.list.title == LG["list"]["title"]
 
 
@@ -333,6 +349,7 @@ async def test_a_hint_lets_the_operator_fix_a_field_that_is_not_failing() -> Non
     )
 
     assert outcome.hinted_only
+    assert outcome.failed_targets == []
     assert [change.name for change in outcome.changes] == ["list.date"]
     assert outcome.selectors.list.date == "li.job-card > span.regdate"
     assert outcome.after.summary()["list.date"] == 3

@@ -121,6 +121,7 @@ def outcome(before: dict[str, Any], after: dict[str, Any]) -> RepairOutcome:
         usage=USAGE,
         attempts=1,
         targets=targets,
+        failed_targets=targets,
         changes=changes,
         unresolved=[name for name in targets if name in remaining],
     )
@@ -174,7 +175,7 @@ def test_a_clean_run_still_offers_the_button(client: TestClient, conn: sqlite3.C
 
     assert f'hx-post="/ui/tests/{crawler_id}/repair"' in body
     # 고칠 대상이 없다는 것과 무엇을 하면 되는지를 그 자리에 적는다
-    assert "이번 실행에 실패한 필드는 없다" in body
+    assert "이번 실행의 필드 표에는 실패가 없다" in body
     assert "힌트에 적으면 그 필드를 고친다" in body
 
 

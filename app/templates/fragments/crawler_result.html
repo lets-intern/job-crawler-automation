@@ -78,7 +78,8 @@
 <h3>AI 수정</h3>
 <p>
   저장된 셀렉터를 기준으로 <span class="font-semibold">실패한 필드만</span> 모델에게 다시 물어본다.
-  잘 되는 필드는 그대로 둔다. 결과는 화면에만 남고, 반영하려면 아래에서 셀렉터 저장을 누른다.
+  잘 되는 필드는 그대로 둔다 — 힌트로 그 필드를 지적했을 때만 함께 고친다.
+  결과는 화면에만 남고, 반영하려면 아래에서 셀렉터 저장을 누른다.
 </p>
 <form hx-post="/ui/crawlers/{{ crawler_id }}/repair"
       hx-target="#crawler-result"

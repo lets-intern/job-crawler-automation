@@ -105,6 +105,8 @@ def outcome_for(
         usage=USAGE,
         attempts=1,
         targets=targets,
+        # 힌트 없이 부른 것과 같다. 대상이 곧 실패였던 필드다
+        failed_targets=targets,
         changes=[],
         unresolved=[name for name in targets if name in remaining],
     )
