@@ -48,6 +48,10 @@ SUCCESS = "success"
 FAILED = "failed"
 TIMEOUT = "timeout"
 
+# 목록이 쓸 항목을 하나도 내놓지 않은 실행의 사유. 예외로 올라오는 실패가 아니라 실행이 끝난
+# 뒤에 판정하는 것이라 예외 클래스가 없다
+LIST_EMPTY = "list_empty"
+
 ZERO_ITEM_MESSAGE = "정상 파싱된 항목이 0건이다. 신규 0건인 정상 실행이 아니라 실패다"
 
 

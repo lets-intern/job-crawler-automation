@@ -38,6 +38,7 @@ from app.config import get_settings
 from app.crawler.collect import API, Collectors, html_collectors, open_collectors
 from app.crawler.failures import (
     FAILED,
+    LIST_EMPTY,
     SUCCESS,
     ZERO_ITEM_MESSAGE,
     DetailEmptyError,
@@ -603,6 +604,9 @@ def _finish_run(
 ) -> None:
     """종료 상태와 카운트를 확정하고 놓친 공고를 남긴다. 정상 파싱 0건은 실패다.
 
+    쓸 항목이 하나도 없이 끝난 실행은 `list_empty` 다. 사유 없이 건수만 남기면 목록을 못 읽은
+    실행과 원인을 모르는 실행이 같은 행으로 보인다.
+
     실행 기록과 실패 목록은 한 트랜잭션으로 쓴다. 갈라지면 `fail_count` 는 3인데 어느 공고였는지
     아무 데도 없는 행이 남고, 그 실행은 건수만 알고 고칠 수는 없는 기록이 된다.
     """
@@ -612,12 +616,16 @@ def _finish_run(
         result.error_message = failure.message
     elif result.status == FAILED:
         # 실행 전체는 예외 없이 끝났는데 남은 항목이 0건인 경우다. 항목별 실패가 있으면 그
-        # 분류를 그대로 쓰고, 없으면 모르는 채로 둔다. 추측해서 셋 중 하나로 적지 않는다.
+        # 분류를 그대로 쓴다 — 놓친 이유를 이미 알고 있으므로 추측할 것이 없다.
         first = result.failures[0] if result.failures else None
-        result.error_class = first.error_class if first is not None else None
-        result.error_message = ZERO_ITEM_MESSAGE
         if first is not None:
+            result.error_class = first.error_class
             result.error_message = f"{ZERO_ITEM_MESSAGE}: {first.message}"
+        else:
+            # 항목별 실패조차 없다. 목록이 쓸 항목을 하나도 내놓지 않은 것이라 고칠 자리는
+            # 목록 셀렉터나 목록을 얻는 방식이다 (`app/crawler/failures.py`).
+            result.error_class = LIST_EMPTY
+            result.error_message = ZERO_ITEM_MESSAGE
 
     conn.execute("BEGIN IMMEDIATE")
     try:

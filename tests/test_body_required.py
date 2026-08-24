@@ -144,3 +144,35 @@ async def test_상세로_갈_길이_없으면_detail_unreachable_이다(
         "SELECT reason, title FROM crawl_run_failures WHERE run_id = ?", (result.run_id,)
     ).fetchone()
     assert (row["reason"], row["title"]) == ("detail_unreachable", "상시 채용")
+
+
+# 목록이 항목을 하나도 내놓지 않은 실행 (2.2) --------------------
+
+
+async def test_빈_목록은_list_empty_로_실패한다(conn: sqlite3.Connection) -> None:
+    """항목 0건은 신규 0건인 정상 실행이 아니다. 사유가 없으면 원인 모를 실행과 구분되지 않는다."""
+    result = await run_once(
+        conn, target(), collectors=collectors(StubDetail("본문"), items=[]), limit=3
+    )
+
+    assert result.status == "failed"
+    assert result.error_class == "list_empty"
+    assert (result.success_count, result.new_count, result.fail_count) == (0, 0, 0)
+
+    row = conn.execute(
+        "SELECT status, error_class, error_message FROM crawl_runs WHERE id = ?", (result.run_id,)
+    ).fetchone()
+    assert (row["status"], row["error_class"]) == ("failed", "list_empty")
+    assert row["error_message"]
+
+
+async def test_항목별_실패가_있으면_그_사유가_이긴다(conn: sqlite3.Connection) -> None:
+    """어느 공고를 왜 놓쳤는지 이미 알고 있다. 그것을 list_empty 로 덮으면 조치가 갈리지 않는다."""
+    items = [ListItem(index=0, title="상시 채용", link=LIST_URL, date="", detail_absent=True)]
+
+    result = await run_once(
+        conn, target(), collectors=collectors(StubDetail("본문"), items=items), limit=1
+    )
+
+    assert result.status == "failed"
+    assert result.error_class == "detail_unreachable"
