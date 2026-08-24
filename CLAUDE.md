@@ -69,7 +69,8 @@ detail.
 │   ├── architecture.md       Structure, pipeline stages, folder layout
 │   ├── data-model.md         Tables, content hash, state transitions
 │   ├── api-contract.md       The delivery API the job board consumes
-│   └── tech-stack.md         What is used, and what is deliberately not
+│   ├── tech-stack.md         What is used, and what is deliberately not
+│   └── ocr-benchmark.md      Measured cost of the four collection paths
 │
 ├── site-recipes/             One file per site: rendering, pagination, past failures
 ├── troubleshooting/          Open or unexplained issues
@@ -95,6 +96,7 @@ detail.
 | Format, lint, typecheck, test before commit | `skills/quality-check/SKILL.md` |
 | Committing or pushing | `rules/git-safety.md` |
 | Why a technology was or was not chosen | `docs/tech-stack.md` |
+| Choosing how to collect a site (static/api/render/OCR) | `docs/ocr-benchmark.md` |
 | PRD -> tasks | `skills/task-maker/SKILL.md` |
 | Executing tasks | `skills/task-runner/SKILL.md`, then `agents/push-lead.md` for mode A |
 | Archiving a finished feature | `skills/task-cleaner/SKILL.md` |
