@@ -63,7 +63,9 @@ MISSING = _Missing()
 
 async def fetch_list(client: FetchPolicy, config: ApiListConfig) -> ListParseResult:
     """목록 API 를 한 번 부르고 항목을 만든다."""
-    payload = await _fetch_json(client, config.url, config.method, dict(config.body))
+    payload = await _fetch_json(
+        client, config.url, config.method, dict(config.body), config.headers
+    )
     return build_items(payload, config)
 
 
@@ -73,7 +75,7 @@ async def fetch_detail(
     """공고 하나의 상세 API 를 부르고 필드를 만든다."""
     url = config.url.replace(ID_PLACEHOLDER, item_id)
     body = _with_id(dict(config.body), item_id)
-    payload = await _fetch_json(client, url, config.method, body)
+    payload = await _fetch_json(client, url, config.method, body, config.headers)
     return build_detail(payload, config)
 
 
@@ -186,9 +188,20 @@ def _item(
     )
 
 
-async def _fetch_json(client: FetchPolicy, url: str, method: str, body: dict[str, Any]) -> Any:
+async def _fetch_json(
+    client: FetchPolicy,
+    url: str,
+    method: str,
+    body: dict[str, Any],
+    headers: Mapping[str, str] | None = None,
+) -> Any:
     """공용 클라이언트로 부르고 JSON 으로 읽는다. JSON 이 아니면 파싱 실패다."""
-    result = await client.request(url, method=method, json_body=body if method == "POST" else None)
+    result = await client.request(
+        url,
+        method=method,
+        json_body=body if method == "POST" else None,
+        headers=headers or None,
+    )
     try:
         payload = json.loads(result.text)
     except json.JSONDecodeError as exc:

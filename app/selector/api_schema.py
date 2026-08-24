@@ -73,6 +73,10 @@ ID_PLACEHOLDER = "{id}"
 
 SECTIONS: tuple[str, ...] = ("list", "detail")
 
+# 설정으로 담을 수 없는 헤더. 이름을 정직하게 밝히는 것은 공용 fetch 클라이언트의 일이고,
+# 크롤러 설정이 그것을 덮을 수 있으면 브라우저 위장이 설정 한 줄이 된다
+BLOCKED_HEADERS: frozenset[str] = frozenset({"user-agent"})
+
 
 class ApiConfigError(ValueError):
     """검증 실패. `reason` 은 위 표의 값 중 하나다."""
@@ -95,6 +99,8 @@ class ApiListConfig(BaseModel):
     id_field: str
     # 사람이 볼 상세 주소. `{id}` 자리에 항목 id 가 들어간다
     link_template: str
+    # 사이트가 요구하는 기능성 헤더. 없으면 응답을 주지 않는 API 가 있다
+    headers: dict[str, str] = {}
 
 
 class ApiDetailConfig(BaseModel):
@@ -105,6 +111,8 @@ class ApiDetailConfig(BaseModel):
     body: dict[str, Any]
     # 상세 필드 -> 응답 안의 JSON 경로
     fields: dict[str, str]
+    # 사이트가 요구하는 기능성 헤더. 목록과 상세가 서로 다른 `referer` 를 요구하기도 한다
+    headers: dict[str, str] = {}
 
 
 class ApiConfig(BaseModel):
@@ -170,6 +178,7 @@ def _list_section(value: Any) -> ApiListConfig | None:
         fields=_fields(section, "list", LIST_FIELDS),
         id_field=_required_text(section, "list", "id_field"),
         link_template=_required_text(section, "list", "link_template"),
+        headers=_headers(section, "list"),
     )
     if ID_PLACEHOLDER not in config.link_template:
         # 이 값이 `raw_jobs.source_url` 이 된다. 공고마다 같으면 중복 판정도 링크도 무너진다
@@ -191,6 +200,7 @@ def _detail_section(value: Any) -> ApiDetailConfig | None:
         method=_method(section, "detail"),
         body=_body(section, "detail"),
         fields=_fields(section, "detail", DETAIL_FIELDS),
+        headers=_headers(section, "detail"),
     )
     if ID_PLACEHOLDER not in config.url and ID_PLACEHOLDER not in json.dumps(config.body):
         raise ApiConfigError(
@@ -249,6 +259,44 @@ def _body(section: Mapping[str, Any], where: str) -> dict[str, Any]:
             "unparsable", f"`{where}.body` 가 객체가 아니다: {type(body).__name__}"
         )
     return dict(body)
+
+
+def _headers(section: Mapping[str, Any], where: str) -> dict[str, str]:
+    """사이트가 요구하는 기능성 헤더. 없으면 빈 값이다.
+
+    현대 목록 API 는 `x-hkmc-service` 와 `referer` 가 없으면 400 을 준다. 그런 헤더를 설정에
+    담을 자리가 여기다.
+
+    `User-Agent` 는 담을 수 없다. 이름과 연락처를 밝히는 것은 공용 fetch 클라이언트가 정하고,
+    설정으로 덮을 수 있게 두면 브라우저 위장이 크롤러 등록만으로 가능해진다
+    (`.claude/rules/crawling.md`).
+    """
+    if "headers" not in section or section["headers"] is None:
+        return {}
+    headers = section["headers"]
+    if not isinstance(headers, Mapping):
+        raise ApiConfigError(
+            "unparsable", f"`{where}.headers` 가 객체가 아니다: {type(headers).__name__}"
+        )
+
+    result: dict[str, str] = {}
+    for name, value in headers.items():
+        key = str(name).strip()
+        if key.lower() in BLOCKED_HEADERS:
+            raise ApiConfigError(
+                "unknown_field",
+                f"`{where}.headers` 에 {key} 를 담을 수 없다. 이름은 공용 fetch 클라이언트가 "
+                "정한다",
+            )
+        if not isinstance(value, str):
+            raise ApiConfigError(
+                "unparsable",
+                f"`{where}.headers.{key}` 가 문자열이 아니다: {type(value).__name__}",
+            )
+        if not key:
+            raise ApiConfigError("missing_field", f"`{where}.headers` 에 이름 없는 헤더가 있다")
+        result[key] = value
+    return result
 
 
 def _fields(section: Mapping[str, Any], where: str, allowed: tuple[str, ...]) -> dict[str, str]:
