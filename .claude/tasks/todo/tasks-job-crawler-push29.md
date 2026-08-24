@@ -2,7 +2,7 @@
 
 > PRD: `.claude/tasks/todo/prd-job-crawler.md`
 > Push 범위: HTML 조각으로 들어온 값을 정규화 단계에서 텍스트로 편다
-> 상태: 진행 중
+> 상태: 완료
 
 ## 배경
 
@@ -42,7 +42,7 @@ LG 상세는 API 가 `detailContext`, `requiredItem`, `preferredItem` 을 HTML �
 
 ## 작업
 
-- [ ] 29.0 HTML 조각을 텍스트로 펴는 규칙을 만든다
+- [x] 29.0 HTML 조각을 텍스트로 펴는 규칙을 만든다
     - [x] 29.1 `html_text` 규칙 종류를 더한다
         - 블록 태그는 줄바꿈으로 바꾸고, 나머지 태그는 지우고, 엔티티는 원래 글자로 되돌리고,
           연속 빈 줄은 하나로 줄인다
@@ -68,9 +68,9 @@ LG 상세는 API 가 `detailContext`, `requiredItem`, `preferredItem` 을 HTML �
         - `delivered_at` 을 지우거나 되돌리지 않는다 (`.claude/rules/data-safety.md`)
         - [x] 29.3.V 검증: 재정규화 후 태그가 남은 행이 0건인지 세고, 사람이 고친 2건이 그대로인지,
               `delivered_at` 이 변하지 않았는지 확인
-    - [ ] 29.4 다른 사이트도 태그가 섞였는지 본다
+    - [x] 29.4 다른 사이트도 태그가 섞였는지 본다
         - LG 만의 문제인지 확인한다. 섞인 곳이 더 있으면 같은 규칙을 건다
-        - [ ] 29.4.V 검증: 전체 `normalized_jobs` 에서 태그 형태 문자열이 남은 행 수를 워크플로우별로 센다
+        - [x] 29.4.V 검증: 전체 `normalized_jobs` 에서 태그 형태 문자열이 남은 행 수를 워크플로우별로 센다
 
 ## 하지 않는 것
 

@@ -37,9 +37,26 @@ POST https://api.careers.lg.com/rmk/job/retrieveJobNoticesDetail
 
 ## 상세 본문은 HTML 조각이다
 
-`detailContext`, `requiredItem` 은 인라인 스타일이 잔뜩 붙은 HTML 이다. 수집은 그대로
-적재한다 — 텍스트로 펴는 것은 정규화의 일이다 (`CLAUDE.md`). 지금 `normalized_jobs.body` 에도
-태그가 그대로 남아 있고, 소비 측에 텍스트로 보내려면 정규화 규칙이 필요하다.
+`detailContext`, `requiredItem`, `preferredItem`, `majorCodeName` 은 인라인 스타일이 잔뜩
+붙은 HTML 이다. 수집은 그대로 적재한다 — 텍스트로 펴는 것은 정규화의 일이다 (`CLAUDE.md`).
+
+펴는 것은 `html_text` 규칙이다. `body` 와 `requirements` 에 우선순위 5 로 걸려 있다
+(`seeds/normalization-rules.json`). 2026-08-24 재정규화에서 본문 3,397자가 850자로,
+자격요건 970자가 24자로 줄었다. 규칙을 지우면 태그가 그대로 소비 측으로 나간다.
+
+여섯 사이트 중 값에 마크업이 섞이는 것은 LG 뿐이다. 나머지는 파서가 HTML 에서 텍스트를 뽑아
+적재하므로 `raw_jobs` 단계에서 이미 평문이다.
+
+| 워크플로우 | raw_jobs 건수 | 값에 태그·엔티티가 있는 건 |
+|---|---|---|
+| 롯데그룹 | 6 | 0 |
+| 삼성 | 3 | 0 |
+| SK | 20 | 0 |
+| LG | 167 | 77 (`body` 76, `requirements` 74) |
+| 현대자동차 | 20 | 0 |
+
+`preferredItem` 과 `majorCodeName` 은 아직 어느 필드에도 매핑되어 있지 않다
+(`crawlers.api_config_json`). 매핑하는 날에는 그 필드에도 같은 규칙을 걸어야 한다.
 
 ## 렌더된 HTML 로는 상세로 갈 길이 없었다 (2026-08-24 이전)
 
@@ -75,3 +92,4 @@ API 가 막히면 렌더 경로로 되돌릴 때 출발점이 된다.
 | 2026-08-24 | 실행 결과에서 `detail.body` 가 `실패` 로 표시됨 | 목록 전용인데 상세 필드를 실패로 판정했다 | 화면이 `해당 없음` 으로 적도록 고쳤다 (`app/api/ui_tests.py`) |
 | 2026-08-24 | `list.date` 를 순서 기반에서 관계 기반으로 교체 | `nth-of-type` 이 형제 네 개 중 하나를 순서로 골랐다 | 힌트를 준 AI 수정으로 교체, 저장 후 재실행에서 3/3 확인 |
 | 2026-08-24 | 목록·상세를 `api` 로 전환 | 목록 API 에 `jobNoticeId` 가 있다 | 수동 실행 1회(run 152)에서 83건 적재. `source_url` 83개가 전부 다르고 회사명에 계열사명이 들어왔다 |
+| 2026-08-24 | 소비 측에 태그째 나가는 값 발견 | API 가 본문을 HTML 조각으로 준다 | `html_text` 규칙을 `body`·`requirements` 에 걸었다. 사본 재정규화에서 태그 남은 행 77건 -> 0건 |
