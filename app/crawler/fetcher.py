@@ -17,10 +17,10 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 from urllib.parse import urlsplit
 from urllib.robotparser import RobotFileParser
 
@@ -30,6 +30,9 @@ from app.config import Settings, get_settings
 
 _BACKOFF_BASE_SECONDS = 1.0
 _ROBOTS_PATH = "/robots.txt"
+
+# 연락처를 채우지 않았을 때 나가는 이름. 이 값이 보이면 `CRAWL_USER_AGENT` 가 비어 있다
+UNSET_USER_AGENT = "job-crawler-automation (contact: unset)"
 
 
 class FetchError(Exception):
@@ -68,20 +71,29 @@ class FetchResult:
 class PageSource(Protocol):
     """URL 하나를 HTML 로 바꿔 주는 것. `Fetcher` 와 렌더러가 둘 다 이 모양이다.
 
-    실행 경로가 정적인지 렌더인지는 `crawlers.render_mode` 가 정하고, 그 뒤로는 같은 코드가
-    돈다. 파서와 러너는 어느 쪽이 왔는지 알 필요가 없다.
+    실행 경로가 정적인지 렌더인지는 `crawlers.list_mode` 와 `detail_mode` 가 정하고, 그 뒤로는
+    같은 코드가 돈다. 파서와 러너는 어느 쪽이 왔는지 알 필요가 없다.
     """
 
     async def fetch(self, url: str) -> FetchResult: ...
 
 
 class FetchPolicy(PageSource, Protocol):
-    """정책을 들고 있는 쪽. 렌더 경로가 이것을 받아 같은 robots·딜레이·이름 아래에서 돈다."""
+    """정책을 들고 있는 쪽. 렌더 경로가 이것을 받아 같은 robots·딜레이·이름 아래에서 돈다.
+
+    `request()` 도 여기 있다. JSON API 는 본문을 실은 POST 로 물어보는데, 그것도 밖으로 나가는
+    요청이라 같은 robots·딜레이·User-Agent 아래에서 돌아야 한다. API 경로가 `httpx` 를 직접
+    부르면 이 레포의 어떤 rate limit 도 사실이 아니게 된다 (`.claude/rules/crawling.md`).
+    """
 
     @property
     def user_agent(self) -> str: ...
 
     def guard(self, url: str) -> AbstractAsyncContextManager[None]: ...
+
+    async def request(
+        self, url: str, *, method: str = "GET", json_body: Mapping[str, Any] | None = None
+    ) -> FetchResult: ...
 
 
 class Fetcher:
@@ -100,7 +112,10 @@ class Fetcher:
         sleep: Callable[[float], Awaitable[None]] | None = None,
     ) -> None:
         resolved = settings or get_settings()
-        self._user_agent = resolved.crawl_user_agent
+        # 빈 값은 설정하지 않은 것으로 본다. compose 는 변수를 넣지 않아도 `""` 를 채워
+        # 넘기는데, 그대로 두면 이름 없이 요청이 나간다 — 정직하게 밝히라는 규칙과 정반대다
+        # (`.claude/rules/crawling.md`). `app/api/auth.py` 가 비밀번호에 쓴 것과 같은 방식이다
+        self._user_agent = resolved.crawl_user_agent.strip() or UNSET_USER_AGENT
         self._delay_seconds = resolved.crawl_delay_seconds
         self._max_retries = resolved.crawl_max_retries
         self._clock = clock or time.monotonic
@@ -117,8 +132,21 @@ class Fetcher:
 
     async def fetch(self, url: str) -> FetchResult:
         """robots 확인을 통과한 URL 만 가져온다. 실패는 `FetchError` 로 올라온다."""
+        return await self.request(url)
+
+    async def request(
+        self, url: str, *, method: str = "GET", json_body: Mapping[str, Any] | None = None
+    ) -> FetchResult:
+        """메서드와 본문을 정해서 보낸다. `fetch()` 는 이것의 GET 판이다.
+
+        JSON API 를 물어보는 경로가 쓴다. robots 확인, 호스트 잠금, 딜레이, 재시도가 전부
+        `fetch()` 와 같은 순서로 돈다 — 여기가 두 번째 요청 경로가 되면 안 된다.
+
+        `json_body` 는 있으면 그대로 JSON 본문으로 나간다. GET 에 본문을 싣는 API 는 아직
+        만난 적이 없으므로 보내는 쪽이 POST 를 고른다.
+        """
         await self._ensure_allowed(url)
-        return await self._send(url)
+        return await self._send(url, method=method, json_body=json_body)
 
     @property
     def user_agent(self) -> str:
@@ -176,7 +204,9 @@ class Fetcher:
         rules.parse(result.text.splitlines())
         return rules
 
-    async def _send(self, url: str) -> FetchResult:
+    async def _send(
+        self, url: str, *, method: str = "GET", json_body: Mapping[str, Any] | None = None
+    ) -> FetchResult:
         host = urlsplit(url).netloc
         last_error: FetchError | None = None
 
@@ -187,7 +217,9 @@ class Fetcher:
                 await self._respect_delay(host)
 
                 try:
-                    response = await self._client.get(url)
+                    response = await self._client.request(
+                        method, url, json=None if json_body is None else dict(json_body)
+                    )
                 except httpx.TransportError as exc:
                     last_error = TransportError(f"전송 실패({type(exc).__name__}): {url}")
                     continue

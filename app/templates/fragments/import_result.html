@@ -4,13 +4,11 @@
    0건인 것과 이미 있어서 0건인 것은 다음에 할 일이 서로 다르다.
 
    상태는 단어로 적고 픽토그램은 쓰지 않는다 (`.claude/rules/writing.md`). #}
+{% from "macros.html" import failure, state %}
 {% if error %}
-<p class="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-red-800">
-  <span class="font-semibold">거절</span> — {{ error.message }}
-</p>
-<p class="text-sm">사유: <code>{{ error.reason }}</code>. 아무것도 들어가지 않았다.</p>
+{{ failure(error.reason, error.message ~ " — 아무것도 들어가지 않았다", title="거절") }}
 {% elif result %}
-<p><span class="state-ok">성공</span> — 마이그레이션 {{ result.version }} 파일을 더했다. 기존 데이터는 그대로다.</p>
+<p>{{ state("성공") }} — 마이그레이션 {{ result.version }} 파일을 더했다. 기존 데이터는 그대로다.</p>
 <div class="table-scroll">
   <table class="data-table">
     <caption>가져온 것</caption>
@@ -54,7 +52,7 @@
   가져온 공고를 이 서버의 규칙으로 정규화했다.
   <span class="font-semibold text-slate-900">{{ result.normalized_added }}건</span> 만들었고
   {% if result.normalize_failed %}
-  <span class="state-bad">{{ result.normalize_failed }}건 실패</span>했다.
+  {{ state(result.normalize_failed ~ "건 실패", tone="bad") }}했다.
   실패한 건의 원본은 남아 있다. 규칙을 고쳐 재정규화하면 복구된다.
   {% else %}
   실패는 없다.

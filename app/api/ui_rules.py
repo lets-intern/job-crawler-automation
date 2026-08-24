@@ -184,7 +184,7 @@ def _panel(
     conn: sqlite3.Connection,
     *,
     confirming: bool = False,
-    error: str = "",
+    error: dict[str, str] | None = None,
 ) -> HTMLResponse:
     """재정규화 영역 하나. 규칙 편집과 같은 요청에서 갱신되지 않는다."""
     row = conn.execute("SELECT count(*) AS total FROM raw_jobs").fetchone()
@@ -220,5 +220,5 @@ def start_renormalize_fragment(
     try:
         rules.start_renormalize(backfill, connect)
     except HTTPException as exc:
-        return _panel(request, backfill, conn, error=error_detail(exc)["message"])
+        return _panel(request, backfill, conn, error=error_detail(exc))
     return _panel(request, backfill, conn)

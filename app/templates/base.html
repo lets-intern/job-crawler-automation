@@ -5,13 +5,17 @@
    (`.claude/rules/core.md`). HTMX 와 같은 방식이고 컨테이너는 그대로 하나다.
 
    상태는 색과 굵기로 구분하되 단어를 지우지 않는다. 아이콘·이모지는 넣지 않는다
-   (`.claude/rules/writing.md`). #}
+   (`.claude/rules/writing.md`).
+
+   여러 화면이 같이 쓰는 모양은 아래 `@layer components` 가 정하고, 그 모양을 어떤 낱말과
+   함께 쓰는지는 `macros.html` 이 정한다. 화면이 같은 클래스 문자열을 각자 들고 있지 않게
+   하는 것이 목적이라, 새 화면을 만들 때도 여기 있는 것부터 쓴다. #}
 <!doctype html>
 <html lang="ko">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}{% endblock %} — 크롤링 자동화 운영 화면 made by seongbin</title>
+  <title>{% block title %}{% endblock %} — 크롤링 자동화 made by seongbin</title>
   <script src="https://unpkg.com/htmx.org@2.0.7/dist/htmx.min.js"
           integrity="sha384-ZBXiYtYQ6hJ2Y0ZNoYuI+Nq5MqWBr+chMrS/RkXpNzQCApHEhOt2aY8EJgqwHLkJ"
           crossorigin="anonymous"></script>
@@ -32,12 +36,17 @@
     @layer components {
       /* 요청이 도는 동안만 보이는 대기 문구. HTMX 가 hx-indicator 대상에 htmx-request 를 붙인다.
          아이콘을 쓰지 않는다 — 문구와 점멸로만 만든다 (`.claude/rules/writing.md`) */
-      /* 자리를 미리 잡아 둔다. display 를 켜고 끄면 문구가 들어올 때 배치가 밀린다 */
+      /* 본문과 같은 색·크기면 상태로 읽히지 않는다. 테두리를 둘러 "지금 도는 중" 이라는
+         것이 한 눈에 보이게 하고, 화면 어디서든 같은 모양으로 나온다 */
+      /* 자리를 미리 잡아 두지 않는다. 테두리가 생긴 뒤로는 안 보이는 상자가 제 폭을 차지해,
+         좁은 화면에서 카드마다 빈 줄이 생겼다 (28.1 에서 420px 확인). 문구가 들어올 때
+         옆 단추가 조금 밀리지만, 그때 그 단추는 이미 잠겨 있다 */
       .wait-note {
-        @apply invisible inline-flex items-center text-sm font-medium text-slate-600;
+        @apply hidden items-center gap-1 rounded-md border border-slate-300
+               bg-white px-2 py-0.5 text-sm font-medium text-slate-700;
       }
       .htmx-request .wait-note,
-      .wait-note.htmx-request { @apply visible animate-pulse; }
+      .wait-note.htmx-request { @apply inline-flex animate-pulse; }
       /* 표 안에서는 자리를 잡아 두면 그 칸이 늘 넓어진다. 흐름에서 빼서 열 폭을 건드리지 않는다 */
       .data-table .wait-note {
         @apply absolute bottom-0 left-3 z-10 whitespace-nowrap rounded bg-white/90 px-1 text-xs;
@@ -100,6 +109,16 @@
       .badge-warn { @apply bg-amber-100 text-amber-800; }
       .badge-idle { @apply bg-slate-100 text-slate-700; }
 
+      /* 상자 하나. 실패와 안내가 같은 자리에 같은 크기로 나온다. 클래스 문자열이 화면마다
+         복사돼 여백이 두 가지가 되던 자리라 여기서만 정한다 (`macros.html` 이 쓴다) */
+      .notice { @apply my-3 rounded-md border px-3 py-2 text-sm; }
+      .notice-bad { @apply border-red-300 bg-red-50 text-red-800; }
+      .notice-warn { @apply border-amber-300 bg-amber-50 text-amber-900; }
+      .notice-idle { @apply border-slate-300 bg-slate-50 text-slate-700; }
+      /* 상자 안의 `<p>` 는 `main section > p` 규칙을 타지 않는다. 여백을 여기서 준다 */
+      .notice p { @apply text-sm; }
+      .notice code { @apply bg-white/70; }
+
       /* 폼. 라벨과 입력 사이, 입력과 다음 줄 사이 간격을 여기서 준다 */
       /* fieldset 은 기본이 min-width: min-content 라, size=80 같은 입력 하나가 페이지 전체를
          가로로 늘린다. 9.2.V 에서 420px 창이 272px 밀린 원인이 이것이다 */
@@ -113,7 +132,10 @@
                text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none
                focus:ring-1 focus:ring-slate-500;
       }
-      textarea { @apply font-mono text-xs leading-5; }
+      /* 문장을 적는 칸이 기본이다. 고정폭은 셀렉터 JSON 처럼 글자 자리가 뜻을 갖는 칸만
+         쓴다 — 힌트와 메모까지 고정폭이면 한글이 성기게 벌어져 읽기 나쁘다 */
+      textarea { @apply text-sm leading-6; }
+      textarea.code { @apply font-mono text-xs leading-5; }
 
       /* 넓은 요소들. 셀렉터 JSON 편집기, 본문 미리보기, 재정규화 진행 표시 */
       pre {
@@ -140,16 +162,29 @@
       .modal-foot { @apply flex flex-wrap items-center gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3; }
       .modal-body { @apply flex max-h-[85vh] flex-col; }
 
-      /* 버튼. 제출은 채운 버튼, 나머지는 테두리 버튼, 삭제는 빨강. 태그와 속성으로 갈린다 */
+      /* 버튼은 무게가 셋이다. 화면의 주된 동작은 채운 버튼(제출), 나머지는 테두리 버튼,
+         지우는 것은 빨강. 태그와 속성으로 갈리므로 화면이 클래스를 들 필요가 없다.
+
+         제출인데 그 화면의 주된 동작이 아닌 것(표 안의 토글 저장 같은 것)은 `.btn-quiet`
+         를 붙여 보통 무게로 내린다. 행에서 가장 덜 중요한 것이 가장 진하면 안 된다 */
+      /* 줄바꿈 금지. 좁은 폭에서 flex 가 버튼을 짜부라뜨리면 `임계치 저장` 이 한 줄에 한
+         글자씩 세로로 쌓인다 (28.1 에서 420px 확인) */
       button {
-        @apply mt-1 inline-flex items-center rounded-md border border-slate-300 bg-white px-2.5
-               py-1 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50;
+        @apply mt-1 inline-flex shrink-0 items-center whitespace-nowrap rounded-md border
+               border-slate-300 bg-white px-2.5 py-1 text-sm font-medium text-slate-700
+               shadow-sm hover:bg-slate-50;
       }
       button[type="submit"] {
         @apply border-slate-800 bg-slate-800 text-white hover:bg-slate-700;
       }
       button[hx-delete] { @apply border-red-300 bg-white text-red-700 hover:bg-red-50; }
-      button[disabled] { @apply cursor-not-allowed opacity-50 hover:bg-white; }
+      button.btn-quiet {
+        @apply border-slate-300 bg-white text-slate-700 hover:bg-slate-50;
+      }
+      /* 잠긴 버튼은 자기 색을 그대로 들고 흐려질 뿐이다. 배경만 흰색으로 되돌리면 채운
+         버튼의 흰 글자가 흰 바탕에 얹혀 글자가 사라진다 — 누른 직후 포인터는 늘 그 버튼
+         위에 있으므로, 방금 누른 버튼이 빈 상자가 되는 자리였다 (28.1) */
+      button[disabled] { @apply cursor-not-allowed opacity-60; }
     }
   </style>
 </head>
@@ -157,7 +192,7 @@
   <header class="border-b border-slate-200 bg-white">
     <div class="mx-auto max-w-7xl px-6 py-4">
       <div class="flex flex-wrap items-center justify-between gap-3">
-        <h1 class="text-lg font-semibold tracking-tight text-slate-900">크롤링 자동화 운영 화면 made by seongbin</h1>
+        <h1 class="text-lg font-semibold tracking-tight text-slate-900">크롤링 자동화 <span class="ml-1.5 text-xs font-normal tracking-normal text-slate-400">made by seongbin</span></h1>
         {# 잠금을 푸는 자리. 계정이 없으니 띄울 이름도 없다 (`app/api/auth.py`).
            유틸리티 클래스가 위 @layer components 의 제출 버튼 색을 덮는다 #}
         <form method="post" action="/logout" class="shrink-0">

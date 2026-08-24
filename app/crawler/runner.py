@@ -31,6 +31,7 @@ import sqlite3
 from dataclasses import dataclass, field
 
 from app.config import get_settings
+from app.crawler.collect import API, Collectors, html_collectors, open_collectors
 from app.crawler.failures import (
     FAILED,
     SUCCESS,
@@ -41,12 +42,18 @@ from app.crawler.failures import (
 )
 from app.crawler.fetcher import FetchPolicy, PageSource, get_fetcher
 from app.crawler.hashing import content_hash
-from app.crawler.parser import ListItem, SelectorMissError, parse_detail, parse_list
-from app.crawler.playwright import STATIC, open_source
-from app.crawler.shell import promotion_hint
+from app.crawler.parser import ListItem
 from app.normalize.engine import NormalizeError, insert_normalized, load_rules
 from app.normalize.rules import Rule
-from app.selector.schema import DETAIL_FIELDS, SelectorSchemaError, SelectorSet, validate_selectors
+from app.selector.api_schema import ApiConfigError, parse_api_config
+from app.selector.schema import (
+    DETAIL_FIELDS,
+    DetailSelectors,
+    ListSelectors,
+    SelectorSchemaError,
+    SelectorSet,
+    validate_selectors,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -74,8 +81,6 @@ class RunTarget:
     trigger: str
     workflow_id: int | None = None
     crawler_id: int | None = None
-    # 어느 경로로 가져왔는가. 0개 매칭의 사유를 어떻게 적을지가 이 값에 갈린다
-    render_mode: str = STATIC
 
     def __post_init__(self) -> None:
         if self.workflow_id is None and self.crawler_id is None:
@@ -133,7 +138,7 @@ async def run_workflow(
 
     `workflows` 와 `crawlers` 가 진실이다. 잡을 등록할 때의 값을 스케줄러가 들고 있다가
     쓰지 않는다 (`.claude/rules/crawling.md`). 정적으로 가져올지 렌더할지도 매번
-    `crawlers.render_mode` 를 다시 읽어서 정한다.
+    `crawlers.list_mode` 를 다시 읽어서 정한다.
 
     실행은 `RUN_TIMEOUT_SECONDS` 로 감싼다. 끝나지 않는 실행 하나가 동시 실행 자리를 영원히
     붙들고 있으면 나머지 워크플로우가 전부 멈춘다.
@@ -147,7 +152,8 @@ async def run_workflow(
     row = conn.execute(
         """
         SELECT c.list_url AS list_url, c.selectors_json AS selectors_json,
-               c.render_mode AS render_mode
+               c.list_mode AS list_mode, c.detail_mode AS detail_mode,
+               c.api_config_json AS api_config_json
           FROM workflows w
           JOIN crawlers c ON c.id = w.crawler_id
          WHERE w.id = ?
@@ -157,18 +163,34 @@ async def run_workflow(
     if row is None:
         raise WorkflowMissingError(f"워크플로우 {workflow_id} 가 없다")
 
+    list_mode, detail_mode = str(row["list_mode"]), str(row["detail_mode"])
+    # 저장된 설정이 실행할 수 있는 상태가 아니면 실행하지 못하지만, 그것도 종료 경로다.
+    # transport·selector_miss·parse 중 어느 것도 아니므로 error_class 는 비워 두고 사유만
+    # 남긴다. 셀렉터와 API 설정을 갈라 적는다 — 고칠 자리가 서로 다르다
     try:
-        selectors = validate_selectors(json.loads(row["selectors_json"] or "null"))
+        selectors = collect_selectors(row["selectors_json"], list_mode, detail_mode)
     except (json.JSONDecodeError, SelectorSchemaError) as exc:
-        # 저장된 셀렉터가 실행할 수 있는 상태가 아니다. transport·selector_miss·parse 중
-        # 어느 것도 아니므로 error_class 는 비워 두고 사유만 남긴다.
         result = _config_failure(conn, workflow_id, trigger, f"셀렉터를 읽을 수 없다: {exc}")
+        _record_outcome(conn, workflow_id, result)
+        return result
+    try:
+        api_config = parse_api_config(row["api_config_json"])
+    except ApiConfigError as exc:
+        result = _config_failure(conn, workflow_id, trigger, f"API 설정을 읽을 수 없다: {exc}")
         _record_outcome(conn, workflow_id, result)
         return result
 
     bound = timeout_seconds if timeout_seconds is not None else get_settings().run_timeout_seconds
-    # 어느 경로로 가져올지는 crawlers.render_mode 가 정한다. 브라우저는 이 블록에서만 산다
-    async with open_source(row["render_mode"], fetcher or get_fetcher()) as source:
+    # 목록과 상세를 무엇으로 가져올지는 crawlers 의 두 열이 정한다. 브라우저가 필요한 쪽이
+    # 있으면 이 블록에서만 산다 (`app/crawler/collect.py`)
+    async with open_collectors(
+        list_mode=list_mode,
+        detail_mode=detail_mode,
+        list_url=row["list_url"],
+        selectors=selectors,
+        fetcher=fetcher or get_fetcher(),
+        api_config=api_config,
+    ) as collectors:
         result = await run_once(
             conn,
             RunTarget(
@@ -176,14 +198,28 @@ async def run_workflow(
                 selectors=selectors,
                 trigger=trigger,
                 workflow_id=workflow_id,
-                render_mode=row["render_mode"],
             ),
-            fetcher=source,
+            collectors=collectors,
             limit=limit,
             timeout_seconds=bound,
         )
     _record_outcome(conn, workflow_id, result)
     return result
+
+
+# 목록과 상세가 둘 다 API 면 셀렉터가 하나도 쓰이지 않는다. 그런 크롤러에 빈 셀렉터를
+# 요구하면, 아무도 읽지 않는 값이 없다는 이유로 실행이 멈춘다
+_EMPTY_SELECTORS = SelectorSet(
+    list=ListSelectors(item="", title="", link="", date=""),
+    detail=DetailSelectors(title="", body="", requirements="", deadline="", department=""),
+)
+
+
+def collect_selectors(selectors_json: str | None, list_mode: str, detail_mode: str) -> SelectorSet:
+    """저장된 셀렉터를 읽는다. 양쪽 다 API 인 크롤러는 셀렉터 없이도 실행한다."""
+    if list_mode == API and detail_mode == API:
+        return _EMPTY_SELECTORS
+    return validate_selectors(json.loads(selectors_json or "null"))
 
 
 def _record_outcome(conn: sqlite3.Connection, workflow_id: int, result: RunResult) -> None:
@@ -272,10 +308,14 @@ async def run_once(
     target: RunTarget,
     *,
     fetcher: PageSource | None = None,
+    collectors: Collectors | None = None,
     limit: int | None = None,
     timeout_seconds: float | None = None,
 ) -> RunResult:
     """1회 실행. 예외를 밖으로 던지지 않고 실패한 `RunResult` 로 돌려준다.
+
+    무엇으로 가져올지는 `collectors` 가 들고 있다. 주지 않으면 `fetcher` 로 정적 HTML 을
+    가져오는 수집기를 만든다 — 모드를 고를 것이 없는 호출의 지름길이다.
 
     `timeout_seconds` 가 있으면 그 시간을 넘긴 실행은 중단되고 `status=timeout` 으로 남는다.
     None 이면 시간 제한을 걸지 않는다 — 항목 수를 정해 놓고 도는 테스트 실행이 그렇다.
@@ -283,7 +323,9 @@ async def run_once(
     시간 제한에 걸려도 그때까지 적재한 `raw_jobs` 는 지우지 않는다. append-only 라 되돌리지
     않고, 다음 실행이 같은 공고를 다시 넣지도 않는다 (`.claude/rules/data-safety.md`).
     """
-    client = fetcher or get_fetcher()
+    active = collectors or html_collectors(
+        fetcher or get_fetcher(), target.list_url, target.selectors
+    )
     run_id = _start_run(conn, target)
     result = RunResult(run_id=run_id, status="")
     failure: Failure | None = None
@@ -293,7 +335,7 @@ async def run_once(
         # asyncio.timeout 은 안쪽의 취소를 경계에서 TimeoutError 로 바꿔 준다. 그래서 아래
         # BaseException 절(밖에서 온 취소)과 시간 제한이 섞이지 않는다
         async with asyncio.timeout(timeout_seconds) as bound:
-            await _crawl(conn, target, client, limit, result)
+            await _crawl(conn, target, active, limit, result)
     except TimeoutError as exc:
         # 제한을 넘겨서 끊긴 것인지, 안쪽에서 올라온 TimeoutError 인지 구분한다.
         # 후자를 timeout 으로 적으면 사이트 문제를 실행 시간 문제로 잘못 읽게 된다
@@ -319,21 +361,12 @@ async def run_once(
 async def _crawl(
     conn: sqlite3.Connection,
     target: RunTarget,
-    fetcher: PageSource,
+    collectors: Collectors,
     limit: int | None,
     result: RunResult,
 ) -> None:
     rules, rules_error = _load_rules(conn)
-    page = await fetcher.fetch(target.list_url)
-    try:
-        parsed = parse_list(page.text, target.selectors.list, page.url)
-    except SelectorMissError as exc:
-        # 0개 매칭이 마크업 변경인지 JS 렌더인지를 사유에 적는다. 승격은 운영자가 정하므로
-        # 여기서 render_mode 를 바꾸지 않는다 (`app/crawler/shell.py`).
-        hint = promotion_hint(page.text, target.render_mode)
-        if hint is None:
-            raise
-        raise SelectorMissError(f"{exc}. {hint}") from exc
+    parsed = await collectors.list.collect()
 
     result.matched = parsed.matched
     for miss in parsed.failures:
@@ -348,7 +381,7 @@ async def _crawl(
 
     for item in parsed.items[:limit]:
         try:
-            collected = await _collect(conn, target, item, fetcher)
+            collected = await _collect(conn, target, item, collectors)
         except Exception as exc:
             # 항목 하나가 실패해도 나머지는 계속 간다. 실패는 fail_count 로 남는다.
             classified = classify(exc)
@@ -370,7 +403,7 @@ async def _crawl(
 
 
 async def _collect(
-    conn: sqlite3.Connection, target: RunTarget, item: ListItem, fetcher: PageSource
+    conn: sqlite3.Connection, target: RunTarget, item: ListItem, collectors: Collectors
 ) -> ItemResult:
     """항목 하나를 처리한다. 아는 공고면 상세를 가져오지 않는다."""
     if item.detail_absent:
@@ -382,8 +415,7 @@ async def _collect(
         if _is_known(conn, target.workflow_id, "source_url", item.link):
             return ItemResult(source_url=item.link, state=KNOWN, fields={})
 
-        page = await fetcher.fetch(item.link)
-        detail = parse_detail(page.text, target.selectors.detail)
+        detail = await collectors.detail.collect(item)
         record = _record(item, detail.fields)
     digest = content_hash(record)
 

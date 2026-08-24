@@ -78,10 +78,10 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
 def add_workflow(conn: sqlite3.Connection, render_mode: str = "static") -> int:
     conn.execute(
         """
-        INSERT INTO crawlers (name, list_url, selectors_json, status, render_mode)
-        VALUES (?, ?, ?, 'promoted', ?)
+        INSERT INTO crawlers (name, list_url, selectors_json, status, list_mode, detail_mode)
+        VALUES (?, ?, ?, 'promoted', ?, ?)
         """,
-        ("대상", LIST_URL, json.dumps(SELECTORS), render_mode),
+        ("대상", LIST_URL, json.dumps(SELECTORS), render_mode, render_mode),
     )
     cursor = conn.execute(
         "INSERT INTO workflows (crawler_id, name, interval_minutes) VALUES (1, ?, 360)",
@@ -159,5 +159,5 @@ async def test_a_shell_run_does_not_switch_the_mode_by_itself(conn: sqlite3.Conn
 
     await run_workflow(conn, workflow_id, fetcher=stub_fetcher(SHELL_HTML), limit=1)
 
-    row = conn.execute("SELECT render_mode FROM crawlers WHERE id = 1").fetchone()
-    assert row["render_mode"] == "static"
+    row = conn.execute("SELECT list_mode FROM crawlers WHERE id = 1").fetchone()
+    assert row["list_mode"] == "static"

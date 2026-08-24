@@ -1,4 +1,5 @@
 {# 등록된 크롤러 표. 페이지 로드 때 한 번, 등록·저장 뒤 OOB 로 다시 들어온다 #}
+{% from "macros.html" import badge, empty_row, wait %}
 <div class="table-scroll">
 <table class="data-table">
   <caption>등록된 크롤러</caption>
@@ -19,23 +20,27 @@
       <td class="num">{{ crawler.id }}</td>
       <td class="cell-text">{{ crawler.name }}</td>
       <td>
-        {% if crawler.status == "promoted" %}<span class="badge badge-ok">승격됨</span>
-        {% elif crawler.status == "tested" %}<span class="badge badge-idle">테스트됨</span>
-        {% else %}<span class="badge badge-idle">초안</span>{% endif %}
+        {% if crawler.status == "promoted" %}{{ badge("승격됨") }}
+        {% elif crawler.status == "tested" %}{{ badge("테스트됨") }}
+        {% else %}{{ badge("초안") }}{% endif %}
         <span class="text-xs text-slate-500">({{ crawler.status }})</span>
       </td>
       <td>
-        {{ crawler.render_mode }}
-        {# 승격은 운영자가 정한다. 자동으로 렌더로 올라가는 경로는 없다 #}
+        {# 테스트 실행 화면의 `저장 모드` 열과 같은 말로 적는다. 한쪽만 `playwright` 로
+           적으면 같은 값이 화면마다 다른 것으로 읽힌다 #}
+        <span class="font-medium">{{ mode_word(crawler.list_mode) }}</span>
+        <span class="text-xs text-slate-500">({{ crawler.list_mode }})</span>
+        {# 승격은 운영자가 정한다. 자동으로 렌더로 올라가는 경로는 없다.
+           이 행의 주된 동작은 셀렉터 편집이다. 모드 토글은 보통 무게로 둔다 #}
         <form hx-put="/ui/crawlers/{{ crawler.id }}/render-mode"
               hx-target="#crawler-result"
               hx-swap="innerHTML"
               hx-disabled-elt="find button"
               hx-indicator="closest form, #crawler-result-wait">
           <input type="hidden" name="render_mode"
-                 value="{% if crawler.render_mode == 'playwright' %}static{% else %}playwright{% endif %}">
-          <button type="submit">{% if crawler.render_mode == 'playwright' %}정적으로{% else %}렌더로{% endif %}</button>
-          <span class="wait-note">바꾸는 중</span>
+                 value="{% if crawler.list_mode == 'playwright' %}static{% else %}playwright{% endif %}">
+          <button type="submit" class="btn-quiet">{% if crawler.list_mode == 'playwright' %}정적으로{% else %}렌더로{% endif %}</button>
+          {{ wait("바꾸는 중") }}
         </form>
       </td>
       <td>{{ crawler.default_company or "안 적음" }}</td>
@@ -48,21 +53,22 @@
                 hx-target="#crawler-result"
                 hx-swap="innerHTML"
                 hx-disabled-elt="this"
-                hx-indicator="#crawler-result-wait">셀렉터 편집</button>
+                hx-indicator="closest td, #crawler-result-wait">셀렉터 편집</button>
         {# 삭제는 되돌릴 수 없다. 누르기 전에 hx-confirm 이 한 번 확인을 받는다.
            승격된 크롤러인지는 여기서 판정하지 않는다 — API 가 409 로 거절하고 그 사유가
            결과 영역에 그대로 들어온다 (`app/api/crawlers.py`) #}
         <button type="button"
                 hx-delete="/ui/crawlers/{{ crawler.id }}"
-                hx-confirm="크롤러 {{ crawler.id }}({{ crawler.name }}) 를 지운다. 되돌릴 수 없다."
+                hx-confirm="크롤러 {{ crawler.id }}({{ crawler.name }}) 를 지운다. 되돌릴 수 없다. 계속할까"
                 hx-target="#crawler-result"
                 hx-swap="innerHTML"
                 hx-disabled-elt="this"
-                hx-indicator="#crawler-result-wait">삭제</button>
+                hx-indicator="closest td, #crawler-result-wait">삭제</button>
+        {{ wait("결과 영역을 채우는 중") }}
       </td>
     </tr>
     {% else %}
-    <tr><td colspan="7" class="cell-text text-slate-600">등록된 크롤러가 없다. 위 <span class="font-medium">새 크롤러</span> 에 리스트 URL 과 상세 URL 을 넣어 셀렉터를 생성하면 여기에 들어온다</td></tr>
+    {{ empty_row(7, "등록된 크롤러가 없다. 위쪽 새 크롤러 폼에 리스트 URL 을 넣어 셀렉터를 생성하면 여기에 들어온다") }}
     {% endfor %}
   </tbody>
 </table>

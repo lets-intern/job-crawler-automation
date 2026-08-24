@@ -27,7 +27,8 @@ from app.api import crawlers
 from app.api.ui import render
 
 _LIST_QUERY = (
-    "SELECT id, name, status, list_url, detail_url, default_company, render_mode "
+    "SELECT id, name, status, list_url, detail_url, default_company, "
+    "list_mode, detail_mode "
     "FROM crawlers ORDER BY id DESC"
 )
 

@@ -104,13 +104,17 @@
            실패한다. 자기 자신으로 덮어쓴다.
            PUT 으로 보낸다 — DELETE 는 HTMX 가 값을 주소에 실어 보내서, 아직 저장하지 않은
            본문 수백 자가 URL 로 들어간다. `hx-include` 로 지금 폼에 친 값을 함께 보내
-           보정 하나를 지우려다 나머지 수정을 잃지 않게 한다 #}
+           보정 하나를 지우려다 나머지 수정을 잃지 않게 한다.
+
+           브라우저 `confirm()` 을 물리지 않는다. 여기서 사라지는 것은 사람이 친 값 하나이고,
+           되돌릴 것은 바로 아래 `규칙이 만든 값` 에 그대로 적혀 있다 — 되돌릴 수 없는 일이
+           아니다. 고치는 동안 여섯 필드를 오가며 누르는 자리라 그때마다 브라우저 창이 뜨면
+           고치는 일 자체가 막힌다 #}
         <button type="button" hx-put="/ui/review/jobs/{{ job.raw_job_id }}"
                 hx-include="closest form" hx-vals='{"drop": "{{ field.field }}"}'
                 hx-target="#app-modal-body" hx-swap="innerHTML"
                 hx-disabled-elt="this" hx-indicator="#review-drop-wait-{{ field.field }}"
-                hx-confirm="{{ field.label }} 보정을 지운다. 다음 정규화에서 규칙이 만든 값으로 돌아간다. 계속할까"
-                title="사람이 정한 값을 버리고 규칙 값으로 되돌린다">보정 삭제</button>
+                title="사람이 정한 값을 버리고 규칙 값으로 되돌린다. 규칙값은 아래에 그대로 있다">보정 삭제</button>
         <span id="review-drop-wait-{{ field.field }}" class="wait-note">지우는 중</span>
         {% else %}
         <span class="badge badge-idle">규칙값</span>

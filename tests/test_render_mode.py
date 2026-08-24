@@ -1,4 +1,4 @@
-"""`crawlers.render_mode` 가 실행 경로를 고르는지 본다.
+"""`crawlers.list_mode` 가 실행 경로를 고르는지 본다.
 
 실사이트에도 브라우저에도 나가지 않는다. 정적 경로에는 저장된 python.org 픽스처를 돌려주는
 스텁 fetch 클라이언트가, 렌더 경로에는 같은 픽스처를 돌려주는 대역이 들어간다. 둘이 각자
@@ -126,10 +126,10 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
 def add_workflow(conn: sqlite3.Connection, render_mode: str) -> int:
     conn.execute(
         """
-        INSERT INTO crawlers (name, list_url, selectors_json, status, render_mode)
-        VALUES (?, ?, ?, 'promoted', ?)
+        INSERT INTO crawlers (name, list_url, selectors_json, status, list_mode, detail_mode)
+        VALUES (?, ?, ?, 'promoted', ?, ?)
         """,
-        ("python.org", LIST_URL, json.dumps(SELECTORS), render_mode),
+        ("python.org", LIST_URL, json.dumps(SELECTORS), render_mode, render_mode),
     )
     cursor = conn.execute(
         "INSERT INTO workflows (crawler_id, name, interval_minutes) VALUES (1, ?, 60)",
@@ -141,9 +141,9 @@ def add_workflow(conn: sqlite3.Connection, render_mode: str) -> int:
 def test_the_default_render_mode_is_static(conn: sqlite3.Connection) -> None:
     """컬럼 기본값이 정적이다. 아무것도 적지 않은 크롤러가 브라우저를 띄우면 안 된다."""
     conn.execute("INSERT INTO crawlers (name, list_url) VALUES ('x', ?)", (LIST_URL,))
-    row = conn.execute("SELECT render_mode FROM crawlers WHERE id = 1").fetchone()
+    row = conn.execute("SELECT list_mode, detail_mode FROM crawlers WHERE id = 1").fetchone()
 
-    assert row["render_mode"] == "static"
+    assert (row["list_mode"], row["detail_mode"]) == ("static", "static")
 
 
 async def test_static_crawler_never_touches_the_render_path(conn: sqlite3.Connection) -> None:

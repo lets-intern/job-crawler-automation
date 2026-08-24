@@ -78,7 +78,7 @@ def insert_crawler(
     cursor = conn.execute(
         """
         INSERT INTO crawlers
-               (name, list_url, detail_url, selectors_json, status, render_mode)
+               (name, list_url, detail_url, selectors_json, status, list_mode)
         VALUES ('그룹 채용', ?, ?, ?, 'draft', 'static')
         """,
         (LIST_URL, detail_url or None, json.dumps(selectors, ensure_ascii=False)),
@@ -275,7 +275,7 @@ def test_repair_does_not_change_the_crawler_status(
 
 def test_repair_uses_the_saved_render_mode(client: TestClient, conn: sqlite3.Connection) -> None:
     crawler_id = insert_crawler(conn)
-    conn.execute("UPDATE crawlers SET render_mode = 'playwright' WHERE id = ?", (crawler_id,))
+    conn.execute("UPDATE crawlers SET list_mode = 'playwright' WHERE id = ?", (crawler_id,))
     conn.commit()
     called = use_repairer(outcome_for)
 

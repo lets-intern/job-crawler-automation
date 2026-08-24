@@ -121,7 +121,7 @@ def called_with() -> list[str]:
 
 
 def modes(conn: sqlite3.Connection) -> list[str]:
-    return [str(row["render_mode"]) for row in conn.execute("SELECT render_mode FROM crawlers")]
+    return [str(row["list_mode"]) for row in conn.execute("SELECT list_mode FROM crawlers")]
 
 
 def test_등록에_모드를_안_주면_정적으로_저장된다(
@@ -170,7 +170,8 @@ def test_이미_있는_행은_새_기본값에_끌려가지_않는다(
 ) -> None:
     """기본값은 새 등록에만 걸린다. 이미 올려 둔 크롤러를 등록 하나가 끌어내리면 안 된다."""
     conn.execute(
-        "INSERT INTO crawlers (name, list_url, render_mode) VALUES ('기존', ?, 'playwright')",
+        "INSERT INTO crawlers (name, list_url, list_mode, detail_mode) "
+        "VALUES ('기존', ?, 'playwright', 'playwright')",
         (LIST_URL,),
     )
     conn.commit()
@@ -178,8 +179,8 @@ def test_이미_있는_행은_새_기본값에_끌려가지_않는다(
     client.post("/api/crawlers", json={"list_url": LIST_URL, "detail_url": DETAIL_URL})
     db.migrate_up(conn)
 
-    saved = conn.execute("SELECT render_mode FROM crawlers WHERE name = '기존'").fetchone()
-    assert saved["render_mode"] == "playwright"
+    saved = conn.execute("SELECT list_mode FROM crawlers WHERE name = '기존'").fetchone()
+    assert saved["list_mode"] == "playwright"
 
 
 def test_화면_경로도_같은_기본값을_쓴다(

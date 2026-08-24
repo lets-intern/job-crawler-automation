@@ -78,9 +78,9 @@ def make_upload(
     db.migrate_up(upload)
     upload.execute(
         """
-        INSERT INTO crawlers (name, list_url, detail_url, selectors_json, render_mode, status,
-                              default_company)
-        VALUES (?, ?, ?, ?, 'playwright', 'promoted', '기본회사')
+        INSERT INTO crawlers (name, list_url, detail_url, selectors_json, list_mode,
+                              detail_mode, status, default_company)
+        VALUES (?, ?, ?, ?, 'playwright', 'playwright', 'promoted', '기본회사')
         """,
         (crawler_name, list_url, list_url + "/{id}", SELECTORS),
     )
@@ -329,14 +329,14 @@ def test_저쪽_서버의_실행_기록은_따라오지_않는다(
 def test_크롤러는_셀렉터와_렌더_방식을_그대로_가져온다(
     conn: sqlite3.Connection, tmp_path: pathlib.Path
 ) -> None:
-    """`render_mode` 를 놓치면 JS 사이트가 정적으로 돌아 0건이 나온다."""
+    """수집 방식을 놓치면 JS 사이트가 정적으로 돌아 0건이 나온다."""
     upload = make_upload(tmp_path / "upload.db", jobs=[job("가")])
 
     import_database(conn, upload)
 
     crawler = conn.execute("SELECT * FROM crawlers").fetchone()
     assert crawler["selectors_json"] == SELECTORS
-    assert crawler["render_mode"] == "playwright"
+    assert (crawler["list_mode"], crawler["detail_mode"]) == ("playwright", "playwright")
     assert crawler["status"] == "promoted"
     assert crawler["default_company"] == "기본회사"
     assert crawler["detail_url"] == LIST_URL + "/{id}"

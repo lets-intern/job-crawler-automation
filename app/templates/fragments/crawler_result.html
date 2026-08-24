@@ -1,17 +1,13 @@
 {# 결과 영역. 생성 결과·편집기·거절 사유가 모두 이 조각 하나로 들어간다.
    AI 수정의 결과 표와 힌트 입력칸은 테스트 실행 화면과 같은 매크로를 쓴다 #}
 {% from "fragments/selector_repair_macro.html" import hint_field, repair_report %}
+{% from "macros.html" import failure, notice_box, state, wait %}
 {% if error %}
-<h3>실패</h3>
-<dl>
-  <dt>사유</dt><dd>{{ error.reason }}</dd>
-  <dt>내용</dt><dd>{{ error.message }}</dd>
-  {% if next_step(error.reason) %}<dt>다음</dt><dd>{{ next_step(error.reason) }}</dd>{% endif %}
-</dl>
+{{ failure(error.reason, error.message, title="셀렉터를 만들지 못했다") }}
 {% endif %}
 
 {% if notice %}
-<p>{{ notice }}</p>
+{{ notice_box(notice) }}
 {% endif %}
 
 {% if generation %}
@@ -28,13 +24,9 @@
       <td>
         {# 판정은 셋이다. 건너뜀은 매칭 0개지만 실패가 아니다 — 셀렉터가 비어 있거나
            돌려볼 HTML 이 없어 판정하지 않았다는 뜻이고, 고칠 셀렉터가 없다 #}
-        {% if field in generation.skipped_fields %}
-        <span class="state-idle">건너뜀</span>
-        {% elif field in generation.failed_fields %}
-        <span class="state-bad">실패</span>
-        {% else %}
-        <span class="state-ok">성공</span>
-        {% endif %}
+        {% if field in generation.skipped_fields %}{{ state("건너뜀") }}
+        {% elif field in generation.failed_fields %}{{ state("실패") }}
+        {% else %}{{ state("성공") }}{% endif %}
       </td>
     </tr>
     {% endfor %}
@@ -42,19 +34,20 @@
 </table>
 </div>
 {% if generation.failed_fields %}
-<p class="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-red-800">
+<div class="notice notice-bad">
   <span class="font-semibold">손으로 고쳐야 하는 필드</span>: {{ generation.failed_fields | join(", ") }}
   — 셀렉터는 있는데 생성 시점 HTML 에서 아무것도 잡지 못했다.
-</p>
+  다음: {{ next_step("selector_miss") }}
+</div>
 {% else %}
-<p><span class="state-ok">판정한 필드가 모두 생성 시점 HTML 에서 값을 찾았다.</span></p>
+<p>{{ state("성공") }} — 판정한 필드가 모두 생성 시점 HTML 에서 값을 찾았다.</p>
 {% endif %}
 {% if generation.skipped_fields %}
-<p class="rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-slate-700">
+<div class="notice notice-idle">
   <span class="font-semibold">건너뛴 필드</span>: {{ generation.skipped_fields | join(", ") }}
   — 셀렉터가 비어 있거나 돌려볼 HTML 이 없어 판정하지 않았다. 매칭 0개지만 실패가 아니다.
   어느 쪽인지는 아래 설명에 있다.
-</p>
+</div>
 {% endif %}
 {% if generation.notes %}
 <ul>{% for note in generation.notes %}<li>{{ note }}</li>{% endfor %}</ul>
@@ -85,12 +78,12 @@
   결과는 화면에만 남고, 반영하려면 아래에서 셀렉터 저장을 누른다.
 </p>
 {% if not has_failure %}
-<p class="rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-slate-700">
+<div class="notice notice-idle">
   지금 실패한 필드는 없다. 그래도 잡히는 값이 틀렸으면 고칠 수 있다 —
   <span class="font-semibold">어느 필드가 무엇을 잘못 잡는지 힌트에 적으면 그 필드를 고친다.</span>
   힌트를 비우고 눌러도 되지만, 그때는 지금 아무것도 잡지 못하는 셀렉터만 대상이 된다.
   사이트에 없는 항목(건너뜀)은 어느 쪽에서도 대상이 아니다.
-</p>
+</div>
 {% endif %}
 <form hx-post="/ui/crawlers/{{ crawler_id }}/repair"
       hx-target="#crawler-result"
@@ -101,7 +94,7 @@
   {{ hint_field("crawler-repair") }}
   <p>
     <button type="submit">AI 수정</button>
-    <span id="repair-wait" class="wait-note">페이지를 다시 가져와 실패한 필드를 고치는 중. 10초쯤 걸린다</span>
+    {{ wait("페이지를 다시 가져와 실패한 필드를 고치는 중. 10초쯤 걸린다", "repair-wait") }}
   </p>
 </form>
 {% endif %}
@@ -117,10 +110,10 @@
     <label for="selectors-json">셀렉터 JSON</label>
     <br>
     <textarea id="selectors-json" name="selectors_json" rows="24" cols="90"
-              spellcheck="false" class="w-full">{{ selectors_json }}</textarea>
+              spellcheck="false" class="code w-full">{{ selectors_json }}</textarea>
     <br>
     <button type="submit">셀렉터 저장</button>
-    <span id="selectors-save-wait" class="wait-note">셀렉터를 저장하는 중</span>
+    {{ wait("셀렉터를 저장하는 중", "selectors-save-wait") }}
   </fieldset>
 </form>
 <p>

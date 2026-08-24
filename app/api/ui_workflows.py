@@ -79,9 +79,8 @@ from pydantic import ValidationError
 
 from app import db
 from app.api import crawlers, workflows
-from app.api.ui import format_time, render
+from app.api.ui import format_time, mode_word, render
 from app.api.ui_crawlers import crawler_rows, error_detail
-from app.api.ui_tests import mode_word
 from app.config import get_settings
 from app.crawler.failures import SUCCESS
 from app.crawler.fetcher import FetchPolicy

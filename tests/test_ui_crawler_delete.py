@@ -51,7 +51,7 @@ def client(tmp_path: pathlib.Path, conn: sqlite3.Connection) -> Iterator[TestCli
 
 def make_crawler(conn: sqlite3.Connection, status: str = "draft") -> int:
     cursor = conn.execute(
-        "INSERT INTO crawlers (name, list_url, status, render_mode) VALUES (?, ?, ?, 'static')",
+        "INSERT INTO crawlers (name, list_url, status, list_mode) VALUES (?, ?, ?, 'static')",
         ("python.org 채용", LIST_URL, status),
     )
     return int(cursor.lastrowid or 0)

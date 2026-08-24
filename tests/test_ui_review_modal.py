@@ -271,3 +271,30 @@ def test_없는_수집_건은_사유를_적는다(client: TestClient) -> None:
 
     assert "수집 건 999" in html
     assert oob_ids(html) == []
+
+
+def test_검수_화면에는_지우는_경로가_없다(client: TestClient) -> None:
+    """공고를 지우는 것은 데이터 조회 화면의 일이다 (27.9).
+
+    한 화면이 고치기와 지우기를 같이 들고 있으면 체크박스 옆에서 값을 고치게 되고, 고치려다
+    지우는 사고가 그 자리에서 난다.
+    """
+    table = client.get("/ui/review").text
+    modal = client.get("/ui/review/modal/7").text
+
+    for html in (table, modal):
+        assert "/ui/review/delete" not in html
+        assert 'name="raw_job_id" value=' not in html
+        assert "data-select-row" not in html
+        assert "all_filtered" not in html
+    # 그런 라우트가 아예 없다. 지우기는 조회 화면에만 있다
+    assert client.post("/ui/review/delete/confirm", data={}).status_code == 404
+    assert client.post("/ui/review/delete", data={}).status_code == 404
+
+
+def test_고치는_흐름에_브라우저_확인_창이_끼어들지_않는다(client: TestClient) -> None:
+    """보정 삭제는 되돌릴 수 없는 일이 아니다. 규칙값이 바로 아래에 그대로 적혀 있다."""
+    html = client.get("/ui/review/modal/7").text
+
+    assert "보정 삭제" in html or "규칙값" in html
+    assert "hx-confirm" not in html

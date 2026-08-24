@@ -1,19 +1,49 @@
 # LG (careers.lg.com)
 
 - 리스트 URL: https://careers.lg.com/apply
-- 상세 URL 패턴: `/apply/detail?id=<번호>`. **목록에서는 이 번호를 알아낼 수 없다** (아래 참고)
-- 렌더링: Playwright 필요. 근거는 정적 응답에 공고 제목이 없고, 렌더 후 1,486,598자에
-  `div.css-13xukit` 이 83건 잡힌다는 것이다
-- 페이지네이션: 없다. 렌더 한 번에 83건이 모두 들어온다 (2026-08-24 확인)
-- 날짜 포맷: 목록 항목에 `D-6` 과 `2026.08.30 23:00` 이 나란히 있다. 저장하는 것은 뒤쪽
-  마감 일시다. 등록일은 목록에도 상세에도 없다
-- robots.txt: 공용 fetch 클라이언트의 robots 확인을 통과했다
+- 상세 URL 패턴: `/apply/detail?id=<번호>`. 번호는 목록 API 의 `jobNoticeId` 다
+- 수집 방식: 목록·상세 둘 다 `api` (2026-08-24 전환). 브라우저를 띄우지 않는다
+- 페이지네이션: 없다. 목록 API 한 번에 83건이 모두 들어온다 (2026-08-24 확인)
+- 날짜 포맷: `2026.08.30 23:00`. 저장하는 것은 마감 일시다. 등록일은 목록에도 상세에도 없다
+- robots.txt: 목록 페이지와 API 가 **다른 호스트**다. `api.careers.lg.com` 의 robots 는
+  `User-agent: *` 에 `Allow: /` 이고, 공용 fetch 클라이언트가 호스트별로 robots 와 딜레이를
+  따로 잡으므로 그대로 통과한다
 - 권장 주기: 30분으로 등록돼 있다 (workflow 5)
 
-## 목록 전용 사이트다. 상세로 갈 길이 없다
+## 목록도 상세도 JSON API 로 온다
 
-항목 안에 `a` 태그가 0개다. 항목 어디에도 공고 번호가 없다 — `data-` 속성도, `id` 도,
-JSON 블록도 없다. 2026-08-24 에 렌더된 목록 HTML 전체에서 확인한 값이다.
+브라우저 없이 `POST` 로 200 이 온다. 실제로 쓰는 설정은 DB(`crawlers.api_config_json`)가
+진실이고, 같은 값을 `tests/fixtures/lg-api-config-20260824.json` 에 두어 시험이 쓴다.
+
+```
+POST https://api.careers.lg.com/rmk/job/retrieveJobNoticesList
+  body {"lnbSearch":"","hashTagText":"","recDate":"POST_START_DATE","order":"DESC",
+        "careerList":[],"companyCodeList":[],"desireLocList":[],"jobGroupList":[]}
+  -> data.jobNoticeList 83건. 항목마다 jobNoticeId / jobNoticeName / companyName /
+     recEndDateTime
+
+POST https://api.careers.lg.com/rmk/job/retrieveJobNoticesDetail
+  body {"jobNoticeId": 1002029}
+  -> data.jobNoticesDetail.jobNoticesDetail 에 jobNoticeName, companyName, recEndDate
+     data.jobNoticesDetail.recList[0] 에 detailContext, requiredItem, orgName
+```
+
+`jobNoticeId` 는 **숫자로 보내야 한다.** 문자열로 보내면 응답이 비어서 돌아온다
+(`app/crawler/api_source.py` 의 `_with_id`).
+
+`raw_jobs.source_url` 은 `link_template` 이 만든다 —
+`https://careers.lg.com/apply/detail?id={id}`. 공고마다 다른 주소이고, 소비 측이 그대로 쓸 수
+있는 사람용 주소다.
+
+## 상세 본문은 HTML 조각이다
+
+`detailContext`, `requiredItem` 은 인라인 스타일이 잔뜩 붙은 HTML 이다. 수집은 그대로
+적재한다 — 텍스트로 펴는 것은 정규화의 일이다 (`CLAUDE.md`). 지금 `normalized_jobs.body` 에도
+태그가 그대로 남아 있고, 소비 측에 텍스트로 보내려면 정규화 규칙이 필요하다.
+
+## 렌더된 HTML 로는 상세로 갈 길이 없었다 (2026-08-24 이전)
+
+항목 안에 `a` 태그가 0개이고 공고 번호도 없었다. `data-` 속성도, `id` 도, JSON 블록도 없다.
 
 | 무엇 | 렌더된 목록 HTML 안의 개수 |
 |---|---|
@@ -21,42 +51,20 @@ JSON 블록도 없다. 2026-08-24 에 렌더된 목록 HTML 전체에서 확인�
 | `apply/detail` 문자열 | 0 |
 | 6자리 이상 숫자 id | 0 |
 
-그래서 `list.link` 와 `list.link_template` 이 둘 다 비어 있고, `app/crawler/parser.py` 의
-`list_only()` 가 참이다. 상세 페이지를 아예 열지 않고 목록에서 읽은 값만 적재한다.
-`raw_jobs.source_url` 은 공고마다 목록 URL(`https://careers.lg.com/apply`) 이 들어간다.
+그래서 `list.link` 와 `list.link_template` 이 둘 다 비어 있었고, 상세를 아예 열지 않았다.
+`raw_jobs.source_url` 에는 공고마다 목록 URL 이 들어갔다. **셀렉터로 고칠 수 있는 문제가
+아니었다** — 항목을 클릭하면 JS 가 이동시키는 구조라 셀렉터가 잡을 것이 없었다.
 
-**이것은 셀렉터로 고칠 수 없다.** 항목을 클릭하면 JS 가 상세로 이동시키는 구조라, 상세까지
-가려면 렌더러가 항목을 클릭하고 이동한 주소를 읽어야 한다. 셀렉터 문제가 아니라 크롤러
-경로 문제다.
+API 로 옮기면서 이 문제가 통째로 사라졌다. id 가 응답에 있기 때문이다.
 
-2026-08-24 에 운영자 힌트(F12 의 `Copy selector` 로 딴 항목 경로)를 실어 AI 수정을 두 번
-돌렸고, 두 번 다 모델이 `list.link` 를 빈 문자열로 두었다. 잡을 것이 없다는 것이 맞는 답이라
-그대로 남긴다. 억지로 아무 요소나 고르면 조용히 틀린 URL 이 공고마다 붙는다.
+## 저장된 셀렉터는 쓰이지 않는다
 
-## 셀렉터가 전부 자동 생성 클래스다
+목록·상세가 둘 다 `api` 라 `selectors_json` 은 실행에서 읽히지 않는다. 값은 남겨 두었다 —
+API 가 막히면 렌더 경로로 되돌릴 때 출발점이 된다.
 
-emotion/MUI 라 클래스가 `css-13xukit`, `css-1jelp97` 처럼 해시다. **스타일이 바뀌면 해시가
-바뀐다.** 지금 저장된 셀렉터는 전부 이 해시에 기대고 있고, 대안이 없다 — 항목 안에 뜻이 있는
-클래스명도 `data-` 속성도 없다.
-
-그래서 이 사이트는 **배포 한 번에 전체가 한꺼번에 깨질 수 있다.** 깨지면 AI 수정으로 지금
-해시를 다시 찾는 것이 가장 빠르다. 2026-08-24 에 `list.item` 을 일부러 틀린 값으로 두고
-시험했더니, 힌트 없이도 모델이 새 해시를 찾아냈다(83건 매칭).
-
-한 자리는 순서에 기대고 있었다. 마감일이 `div.css-5q0q11 > p:nth-of-type(1)` 이었는데, 그
-아래 형제 `p` 네 개(마감일/경력/회사/직군)가 같은 클래스라 클래스만으로는 갈리지 않는다.
-D-day 뱃지와의 관계로 잡는 값으로 바꿔 두었다 — 항목 안에 줄이 하나 늘어도 어긋나지 않는다.
-셀렉터 전문은 DB 가 진실이다.
-
-## 상세 셀렉터가 남아 있는 이유
-
-목록 전용인데 `detail.*` 셀렉터에 값이 들어 있다. 등록할 때 상세 URL 을 하나 주고 만든
-것이고, 지금은 실행에서 쓰이지 않는다. 실행이 `detail.title` 과 `detail.deadline` 을 채우는
-것은 목록에서 읽은 값을 그 자리에 넣기 때문이다 (`app/crawler/runner.py` 의 `_record`).
-
-AI 수정은 저장된 상세 URL 을 다시 가져와 상세 셀렉터도 판정한다. 그 판정은 지금 실행과
-무관하다 — 쓰이지 않는 셀렉터를 고치는 데 호출을 쓰지 않도록, 상세 셀렉터가 실패로 나와도
-그대로 두는 편이 낫다.
+그 셀렉터는 emotion/MUI 의 자동 생성 클래스(`css-13xukit` 같은 해시)에 기대고 있어서
+**스타일 배포 한 번에 전부 깨진다.** 되돌려 쓸 일이 생기면 AI 수정으로 지금 해시를 다시 찾는
+것이 가장 빠르다 (2026-08-24 에 힌트 없이도 83건 매칭을 찾아냈다).
 
 ## 이력
 
@@ -66,3 +74,4 @@ AI 수정은 저장된 상세 URL 을 다시 가져와 상세 셀렉터도 판�
 | 2026-08-24 | 힌트를 실어 AI 수정 2회 | 같음 | 모델이 빈 문자열로 답했다. 그대로 둔다 |
 | 2026-08-24 | 실행 결과에서 `detail.body` 가 `실패` 로 표시됨 | 목록 전용인데 상세 필드를 실패로 판정했다 | 화면이 `해당 없음` 으로 적도록 고쳤다 (`app/api/ui_tests.py`) |
 | 2026-08-24 | `list.date` 를 순서 기반에서 관계 기반으로 교체 | `nth-of-type` 이 형제 네 개 중 하나를 순서로 골랐다 | 힌트를 준 AI 수정으로 교체, 저장 후 재실행에서 3/3 확인 |
+| 2026-08-24 | 목록·상세를 `api` 로 전환 | 목록 API 에 `jobNoticeId` 가 있다 | 수동 실행 1회(run 152)에서 83건 적재. `source_url` 83개가 전부 다르고 회사명에 계열사명이 들어왔다 |

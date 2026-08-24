@@ -86,7 +86,7 @@ def broken(**list_fields: str) -> dict[str, Any]:
 def add_crawler(conn: sqlite3.Connection, selectors: dict[str, Any]) -> int:
     cursor = conn.execute(
         """
-        INSERT INTO crawlers (name, list_url, detail_url, selectors_json, status, render_mode)
+        INSERT INTO crawlers (name, list_url, detail_url, selectors_json, status, list_mode)
         VALUES ('python.org', ?, 'https://www.python.org/jobs/8126/', ?, 'draft', 'static')
         """,
         (LIST_URL, json.dumps(selectors)),
