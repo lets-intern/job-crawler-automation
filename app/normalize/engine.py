@@ -57,9 +57,16 @@ import sqlite3
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 
+from bs4 import BeautifulSoup
+
+# 어디서 줄이 바뀌어야 하는지는 HTML 이 정하고, 그 목록은 저기 하나뿐이다. 여기에 같은
+# 목록을 두 벌 두면 한쪽만 늘어나는 날이 오고 그때 어느 쪽이 진실인지 알 수 없다
+# (`.claude/rules/core.md`).
+from app.crawler.parser import BLOCK_TAGS
 from app.normalize.rules import (
     NORMALIZED_FIELDS,
     DateParseConfig,
+    HtmlTextConfig,
     MappingConfig,
     RegexConfig,
     Rule,
@@ -69,6 +76,21 @@ from app.normalize.rules import (
 )
 
 _WHITESPACE = re.compile(r"\s+")
+
+# 값이 HTML 인지 판정하는 눈. 태그 하나도 엔티티 하나도 없으면 손대지 않는다 — 규칙이 걸린
+# 필드에 평문이 들어오는 것은 정상이고, 그것을 파서에 넣으면 `a < b` 같은 문장이 깨진다.
+_MARKUP = re.compile(r"<[A-Za-z/!][^>]*>|&(?:#[0-9]{1,7}|#[xX][0-9A-Fa-f]{1,6}|[A-Za-z]\w{1,31});")
+
+# 블록 경계 표시. 텍스트에 원래 있던 줄바꿈과 구별해야 해서 제어문자를 쓴다. 경계가 겹치면
+# (`</p><p>`) 줄 하나로 합친다 — 태그 두 개가 빈 줄을 만들 이유는 없다.
+_MARK = "\x00"
+_BOUNDARY = re.compile(rf"[\s{_MARK}]*{_MARK}[\s{_MARK}]*")
+
+# 가로 공백만 줄인다. `&nbsp;` 가 풀린 U+00A0 도 여기서 보통 공백이 된다
+_HORIZONTAL = re.compile(r"[^\S\n]+")
+
+# 빈 줄이 셋 이상이면 둘로. 원문 텍스트에 있던 빈 줄만 여기까지 온다
+_BLANK_RUN = re.compile(r"\n{3,}")
 
 # `normalized_jobs.company_source` 의 CHECK 제약과 같은 값이어야 한다.
 PARSED = "parsed"
@@ -309,7 +331,39 @@ def _apply(value: str, rule: Rule) -> str:
         trimmed = _WHITESPACE.sub(" ", value) if config.collapse_whitespace else value
         return trimmed.strip(config.strip_chars) if config.strip_chars else trimmed.strip()
 
+    if isinstance(config, HtmlTextConfig):
+        return flatten_html(value)
+
     return _parse_date(value, rule, config)
+
+
+def flatten_html(value: str) -> str:
+    """HTML 조각을 사람이 읽는 평문으로 편다. HTML 이 아니면 원문 그대로 돌려준다.
+
+    LG 상세 API 가 `detailContext` 와 `requiredItem` 을 HTML 조각으로 주고, 그것이 그대로
+    `normalized_jobs.body` 에 남아 소비 측으로 나갔다. 수집에서 지우면 `raw_jobs` 가 원본이
+    아니게 되므로 (`.claude/rules/data-safety.md`) 여기서 편다.
+
+    한 번에 세 가지가 일어난다. 블록 태그는 줄바꿈이 되고, 남은 태그는 사라지고, 엔티티는
+    원래 글자로 돌아온다. `<br>` 를 그냥 지우면 앞뒤 문장이 한 줄로 붙어 버리므로 순서가
+    아니라 한 동작이어야 한다.
+
+    빈 줄은 원문 텍스트에 있던 것만 남는다. `</p><p>` 처럼 태그 경계가 겹쳐서 생긴 줄바꿈은
+    하나로 합치고, `<p>&nbsp;</p>` 처럼 내용이 공백뿐인 문단은 경계에 흡수돼 사라진다.
+    """
+    if not _MARKUP.search(value):
+        return value
+
+    soup = BeautifulSoup(value.replace(_MARK, ""), "html.parser")
+    for tag in soup.find_all(BLOCK_TAGS):
+        tag.insert_before(_MARK)
+        tag.insert_after(_MARK)
+
+    # 주석(`<!--StartFragment-->`)은 get_text() 가 가져오지 않는다
+    text = _BOUNDARY.sub("\n", soup.get_text())
+    text = _HORIZONTAL.sub(" ", text)
+    text = "\n".join(line.strip() for line in text.split("\n"))
+    return _BLANK_RUN.sub("\n\n", text).strip()
 
 
 def _parse_date(value: str, rule: Rule, config: DateParseConfig) -> str:

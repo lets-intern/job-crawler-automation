@@ -2,7 +2,7 @@
 
 > PRD: `.claude/tasks/todo/prd-job-crawler.md`
 > Push 범위: HTML 조각으로 들어온 값을 정규화 단계에서 텍스트로 편다
-> 상태: 대기
+> 상태: 진행 중
 
 ## 배경
 
@@ -43,14 +43,14 @@ LG 상세는 API 가 `detailContext`, `requiredItem`, `preferredItem` 을 HTML �
 ## 작업
 
 - [ ] 29.0 HTML 조각을 텍스트로 펴는 규칙을 만든다
-    - [ ] 29.1 `html_text` 규칙 종류를 더한다
+    - [x] 29.1 `html_text` 규칙 종류를 더한다
         - 블록 태그는 줄바꿈으로 바꾸고, 나머지 태그는 지우고, 엔티티는 원래 글자로 되돌리고,
           연속 빈 줄은 하나로 줄인다
         - 줄바꿈을 넣는 규칙은 `app/crawler/parser.py` 의 `BLOCK_TAGS` 를 쓴다. **같은 목록을
           두 벌 두지 않는다** (`.claude/rules/core.md`)
         - HTML 이 아닌 값이 들어와도 그대로 통과해야 한다. 규칙이 걸린 필드에 평문이 오는 것은
           정상이다
-        - [ ] 29.1.V 검증: 픽스처 기반 pytest. 아래 실제 값으로 확인한다
+        - [x] 29.1.V 검증: 픽스처 기반 pytest. 아래 실제 값으로 확인한다
               - `<p>가</p><p>나</p>` -> 두 줄
               - `<br>` -> 줄바꿈
               - `&nbsp;`, `&amp;` -> 원래 글자

@@ -151,10 +151,16 @@ append-only 인 `raw_jobs` 에 매달아야 몇 번을 다시 정규화해도 �
 | 컬럼 | 설명 |
 |---|---|
 | id, field_name | 적용 대상 필드 |
-| rule_type | `mapping` / `regex` / `trim` / `date_parse` |
+| rule_type | `mapping` / `regex` / `trim` / `date_parse` / `html_text` |
 | rule_config_json | 타입별 설정 |
 | priority | 같은 필드에 여러 규칙일 때 적용 순서 |
 | enabled | |
+
+`html_text` 는 HTML 조각을 평문으로 편다. 설정이 없고, 블록 태그는 줄바꿈이 되고 나머지
+태그는 사라지고 엔티티는 원래 글자로 돌아온다. 값에 태그도 엔티티도 없으면 손대지 않는다.
+어디서 줄이 바뀌는지는 `app/crawler/parser.py` 의 `BLOCK_TAGS` 하나가 정한다. API 가 본문을
+HTML 로 주는 사이트(LG)를 위한 것이고, 수집 단계에서 태그를 지우지 않으므로 `raw_jobs` 는
+원본으로 남는다.
 
 규칙 변경은 **이후 신규 데이터부터** 적용된다. 기존 데이터 일괄 재정규화는 별도 동작이고,
 `raw_jobs` 를 다시 읽어 `normalized_jobs` 를 갱신한다.

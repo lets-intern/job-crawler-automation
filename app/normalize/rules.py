@@ -16,12 +16,15 @@
 | `regex` | `pattern` 필수, `replacement` 선택 |
 | `trim` | `collapse_whitespace` 선택, `strip_chars` 선택 |
 | `date_parse` | `formats` 필수, `output_format` 선택 |
+| `html_text` | 없음. 빈 객체 |
 
 `mapping` 은 값이 `map` 의 키와 정확히 같을 때 그 값으로 바꾼다. 표에 없으면 `default` 를 쓰고,
 `default` 도 없으면 원문을 그대로 둔다.
 `regex` 는 `re.sub(pattern, replacement, value)` 다.
 `trim` 은 연속 공백을 하나로 접고 양끝을 깎는다.
 `date_parse` 는 `formats` 를 적힌 순서대로 시도해 읽고 `output_format` 으로 다시 쓴다.
+`html_text` 는 HTML 조각을 평문으로 편다. 설정이 없다 — 무엇을 줄바꿈으로 볼지는 값마다
+고를 일이 아니라 HTML 이 정하는 것이고, 그 목록은 `app/crawler/parser.py` 에 하나만 있다.
 
 키가 표에 없으면 거부한다. 오타 하나가 조용히 무시되면 규칙이 안 먹는 이유를 아무도 찾지 못한다.
 
@@ -57,7 +60,7 @@ NORMALIZED_FIELDS: tuple[str, ...] = (
 )
 
 # `normalization_rules.rule_type` 의 CHECK 제약과 같은 값이어야 한다.
-RULE_TYPES: tuple[str, ...] = ("mapping", "regex", "trim", "date_parse")
+RULE_TYPES: tuple[str, ...] = ("mapping", "regex", "trim", "date_parse", "html_text")
 
 # `output_format` 이 실제로 렌더되는지 확인할 때만 쓰는 값. 어떤 날짜든 상관없다.
 _FORMAT_PROBE = datetime(2000, 1, 2, 3, 4, 5)
@@ -146,13 +149,23 @@ class DateParseConfig(_Config):
         return value
 
 
-RuleConfig = MappingConfig | RegexConfig | TrimConfig | DateParseConfig
+class HtmlTextConfig(_Config):
+    """HTML 조각을 평문으로. 설정 값이 없다.
+
+    `regex` 여러 개로 흉내내지 않는 이유는, 태그를 지우는 일과 줄을 바꾸는 일과 엔티티를
+    되돌리는 일이 한 번에 일어나야 하기 때문이다. 순서를 하나 어긋나게 걸면 문장이 조용히
+    붙어 버리고, 그 결과는 소비 측이 받은 뒤에야 보인다.
+    """
+
+
+RuleConfig = MappingConfig | RegexConfig | TrimConfig | DateParseConfig | HtmlTextConfig
 
 _CONFIG_TYPES: dict[str, type[RuleConfig]] = {
     "mapping": MappingConfig,
     "regex": RegexConfig,
     "trim": TrimConfig,
     "date_parse": DateParseConfig,
+    "html_text": HtmlTextConfig,
 }
 
 

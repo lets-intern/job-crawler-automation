@@ -102,7 +102,7 @@ OVERRIDABLE = ["company", "title", "department", "deadline", "body", "requiremen
 EXPECTED_INDEXES = {"idx_raw_jobs_content_hash", "idx_normalized_jobs_normalized_at"}
 
 # 지금까지의 마이그레이션. 전부 역적용해야 테이블이 사라진다
-ALL_VERSIONS = ["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008"]
+ALL_VERSIONS = ["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009"]
 
 
 @pytest.fixture
@@ -445,8 +445,56 @@ def test_collect_modes_down_restores_render_mode(conn: sqlite3.Connection) -> No
         ("https://example.test/2",),
     )
 
-    db.migrate_down(conn, steps=1)
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0008"))
 
     rows = conn.execute("SELECT name, render_mode FROM crawlers ORDER BY id").fetchall()
     assert [row["render_mode"] for row in rows] == ["static", "playwright"]
     assert "list_mode" not in _columns(conn, "crawlers")
+
+
+def _rule(conn: sqlite3.Connection, rule_type: str, priority: int = 0) -> None:
+    conn.execute(
+        """
+        INSERT INTO normalization_rules (field_name, rule_type, rule_config_json, priority, note)
+        VALUES ('body', ?, '{}', ?, '메모')
+        """,
+        (rule_type, priority),
+    )
+
+
+def test_html_text_rule_type_is_allowed(conn: sqlite3.Connection) -> None:
+    """0009 뒤에는 `html_text` 가 저장된다. 나머지 네 타입도 그대로다."""
+    db.migrate_up(conn)
+
+    for index, rule_type in enumerate(("mapping", "regex", "trim", "date_parse", "html_text")):
+        _rule(conn, rule_type, priority=index)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        _rule(conn, "uppercase")
+
+
+def test_html_text_migration_keeps_the_rules_it_did_not_add(conn: sqlite3.Connection) -> None:
+    """컬럼을 갈아 끼우는 동안 기존 규칙의 id 와 메모가 그대로 남는다."""
+    db.migrate_up(conn)
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0009"))
+    _rule(conn, "trim", priority=7)
+    before = conn.execute(
+        "SELECT id, rule_type, priority, note FROM normalization_rules"
+    ).fetchall()
+
+    db.migrate_up(conn)
+
+    after = conn.execute("SELECT id, rule_type, priority, note FROM normalization_rules").fetchall()
+    assert [tuple(row) for row in after] == [tuple(row) for row in before]
+
+
+def test_html_text_down_drops_only_its_own_rules(conn: sqlite3.Connection) -> None:
+    """역적용은 옛 CHECK 에 담을 수 없는 `html_text` 행만 지운다. 나머지는 남는다."""
+    db.migrate_up(conn)
+    _rule(conn, "trim", priority=0)
+    _rule(conn, "html_text", priority=5)
+
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0009"))
+
+    rows = conn.execute("SELECT rule_type FROM normalization_rules").fetchall()
+    assert [row["rule_type"] for row in rows] == ["trim"]
