@@ -86,7 +86,7 @@ detail.
 | A selector stopped matching | `site-recipes/<domain>.md`, `skills/crawl-test/SKILL.md` |
 | A workflow is failing | `commands/fix-workflow.md`, `skills/workflow-ops/SKILL.md` |
 | Changing the fetch client, retry or scheduler | `rules/crawling.md`, `docs/architecture.md` |
-| Writing or changing a Gemini API call | `rules/llm.md`, then the current Gemini API docs |
+| Writing or changing a model API call | `rules/llm.md`, then that provider's current docs |
 | Changing a table or writing a migration | `rules/data-safety.md`, `docs/data-model.md` |
 | Changing what the job board receives | `docs/api-contract.md` |
 | A data question ("did it actually store it") | `skills/db-inspect/SKILL.md` |

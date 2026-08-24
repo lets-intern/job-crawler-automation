@@ -1,6 +1,6 @@
 # LLM Rules
 
-Applies to selector generation and any other Gemini API call.
+Applies to every model call: selector generation, posting classification, and anything else.
 
 ## The model is a proposer, never an authority
 
@@ -33,17 +33,31 @@ name of the field that failed.
 Retry generation at most once, and only for a malformed response. Repeated failures are an operator
 decision — hand-write the selector or drop the site.
 
-## API usage
+## Providers
 
-The provider is the Gemini API through the `google-genai` Python SDK. Do not add an adapter layer
-for a second provider.
+Four providers are supported: Gemini, Claude, GPT and Qwen. The operator picks which one a given
+call uses. This replaces the earlier single-provider rule (2026-08-24, `.claude/tasks/todo/prd-crawler-v2.md`).
 
-Check the current Gemini documentation before writing or changing an API call. Model IDs, pricing
-and parameter shapes change; do not write them from memory. The model ID lives in `GEMINI_MODEL`,
-not in a source file.
+One thin call site, not an abstraction tower. A provider entry states its SDK, its model setting and
+how it returns token counts; nothing else in the codebase branches on which provider is in use. If a
+provider needs its own prompt shape, that belongs in the provider entry, not scattered through the
+callers.
 
-The API key comes from the environment and never from a source file, a template, a log line or a
-committed `.env`. `.env.example` documents the name only.
+Every provider is optional. A missing key disables that provider and says so; it never falls back to
+a different one silently — a call that quietly went to another model makes the cost log a lie.
 
-Log the model ID, token counts and latency per generation. Selector generation is the one expensive
-call in this service, and without those numbers no cost question can be answered later.
+Check the current documentation of the provider you are calling before writing or changing a call.
+Model IDs, pricing and parameter shapes change; do not write them from memory. Model IDs live in
+settings, not in a source file.
+
+API keys come from the environment and never from a source file, a template, a log line or a
+committed `.env`. `.env.example` documents the names only.
+
+## Every call is logged
+
+Log the provider, model ID, what the call was for, input and output token counts, latency and
+whether it succeeded. Write it to the log database, not the operating one — a log table inside the
+data the operator exports and imports makes both slower for no benefit.
+
+v1 had one expensive call, at selector generation. v2 adds a classification call per posting, so the
+count scales with how much is collected. Without these numbers no cost question can be answered.
