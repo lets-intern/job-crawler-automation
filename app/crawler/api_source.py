@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import Mapping
 from dataclasses import replace
 from typing import Any
@@ -61,6 +62,9 @@ from app.selector.api_schema import (
 from app.selector.schema import DETAIL_FIELDS
 
 logger = logging.getLogger(__name__)
+
+# `id_field` 에 쓰는 `{키}` 자리. 항목 안의 경로 이름만 받는다
+ENTRY_PLACEHOLDER = re.compile(r"\{([A-Za-z_][A-Za-z0-9_.]*)\}")
 
 # 항목 하나가 남으려면 있어야 하는 것. 제목이 없으면 공고를 알아볼 수 없고, id 가 없으면
 # 상세로 갈 수도 주소를 만들 수도 없다
@@ -353,7 +357,7 @@ def _item(
 ) -> tuple[ListItem | None, list[FieldFailure]]:
     """항목 하나. 제목과 id 가 있어야 남는다."""
     values = {name: _text(_dig(entry, path)) for name, path in config.fields.items()}
-    item_id = _text(_dig(entry, config.id_field))
+    item_id = _entry_id(entry, config.id_field)
 
     problems: list[FieldFailure] = []
     if not values.get("title"):
@@ -386,6 +390,30 @@ def _item(
         ),
         [],
     )
+
+
+def _entry_id(entry: Mapping[str, Any], spec: str) -> str:
+    """항목의 id. 키 하나이거나, `{키}` 자리를 항목 값으로 채운 템플릿이다.
+
+    현대 상세는 `recuYy`·`recuType`·`recuCls` 세 값이 다 있어야 열린다. 한 값으로는 공고를
+    지목할 수 없는 사이트라, id 자체가 여러 값을 이어 붙인 것이 된다.
+
+        "id_field": "recuYy={recuYy}&recuType={recuType}&recuCls={recuCls}"
+
+    한 자리라도 비면 빈 값이다. **반쯤 채워진 주소를 만들지 않는다** — 그것으로 요청하면 엉뚱한
+    공고를 가져오거나 조용히 400 이 된다.
+    """
+    names = ENTRY_PLACEHOLDER.findall(spec)
+    if not names:
+        return _text(_dig(entry, spec))
+
+    values: dict[str, str] = {}
+    for name in names:
+        value = _text(_dig(entry, name)).strip()
+        if not value:
+            return ""
+        values[name] = value
+    return ENTRY_PLACEHOLDER.sub(lambda match: values[match.group(1)], spec)
 
 
 async def _send(
