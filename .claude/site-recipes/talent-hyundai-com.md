@@ -50,3 +50,20 @@
 | 2026-08-22 | 렌더 모드로 등록 시도 (crawler 3) | 상세 링크가 `javascript:void(0)` 이고 파라미터가 data 속성에 있다 | 등록만 남기고 중단. 스키마가 data 속성 기반 링크를 받아야 한다 |
 | 2026-08-22 | 속성 + URL 템플릿으로 등록 (Push 14) | | 테스트 실행 run 6 성공(매칭 20, 상세 3건), 워크플로우 1 의 run 7 성공(신규 3건 적재) |
 | 2026-08-22 | run 5 가 `selector_miss` 로 실패 | 렌더는 됐는데 목록이 비어 있었다. 1분 뒤 같은 셀렉터로 20건 | 재시도하지 않는다. 위의 "간헐적으로 목록이 빈 채로 렌더된다" 참고 |
+
+## 2026-08-25: 클릭할 필요가 없다. 항목 속성에 상세 주소가 들어 있다
+
+항목이 세 값을 가지고 있고, 그것이 상세 URL 의 세 파라미터다.
+
+```
+<li class="K0035" data-recuyy="2026" data-recutype="N2" data-recucls="296">
+  -> https://talent.hyundai.com/apply/applyView.hc?recuYy=2026&recuType=N2&recuCls=296
+```
+
+**클릭을 시도하면 안 된다.** 항목 안의 첫 `a` 들은 SNS 공유 버튼(`href="javascript:;"`,
+`onclick="shareSns('facebook', ...)"`)이라 눌러도 이동하지 않는다. 2026-08-25 에 그것을 눌러
+타임아웃이 났다.
+
+상세는 서버가 렌더한 HTML 이다. 클릭 뒤 XHR 이 0건이고 나가는 것은 문서 요청 하나다.
+구조화된 응답이 없으므로 13개 항목은 텍스트를 LLM 이 나눠야 한다
+(`.claude/tasks/todo/prd-crawler-v2.md` 5번).
