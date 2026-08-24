@@ -65,7 +65,7 @@ SQLite 파일 하나. 경로는 `DATABASE_PATH` 가 정하고 Docker named volum
 | new_count | 신규로 적재된 수 |
 | fail_count | 실패한 항목 수 |
 | skipped_count | 상세를 열지 않고 넘긴 수. 마감이 지났거나 이미 저장한 공고다. 0010 이전 행은 0 |
-| error_class | `transport` / `selector_miss` / `parse` |
+| error_class | `transport` / `selector_miss` / `parse` / `list_empty` / `detail_unreachable` / `detail_empty` |
 | error_message | |
 | trigger | 무엇이 실행을 시작했는지. `schedule` / `manual` / `test`. 0007 이전 행은 NULL |
 
@@ -81,8 +81,12 @@ SQLite 파일 하나. 경로는 `DATABASE_PATH` 가 정하고 Docker named volum
 도는 것인지 사람이 눌러 온 것인지 알 수 없다. NULL 은 기록되기 전의 실행이고 화면에
 `알 수 없음` 으로 나온다.
 
-`error_class` 가 세 가지로 나뉘어 있는 이유는 조치가 각각 다르기 때문이다.
-`transport` 만 재시도 대상이다. `.claude/rules/crawling.md` 참조.
+`error_class` 가 여러 값으로 나뉘어 있는 이유는 조치가 각각 다르기 때문이다.
+`transport` 만 재시도 대상이다. 뒤의 셋은 공고가 상세에 도달하지 못한 경우를 가른다 — 목록을
+못 읽은 것(`list_empty`), 상세로 가지 못한 것(`detail_unreachable`), 갔는데 본문이 빈 것
+(`detail_empty`)은 고치는 자리가 다르다. 값의 목록은 `app/crawler/failures.py` 의
+`ERROR_CLASSES` 가 갖고 있고 두 CHECK 제약이 그것과 같아야 한다.
+`.claude/rules/crawling.md` 참조.
 
 ### crawl_run_failures
 

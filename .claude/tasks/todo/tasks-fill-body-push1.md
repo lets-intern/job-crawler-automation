@@ -67,7 +67,7 @@ crawlers:   id, name, list_url, detail_url, selectors_json, status, created_at,
         - 각 사유에 운영자가 할 다음 행동을 `app/api/ui.py` 의 `NEXT_STEPS` 에 더한다
         - [x] 1.3.V 검증: 픽스처 기반 pytest — 사유마다 `NEXT_STEPS` 에 문구가 있고,
               `ERROR_CLASSES` 에 없는 값을 넣으면 거절되는지
-    - [ ] 1.3.1 마이그레이션 0010: `crawl_runs.error_class` 의 CHECK 를 새 사유까지 넓힌다
+    - [x] 1.3.1 마이그레이션 0010: `crawl_runs.error_class` 의 CHECK 를 새 사유까지 넓힌다
         - 실행 중 추가. 1.3 이 `ERROR_CLASSES` 를 여섯으로 늘렸는데 `crawl_runs.error_class` 의
           CHECK 는 0001 이 만든 세 가지 그대로다. `app/crawler/failures.py` 는 두 값이 같아야
           한다고 스스로 적어 두고 있고, 1.4 의 `_finish_run()` 은 항목 실패의 분류를
@@ -76,7 +76,7 @@ crawlers:   id, name, list_url, detail_url, selectors_json, status, created_at,
         - 0009 와 같은 방법을 쓴다. 새 CHECK 를 단 컬럼을 더하고, 값을 옮기고, 옛 컬럼을 지우고,
           이름을 되돌린다. 표를 지웠다 다시 만들지 않는다
         - 되돌리는 법을 파일 주석에 적는다
-        - [ ] 1.3.1.V 검증: 마이그레이션 적용·역적용 확인. `ERROR_CLASSES` 의 여섯 값이 모두
+        - [x] 1.3.1.V 검증: 마이그레이션 적용·역적용 확인. `ERROR_CLASSES` 의 여섯 값이 모두
               저장되고, 밖의 값은 거절되고, 역적용이 실행 기록을 남기는지 pytest 로 확인
     - [ ] 1.4 `RunResult` 와 `_finish_run` 이 새 값을 나른다
         - `app/crawler/runner.py:109` 의 `RunResult` 에 `skipped_count: int = 0` 과

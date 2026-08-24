@@ -651,3 +651,64 @@ def test_run_failure_down_drops_only_its_own_table(conn: sqlite3.Connection) -> 
     assert "crawl_run_failures" not in _names(conn, "table")
     assert "idx_crawl_run_failures_run_id" not in _names(conn, "index")
     assert conn.execute("SELECT count(*) AS n FROM crawl_runs").fetchone()["n"] == 1
+
+
+@pytest.mark.parametrize(
+    "error_class",
+    ["transport", "selector_miss", "parse", "list_empty", "detail_unreachable", "detail_empty"],
+)
+def test_run_error_class_holds_every_failure_reason(
+    conn: sqlite3.Connection, error_class: str
+) -> None:
+    """`crawl_runs.error_class` 는 `app/crawler/failures.py` 의 `ERROR_CLASSES` 와 같은 값이다."""
+    db.migrate_up(conn)
+    _seed_run(conn)
+
+    conn.execute("UPDATE crawl_runs SET error_class = ? WHERE id = 1", (error_class,))
+
+    row = conn.execute("SELECT error_class FROM crawl_runs WHERE id = 1").fetchone()
+    assert row["error_class"] == error_class
+
+
+def test_run_error_class_rejects_a_reason_outside_the_six(conn: sqlite3.Connection) -> None:
+    db.migrate_up(conn)
+    _seed_run(conn)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("UPDATE crawl_runs SET error_class = 'detail_missing' WHERE id = 1")
+
+
+def test_error_class_migration_keeps_the_runs_it_did_not_add(conn: sqlite3.Connection) -> None:
+    """컬럼을 갈아 끼우는 동안 기존 실행의 id 와 카운트, 옛 분류가 그대로 남는다."""
+    _at_0009(conn)
+    _seed_run(conn)
+    conn.execute("UPDATE crawl_runs SET error_class = 'selector_miss' WHERE id = 1")
+    before = conn.execute(
+        "SELECT id, status, success_count, fail_count, error_class FROM crawl_runs"
+    ).fetchall()
+
+    db.migrate_up(conn)
+
+    after = conn.execute(
+        "SELECT id, status, success_count, fail_count, error_class FROM crawl_runs"
+    ).fetchall()
+    assert [tuple(row) for row in after] == [tuple(row) for row in before]
+
+
+def test_error_class_down_keeps_the_run_and_clears_only_the_new_reason(
+    conn: sqlite3.Connection,
+) -> None:
+    """역적용은 옛 CHECK 에 담을 수 없는 분류만 비운다. 실행 기록과 사유 문구는 남는다."""
+    db.migrate_up(conn)
+    _seed_run(conn)
+    conn.execute(
+        "UPDATE crawl_runs SET error_class = 'detail_empty', error_message = '본문이 비었다'"
+    )
+
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0010"))
+
+    row = conn.execute(
+        "SELECT id, error_class, error_message, fail_count FROM crawl_runs"
+    ).fetchone()
+    assert (row["id"], row["error_class"]) == (1, None)
+    assert (row["error_message"], row["fail_count"]) == ("본문이 비었다", 1)
