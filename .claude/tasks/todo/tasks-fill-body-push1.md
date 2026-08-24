@@ -42,13 +42,13 @@ crawlers:   id, name, list_url, detail_url, selectors_json, status, created_at,
 ## 작업
 
 - [ ] 1.0 실패와 건너뜀을 기록할 자리를 만든다
-    - [ ] 1.1 마이그레이션 0010: `crawl_runs` 에 건너뛴 수를 더한다
+    - [x] 1.1 마이그레이션 0010: `crawl_runs` 에 건너뛴 수를 더한다
         - `skipped_count INTEGER NOT NULL DEFAULT 0` 를 더한다
         - 건너뜀은 실패가 아니다. 마감이 지났거나 이미 저장한 공고라 상세를 안 연 건수다
         - `fail_count` 와 **반드시 따로 센다.** 합치면 날짜 형식이 바뀌어 전부 걸러진 사이트가
           "새 공고 0건" 인 정상 실행으로 보인다
         - 되돌리는 법을 파일 주석에 적는다
-        - [ ] 1.1.V 검증: 마이그레이션 적용·역적용 확인. 적용 후 기존 `crawl_runs` 행이 그대로
+        - [x] 1.1.V 검증: 마이그레이션 적용·역적용 확인. 적용 후 기존 `crawl_runs` 행이 그대로
               남고 새 열이 0 인지 pytest 로 확인
     - [ ] 1.2 마이그레이션 0010: `crawl_run_failures` 표를 만든다
         - 열: `id`, `run_id`(`crawl_runs(id)` 를 가리킨다), `reason`, `title`, `source_url`, `message`,

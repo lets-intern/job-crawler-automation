@@ -63,13 +63,18 @@ SQLite 파일 하나. 경로는 `DATABASE_PATH` 가 정하고 Docker named volum
 | status | `success` / `failed` / `timeout` |
 | success_count | 정상 파싱된 항목 수 |
 | new_count | 신규로 적재된 수 |
-| fail_count | |
+| fail_count | 실패한 항목 수 |
+| skipped_count | 상세를 열지 않고 넘긴 수. 마감이 지났거나 이미 저장한 공고다. 0010 이전 행은 0 |
 | error_class | `transport` / `selector_miss` / `parse` |
 | error_message | |
 | trigger | 무엇이 실행을 시작했는지. `schedule` / `manual` / `test`. 0007 이전 행은 NULL |
 
 `workflow_id` 와 `crawler_id` 가 둘 다 NULL 인 행은 CHECK 가 막는다. 어느 쪽에도 걸리지 않은
 실행은 나중에 누구도 추적하지 못한다.
+
+`skipped_count` 는 `fail_count` 와 따로 센다. 건너뜀은 실패가 아니라 상세를 열 이유가 없어
+넘긴 것이고, 둘을 한 숫자로 합치면 마감 날짜 형식이 바뀌어 전부 걸러진 사이트가 "새 공고 0건" 인
+정상 실행과 같은 모습이 된다.
 
 `trigger` 는 스케줄러가 깨운 실행(`schedule`), 워크플로우 카드의 지금 1회 실행(`manual`),
 승격 전 크롤러의 테스트 실행(`test`)을 가른다. 이것이 없으면 최근 실행이 있어도 주기가 실제로

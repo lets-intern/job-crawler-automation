@@ -46,6 +46,7 @@ EXPECTED_COLUMNS = {
         "success_count",
         "new_count",
         "fail_count",
+        "skipped_count",
         "error_class",
         "error_message",
         "trigger",
@@ -102,7 +103,18 @@ OVERRIDABLE = ["company", "title", "department", "deadline", "body", "requiremen
 EXPECTED_INDEXES = {"idx_raw_jobs_content_hash", "idx_normalized_jobs_normalized_at"}
 
 # 지금까지의 마이그레이션. 전부 역적용해야 테이블이 사라진다
-ALL_VERSIONS = ["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009"]
+ALL_VERSIONS = [
+    "0001",
+    "0002",
+    "0003",
+    "0004",
+    "0005",
+    "0006",
+    "0007",
+    "0008",
+    "0009",
+    "0010",
+]
 
 
 @pytest.fixture
@@ -498,3 +510,68 @@ def test_html_text_down_drops_only_its_own_rules(conn: sqlite3.Connection) -> No
 
     rows = conn.execute("SELECT rule_type FROM normalization_rules").fetchall()
     assert [row["rule_type"] for row in rows] == ["trim"]
+
+
+def _at_0009(connection: sqlite3.Connection) -> None:
+    """0010 직전 상태로 만든다. `crawl_runs` 에 `skipped_count` 가 아직 없는 스키마다."""
+    db.migrate_up(connection)
+    db.migrate_down(connection, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0010"))
+    assert "skipped_count" not in _columns(connection, "crawl_runs")
+
+
+def _seed_run(connection: sqlite3.Connection) -> None:
+    """실행 기록 한 행. 크롤러와 워크플로우까지 있어야 외래키가 선다."""
+    connection.execute(
+        "INSERT INTO crawlers (name, list_url) VALUES (?, ?)", ("테스트", "https://example.test")
+    )
+    connection.execute("INSERT INTO workflows (crawler_id, name) VALUES (1, '워크플로우')")
+    connection.execute(
+        """
+        INSERT INTO crawl_runs (workflow_id, status, success_count, new_count, fail_count)
+        VALUES (1, 'success', 5, 2, 1)
+        """
+    )
+
+
+def test_skipped_count_keeps_existing_runs_and_starts_at_zero(conn: sqlite3.Connection) -> None:
+    """0010 은 컬럼을 더하기만 한다. 적용 전 실행 기록이 그대로 남고 새 열은 0 이다."""
+    _at_0009(conn)
+    _seed_run(conn)
+    before = conn.execute(
+        "SELECT id, status, success_count, new_count, fail_count FROM crawl_runs"
+    ).fetchall()
+
+    db.migrate_up(conn)
+
+    after = conn.execute(
+        """
+        SELECT id, status, success_count, new_count, fail_count, skipped_count
+        FROM crawl_runs
+        """
+    ).fetchall()
+    assert [tuple(row)[:5] for row in after] == [tuple(row) for row in before]
+    assert [row["skipped_count"] for row in after] == [0]
+
+
+def test_skipped_count_is_counted_apart_from_fail_count(conn: sqlite3.Connection) -> None:
+    """건너뜀과 실패는 다른 열이다. 합치면 전부 걸러진 사이트가 정상 실행으로 보인다."""
+    db.migrate_up(conn)
+    _seed_run(conn)
+
+    conn.execute("UPDATE crawl_runs SET skipped_count = 83 WHERE id = 1")
+
+    row = conn.execute("SELECT fail_count, skipped_count FROM crawl_runs WHERE id = 1").fetchone()
+    assert (row["fail_count"], row["skipped_count"]) == (1, 83)
+
+
+def test_skipped_count_down_removes_only_its_own_column(conn: sqlite3.Connection) -> None:
+    """역적용은 0010 이 더한 열만 지운다. 실행 기록 자체는 그대로 남는다."""
+    db.migrate_up(conn)
+    _seed_run(conn)
+    conn.execute("UPDATE crawl_runs SET skipped_count = 7 WHERE id = 1")
+
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0010"))
+
+    assert "skipped_count" not in _columns(conn, "crawl_runs")
+    row = conn.execute("SELECT fail_count, success_count FROM crawl_runs WHERE id = 1").fetchone()
+    assert (row["fail_count"], row["success_count"]) == (1, 5)
