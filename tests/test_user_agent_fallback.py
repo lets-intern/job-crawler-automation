@@ -1,5 +1,7 @@
 """빈 CRAWL_USER_AGENT 가 이름 없는 요청으로 새지 않는지."""
+
 import pytest
+
 from app.config import Settings
 from app.crawler.fetcher import UNSET_USER_AGENT, Fetcher
 
