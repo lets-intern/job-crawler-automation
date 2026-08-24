@@ -619,9 +619,7 @@ def test_run_failure_needs_an_existing_run(conn: sqlite3.Connection) -> None:
     db.migrate_up(conn)
 
     with pytest.raises(sqlite3.IntegrityError):
-        conn.execute(
-            "INSERT INTO crawl_run_failures (run_id, reason) VALUES (99, 'detail_empty')"
-        )
+        conn.execute("INSERT INTO crawl_run_failures (run_id, reason) VALUES (99, 'detail_empty')")
 
 
 def test_run_failure_keeps_the_posting_it_missed(conn: sqlite3.Connection) -> None:
