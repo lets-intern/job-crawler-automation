@@ -1,4 +1,4 @@
-"""데이터 조회 화면의 상세 필터 (27.5).
+"""데이터 검수 화면의 조회 조건 (27.5, 30.2).
 
 실사이트에 나가지 않는다. 저장된 행을 넣고 화면 경로로만 조회한다.
 
@@ -149,14 +149,19 @@ def client(tmp_path: pathlib.Path, conn: sqlite3.Connection) -> Iterator[TestCli
         app.dependency_overrides.clear()
 
 
+# 표의 제목 칸. 값 칸은 보정 여부까지 함께 그리는 매크로가 만든다
+# (`fragments/review_cell_macro.html`)
+TITLE_CELL = re.compile(r'id="review-cell-\d+-title".*?<span[^>]*>([^<]+)</span>', re.DOTALL)
+
+
 def titles(client: TestClient, **params: str) -> list[str]:
     """조건에 걸린 공고 제목. 표에 그려진 것만 본다."""
-    html = client.get("/ui/jobs", params=params).text
-    return re.findall(r'<td class="cell-text">([^<]+)</td>', html)
+    html = client.get("/ui/review", params=params).text
+    return TITLE_CELL.findall(html)
 
 
 def total(client: TestClient, **params: str) -> int:
-    html = client.get("/ui/jobs", params=params).text
+    html = client.get("/ui/review", params=params).text
     found = re.search(r"(\d+)건 중", html)
     assert found is not None, html[:400]
     return int(found.group(1))
@@ -215,7 +220,7 @@ def test_읽지_못하는_날짜는_조건을_걸지_않는다(client: TestClien
 
 
 def test_필터_폼에_새_조건이_모두_있다(client: TestClient) -> None:
-    html = client.get("/ui/jobs/filters").text
+    html = client.get("/ui/review/filters").text
 
     for name in (
         "workflow_id",

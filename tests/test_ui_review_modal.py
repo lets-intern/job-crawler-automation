@@ -16,6 +16,7 @@
 | 저장 응답이 모달을 닫으라고 알린다 | 저장했는데 모달이 그대로 열려 있다 |
 | 보정 삭제는 필드마다 모달 안에서 되고 모달을 닫지 않는다 | 되돌리려고 모달을 다시 열어야 한다 |
 | 전달된 행이면 모달 안에서 알린다 | 소비 측에 반영되지 않는 수정을 반영된 줄 알고 한다 |
+| 고치는 모달 안에는 지우는 경로가 없다 | 입력 칸 옆에서 고치려다 지운다 |
 | `delivered_at` 과 `normalized_jobs` 가 그대로다 | 보낸 공고가 다시 가고, 파생값에 손으로 쓴다 |
 """
 
@@ -273,23 +274,23 @@ def test_없는_수집_건은_사유를_적는다(client: TestClient) -> None:
     assert oob_ids(html) == []
 
 
-def test_검수_화면에는_지우는_경로가_없다(client: TestClient) -> None:
-    """공고를 지우는 것은 데이터 조회 화면의 일이다 (27.9).
+def test_고치는_모달에는_지우는_경로가_없다(client: TestClient) -> None:
+    """지우기는 표에 있고, 고치는 모달 안에는 없다 (27.9, 30.2).
 
-    한 화면이 고치기와 지우기를 같이 들고 있으면 체크박스 옆에서 값을 고치게 되고, 고치려다
-    지우는 사고가 그 자리에서 난다.
+    Push 30 에서 조회와 검수를 한 화면으로 합쳤다. 그래서 표에는 체크박스와 지우기가 있다.
+    없어야 하는 것은 값을 고치는 자리 안의 지우기다 — 입력 칸 옆에 지우기 단추가 있으면
+    고치려다 지우는 사고가 그 자리에서 난다.
     """
-    table = client.get("/ui/review").text
     modal = client.get("/ui/review/modal/7").text
 
-    for html in (table, modal):
-        assert "/ui/review/delete" not in html
-        assert 'name="raw_job_id" value=' not in html
-        assert "data-select-row" not in html
-        assert "all_filtered" not in html
-    # 그런 라우트가 아예 없다. 지우기는 조회 화면에만 있다
-    assert client.post("/ui/review/delete/confirm", data={}).status_code == 404
-    assert client.post("/ui/review/delete", data={}).status_code == 404
+    assert "/ui/review/delete" not in modal
+    assert "data-select-row" not in modal
+    assert "all_filtered" not in modal
+
+    # 표 쪽은 반대다. 합친 화면이라 고르기와 지우기가 함께 있다
+    table = client.get("/ui/review").text
+    assert 'hx-post="/ui/review/delete/confirm"' in table
+    assert "data-select-row" in table
 
 
 def test_고치는_흐름에_브라우저_확인_창이_끼어들지_않는다(client: TestClient) -> None:

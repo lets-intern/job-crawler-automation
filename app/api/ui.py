@@ -30,7 +30,7 @@ from fastapi.exception_handlers import (
     request_validation_exception_handler,
 )
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from app.config import get_settings
@@ -47,7 +47,6 @@ NAV: tuple[tuple[str, str], ...] = (
     ("/tests", "테스트 실행"),
     ("/workflows", "워크플로우"),
     ("/rules", "정규화 규칙"),
-    ("/jobs", "데이터 조회"),
     ("/review", "데이터 검수"),
     ("/settings", "운영 설정"),
 )
@@ -221,9 +220,17 @@ def rules_page(request: Request) -> HTMLResponse:
     return render_page(request, "pages/rules.html")
 
 
-@router.get("/jobs", response_class=HTMLResponse)
-def jobs_page(request: Request) -> HTMLResponse:
-    return render_page(request, "pages/jobs.html")
+@router.get("/jobs")
+def jobs_page() -> RedirectResponse:
+    """옛 데이터 조회 주소. 합쳐진 데이터 검수 화면으로 보낸다 (Push 30).
+
+    두 화면이 같은 데이터를 두 벌로 보여주던 것을 하나로 합쳤다. 주소를 없애 404 로 두면
+    운영자의 북마크와 지난 작업 기록의 링크가 전부 죽는다.
+
+    영구 이동(301·308)으로 두지 않는다. 브라우저가 그것을 캐시하면 주소를 되돌릴 때 사용자
+    쪽에서 지울 방법이 없다.
+    """
+    return RedirectResponse("/review", status_code=307)
 
 
 @router.get("/settings", response_class=HTMLResponse)

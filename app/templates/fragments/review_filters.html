@@ -1,8 +1,22 @@
-{# 검수 화면의 조회 조건. 어떤 조작이든 표 영역(#review-table)만 갈아 끼운다.
-   `page` 를 폼에 두지 않는다 — 조건을 바꾸면 언제나 1페이지로 돌아가야 한다 #}
+{# 데이터 검수 화면의 조회 조건. 어떤 조작이든 표 영역(#review-table)만 갈아 끼운다.
+
+   Push 30 에서 조회 화면의 조건(진행 여부·전달 여부·시각 범위·정렬)이 여기로 들어왔다.
+   조건이 상세한 이유는 지우기가 "지금 걸린 조건에 걸린 것" 을 대상으로 하기 때문이다.
+   좁힐 방법이 성기면 운영자는 지울 것보다 넓은 범위를 지우게 된다.
+
+   `page` 를 폼에 두지 않는다 — 조건을 바꾸면 언제나 1페이지로 돌아가야 한다.
+
+   시각 범위는 날짜 하나로 받는다. 저장된 값은 UTC 지만 화면이 표시 시간대로 그리므로,
+   서버가 고른 날짜를 표시 시간대의 하루로 읽어 바꾼다 (`app/api/review_filter.py`).
+
+   지운 뒤 표를 다시 부르는 것도 이 폼이 한다. 조건을 아는 쪽이 불러야 지우고 나서 화면이
+   전체 목록으로 되돌아가지 않는다. 표가 `hx-include` 로 이 폼을 끌어오게 두면, 표가 처음
+   뜨는 순간에는 이 조각이 아직 들어오지 않아 가리킬 것이 없다 #}
+{% from "macros.html" import wait %}
 <form id="review-filter-form"
       hx-get="/ui/review" hx-target="#review-table" hx-swap="innerHTML"
-      hx-trigger="submit, change" hx-disabled-elt="find button">
+      hx-trigger="submit, change, jobs-deleted from:body"
+      hx-disabled-elt="find button[type=submit]">
   <fieldset>
     <legend>조회 조건</legend>
     <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
@@ -14,6 +28,7 @@
         {% endfor %}
       </select>
 
+      {# 한 사이트에 계열사가 여럿이라 워크플로우와 따로 걸린다 #}
       <label for="review-company">회사</label>
       <select id="review-company" name="company">
         <option value="">전체</option>
@@ -21,10 +36,69 @@
         <option value="{{ name }}">{{ name }}</option>
         {% endfor %}
       </select>
+
+      <label for="review-status">진행 여부</label>
+      <select id="review-status" name="status">
+        <option value="">전체</option>
+        {% for value, label in deadline_states.items() %}
+        <option value="{{ value }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="review-delivered">전달 여부</label>
+      <select id="review-delivered" name="delivered">
+        <option value="">전체</option>
+        {% for value, label in delivery_states.items() %}
+        <option value="{{ value }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </p>
+    {# 값이 빈 공고를 찾는 자리. 어느 필드가 몇 건 비었는지는 표 위에 숫자로 나온다.
+       거기서 필드를 누르면 이 칸이 그 필드로 맞춰지고 바로 조회된다 (`pages/review.html`) #}
+    <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
+      <label for="review-empty">빈 값인 필드</label>
+      <select id="review-empty" name="empty">
+        <option value="">안 걸림</option>
+        {% for value in empty_choices %}
+        <option value="{{ value }}">{{ empty_labels[value] }}</option>
+        {% endfor %}
+      </select>
+      <span class="text-sm text-slate-600">
+        보정까지 얹은 값이 비었거나 공백뿐인 공고를 고른다. 필드별 건수는 표 위에 있다
+      </span>
+    </p>
+    <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
+      <label for="review-crawled-from">수집 시각</label>
+      <input id="review-crawled-from" name="crawled_from" type="date">
+      <span class="text-sm text-slate-600">부터</span>
+      <input id="review-crawled-to" name="crawled_to" type="date"
+             aria-label="수집 시각 끝나는 날">
+      <span class="text-sm text-slate-600">까지 (그날 포함)</span>
+    </p>
+    <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
+      <label for="review-normalized-from">정규화 시각</label>
+      <input id="review-normalized-from" name="normalized_from" type="date">
+      <span class="text-sm text-slate-600">부터</span>
+      <input id="review-normalized-to" name="normalized_to" type="date"
+             aria-label="정규화 시각 끝나는 날">
+      <span class="text-sm text-slate-600">까지 (그날 포함)</span>
     </p>
     <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
       <label for="review-q">검색 (제목·회사·부서)</label>
       <input id="review-q" name="q" type="search" size="40">
+
+      <label for="review-sort">정렬</label>
+      <select id="review-sort" name="sort">
+        {% for key, label in sort_labels.items() %}
+        <option value="{{ key }}"{% if key == default_sort %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="review-order">방향</label>
+      <select id="review-order" name="order">
+        <option value="desc">내림차순</option>
+        <option value="asc">오름차순</option>
+      </select>
 
       <label for="review-page-size">페이지 크기</label>
       <select id="review-page-size" name="page_size">
@@ -34,7 +108,7 @@
       </select>
 
       <button type="submit">조회</button>
-      <span class="wait-note">조회하는 중</span>
+      {{ wait("조회하는 중") }}
     </p>
   </fieldset>
 </form>
