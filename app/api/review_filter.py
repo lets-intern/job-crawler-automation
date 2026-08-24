@@ -230,6 +230,10 @@ def read_filter(
     )
 
 
+# 빈 값으로 볼 글자. 스페이스·탭·줄바꿈·캐리지리턴이다
+_BLANK_CHARS = "' ' || char(9) || char(10) || char(13)"
+
+
 def empty_condition(field: str) -> str:
     """그 필드가 "화면에 보이는 값 기준으로" 비어 있는지 판정하는 SQL 조각.
 
@@ -238,7 +242,8 @@ def empty_condition(field: str) -> str:
     사람이 일부러 비운 필드는 비어 있는 것이 맞다 (`migrations/0005_job_field_overrides.sql`).
 
     공백만 있는 값도 빈 것으로 본다. 셀렉터가 빈 태그를 잡으면 값은 `\n  ` 같은 것이 되는데,
-    화면에서는 빈 칸과 구별되지 않는다.
+    화면에서는 빈 칸과 구별되지 않는다. `TRIM` 에 지울 글자를 직접 준다 — 인자가 하나면
+    SQLite 는 스페이스만 지우고, 줄바꿈만 남은 값이 빈 값이 아닌 것으로 세어진다.
 
     필드 이름은 이 파일의 `FIELD_LABELS` 에 있는 값만 들어온다 — 화면에서 온 문자열을 그대로
     SQL 에 넣지 않는다.
@@ -246,7 +251,7 @@ def empty_condition(field: str) -> str:
     return (
         "TRIM(COALESCE((SELECT o.value FROM job_field_overrides o"
         f" WHERE o.raw_job_id = n.raw_job_id AND o.field_name = '{field}'),"
-        f" n.{field}, '')) = ''"
+        f" n.{field}, ''), {_BLANK_CHARS}) = ''"
     )
 
 
