@@ -57,10 +57,10 @@ LG 상세는 API 가 `detailContext`, `requiredItem`, `preferredItem` 을 HTML �
               - `<p>&nbsp;</p>` 만 있는 문단 -> 빈 줄로 뭉개지고 남지 않음
               - 평문 -> 그대로
               - 빈 값 -> 빈 값
-    - [ ] 29.2 LG 본문에 규칙을 건다
+    - [x] 29.2 LG 본문에 규칙을 건다
         - `seeds/normalization-rules.json` 에 더한다. 어느 필드에 걸지는 실제 값을 보고 정한다
         - 규칙 `note` 에 왜 필요한지 한 줄 적는다 — 다음 사람이 지우지 않도록
-        - [ ] 29.2.V 검증: 규칙 미리보기 화면에 실제 LG 본문을 넣어 결과를 눈으로 확인
+        - [x] 29.2.V 검증: 규칙 미리보기 화면에 실제 LG 본문을 넣어 결과를 눈으로 확인
     - [ ] 29.3 이미 쌓인 값을 다시 정규화한다
         - `raw_jobs` 는 건드리지 않는다. `normalized_jobs` 만 다시 쓴다
         - **`job_field_overrides` 로 사람이 고친 값은 살아남아야 한다.** 규칙 다음에 덧씌우는
