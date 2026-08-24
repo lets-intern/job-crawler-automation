@@ -97,6 +97,7 @@ class FetchPolicy(PageSource, Protocol):
         *,
         method: str = "GET",
         json_body: Mapping[str, Any] | None = None,
+        form_body: Mapping[str, Any] | None = None,
         headers: Mapping[str, str] | None = None,
     ) -> FetchResult: ...
 
@@ -145,6 +146,7 @@ class Fetcher:
         *,
         method: str = "GET",
         json_body: Mapping[str, Any] | None = None,
+        form_body: Mapping[str, Any] | None = None,
         headers: Mapping[str, str] | None = None,
     ) -> FetchResult:
         """메서드와 본문을 정해서 보낸다. `fetch()` 는 이것의 GET 판이다.
@@ -155,12 +157,17 @@ class Fetcher:
         `json_body` 는 있으면 그대로 JSON 본문으로 나간다. GET 에 본문을 싣는 API 는 아직
         만난 적이 없으므로 보내는 쪽이 POST 를 고른다.
 
+        `form_body` 는 `application/x-www-form-urlencoded` 로 나간다. 삼성과 SK 목록이 폼이
+        아니면 답하지 않는다. 둘 중 하나만 준다.
+
         `headers` 는 사이트가 요구하는 기능성 헤더다. 현대는 `x-hkmc-service` 가 없으면 400 을
         준다. **브라우저 위장에 쓰지 않는다** — User-Agent 는 이 클라이언트가 정하고 여기서
         덮을 수 없다 (`.claude/rules/crawling.md`, `app/selector/api_schema.py`).
         """
         await self._ensure_allowed(url)
-        return await self._send(url, method=method, json_body=json_body, headers=headers)
+        return await self._send(
+            url, method=method, json_body=json_body, form_body=form_body, headers=headers
+        )
 
     @property
     def user_agent(self) -> str:
@@ -224,6 +231,7 @@ class Fetcher:
         *,
         method: str = "GET",
         json_body: Mapping[str, Any] | None = None,
+        form_body: Mapping[str, Any] | None = None,
         headers: Mapping[str, str] | None = None,
     ) -> FetchResult:
         host = urlsplit(url).netloc
@@ -243,6 +251,7 @@ class Fetcher:
                         method,
                         url,
                         json=None if json_body is None else dict(json_body),
+                        data=None if form_body is None else dict(form_body),
                         headers=extra,
                     )
                 except httpx.TransportError as exc:

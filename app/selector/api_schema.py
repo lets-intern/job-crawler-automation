@@ -32,6 +32,22 @@
 `items_path` 와 `fields` 의 값은 점 표기 경로다. 숫자 조각은 배열의 자리를 뜻한다 —
 `recList.0.detailContext` 는 `recList` 의 첫 항목이다.
 
+## 요청과 응답의 모양은 사이트가 정한다
+
+| 키 | 값 | 왜 |
+|---|---|---|
+| `headers` | 사이트가 요구하는 기능성 헤더 | 현대는 `x-hkmc-service` 가 없으면 400 이다 |
+| `body_format` | `json`(기본) 또는 `form` | 삼성·SK 목록은 폼이 아니면 답하지 않는다 |
+| `response` | `json`(기본) 또는 `html` | 삼성 목록은 JSON 이 아니라 HTML 조각이다 |
+
+`User-Agent` 는 `headers` 에 담을 수 없다. 이름을 정직하게 밝히는 것은 공용 fetch 클라이언트의
+일이고, 설정이 덮을 수 있으면 브라우저 위장이 크롤러 등록만으로 가능해진다
+(`.claude/rules/crawling.md`).
+
+`response` 가 `html` 이면 같은 키가 CSS 셀렉터로 읽힌다 — `items_path` 는 항목 셀렉터,
+`fields` 는 항목 안의 셀렉터, `id_field` 는 `<셀렉터>@<속성>` 이다. `|digits` 를 붙이면
+속성값에서 숫자만 남긴다 (삼성 공고 번호에 천 단위 쉼표가 있다).
+
 `link_template` 은 사람이 볼 상세 주소를 만든다. `raw_jobs.source_url` 에 이 값이 들어가므로
 공고마다 달라야 하고, 그래서 `{id}` 가 반드시 들어간다. 이것이 없으면 모든 공고가 같은 주소를
 갖게 되고, 중복 판정과 소비 측 링크가 동시에 무너진다.
@@ -68,6 +84,21 @@ LIST_FIELDS: tuple[str, ...] = ("title", "date", "company")
 # 조회에 PUT·DELETE 를 보내는 설정은 오타일 가능성이 훨씬 크다
 METHODS: tuple[str, ...] = ("GET", "POST")
 
+# 본문을 무엇으로 실어 보내는가. 삼성과 SK 는 폼이 아니면 답하지 않는다
+JSON_BODY = "json"
+FORM_BODY = "form"
+BODY_FORMATS: tuple[str, ...] = (JSON_BODY, FORM_BODY)
+
+# 응답을 무엇으로 읽는가. 삼성 목록은 JSON 이 아니라 HTML 조각이다
+JSON_RESPONSE = "json"
+HTML_RESPONSE = "html"
+RESPONSE_FORMATS: tuple[str, ...] = (JSON_RESPONSE, HTML_RESPONSE)
+
+# HTML 응답에서 id 를 읽는 표기. `<셀렉터>@<속성>` 이고 셀렉터를 비우면 항목 노드 자신이다
+ID_ATTRIBUTE_MARK = "@"
+# 속성값에서 숫자만 남긴다. 삼성 공고 번호는 `22,878` 처럼 천 단위 쉼표가 찍혀 온다
+DIGITS_FILTER = "|digits"
+
 # 항목 id 가 들어갈 자리. 상세 요청과 상세 주소가 이것으로 공고마다 갈린다
 ID_PLACEHOLDER = "{id}"
 
@@ -101,6 +132,15 @@ class ApiListConfig(BaseModel):
     link_template: str
     # 사이트가 요구하는 기능성 헤더. 없으면 응답을 주지 않는 API 가 있다
     headers: dict[str, str] = {}
+    # 본문을 JSON 으로 보낼지 폼으로 보낼지. 폼이 아니면 500 을 주는 사이트가 있다
+    body_format: str = JSON_BODY
+    # 응답을 JSON 으로 읽을지 HTML 로 읽을지. `html` 이면 `items_path` 와 `fields` 는 CSS
+    # 셀렉터이고 `id_field` 는 `<셀렉터>@<속성>` 이다
+    response: str = JSON_RESPONSE
+
+    @property
+    def is_html(self) -> bool:
+        return self.response == HTML_RESPONSE
 
 
 class ApiDetailConfig(BaseModel):
@@ -179,6 +219,8 @@ def _list_section(value: Any) -> ApiListConfig | None:
         id_field=_required_text(section, "list", "id_field"),
         link_template=_required_text(section, "list", "link_template"),
         headers=_headers(section, "list"),
+        body_format=_choice(section, "list", "body_format", BODY_FORMATS, JSON_BODY),
+        response=_choice(section, "list", "response", RESPONSE_FORMATS, JSON_RESPONSE),
     )
     if ID_PLACEHOLDER not in config.link_template:
         # 이 값이 `raw_jobs.source_url` 이 된다. 공고마다 같으면 중복 판정도 링크도 무너진다
@@ -259,6 +301,20 @@ def _body(section: Mapping[str, Any], where: str) -> dict[str, Any]:
             "unparsable", f"`{where}.body` 가 객체가 아니다: {type(body).__name__}"
         )
     return dict(body)
+
+
+def _choice(
+    section: Mapping[str, Any], where: str, name: str, allowed: tuple[str, ...], default: str
+) -> str:
+    """값이 정해진 몇 가지 중 하나인 설정. 안 적으면 기존 동작이 기본이다."""
+    if name not in section or section[name] is None:
+        return default
+    value = _required_text(section, where, name).lower()
+    if value not in allowed:
+        raise ApiConfigError(
+            "unknown_field", f"`{where}.{name}` 은 {', '.join(allowed)} 중 하나다: {value}"
+        )
+    return value
 
 
 def _headers(section: Mapping[str, Any], where: str) -> dict[str, str]:

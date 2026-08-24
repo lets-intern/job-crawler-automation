@@ -120,7 +120,7 @@ def parse_list(html: str, selectors: ListSelectors, base_url: str) -> ListParseR
     주소가 되고, 상세는 따라가지 않는다.
     """
     soup = BeautifulSoup(html, "html.parser")
-    nodes = _select(soup, selectors.item, "list.item")
+    nodes = select_nodes(soup, selectors.item, "list.item")
     if not nodes:
         raise SelectorMissError(
             f"list.item `{selectors.item}` 이 0개 매칭됐다. 사이트 구조가 바뀌었거나 JS 렌더링이다"
@@ -131,11 +131,13 @@ def parse_list(html: str, selectors: ListSelectors, base_url: str) -> ListParseR
     link_absent = list_only(selectors)
 
     for index, node in enumerate(nodes):
-        title = _text(node, selectors.title, f"list.title[{index}]")
+        title = field_text(node, selectors.title, f"list.title[{index}]")
         link = _link(node, selectors, index)
-        date = _text(node, selectors.date, f"list.date[{index}]")
+        date = field_text(node, selectors.date, f"list.date[{index}]")
         company = (
-            _text(node, selectors.company, f"list.company[{index}]") if selectors.company else ""
+            field_text(node, selectors.company, f"list.company[{index}]")
+            if selectors.company
+            else ""
         )
 
         problems: list[FieldFailure] = []
@@ -193,7 +195,7 @@ def parse_detail(html: str, selectors: DetailSelectors) -> DetailParseResult:
             fields[name] = ""
             continue
 
-        value = _text(soup, selector, f"detail.{name}")
+        value = field_text(soup, selector, f"detail.{name}")
         fields[name] = value
         if not value:
             missing.append(name)
@@ -205,7 +207,12 @@ def parse_detail(html: str, selectors: DetailSelectors) -> DetailParseResult:
     return DetailParseResult(fields=fields, missing=missing)
 
 
-def _select(scope: BeautifulSoup | Tag, selector: str, name: str) -> list[Tag]:
+def select_nodes(scope: BeautifulSoup | Tag, selector: str, name: str) -> list[Tag]:
+    """셀렉터가 잡은 노드들. 문법 오류는 어느 필드였는지를 붙여 올린다.
+
+    JSON API 경로도 이 함수를 쓴다. 삼성 목록은 API 로 물어보는데 응답이 HTML 조각이라,
+    같은 판정과 같은 오류 문구를 지나야 한다 (`app/crawler/api_source.py`).
+    """
     try:
         return list(scope.select(selector))
     except SelectorSyntaxError as exc:
@@ -245,7 +252,7 @@ BLOCK_TAGS: frozenset[str] = frozenset(
 )
 
 
-def _text(scope: BeautifulSoup | Tag, selector: str, name: str) -> str:
+def field_text(scope: BeautifulSoup | Tag, selector: str, name: str) -> str:
     """첫 매칭 노드의 텍스트. 매칭이 없으면 빈 문자열이다.
 
     블록 태그 경계에 줄바꿈을 넣고 뽑는다. `get_text()` 를 그냥 부르면 `<h3>조직소개</h3>`
@@ -257,7 +264,7 @@ def _text(scope: BeautifulSoup | Tag, selector: str, name: str) -> str:
 
     남는 빈 줄은 여기서 정리하지 않는다. `\n{3,}` 를 줄이는 것은 정규화 규칙의 일이다.
     """
-    nodes = _select(scope, selector, name)
+    nodes = select_nodes(scope, selector, name)
     if not nodes:
         return ""
 

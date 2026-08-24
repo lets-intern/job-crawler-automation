@@ -34,7 +34,10 @@ import logging
 from collections.abc import Mapping
 from typing import Any
 
-from app.crawler.fetcher import FetchPolicy
+from bs4 import BeautifulSoup
+from bs4.element import Tag
+
+from app.crawler.fetcher import FetchPolicy, FetchResult
 from app.crawler.parser import (
     REQUIRED_DETAIL_FIELDS,
     DetailParseResult,
@@ -43,8 +46,17 @@ from app.crawler.parser import (
     ListItem,
     ListParseResult,
     SelectorMissError,
+    field_text,
+    select_nodes,
 )
-from app.selector.api_schema import ID_PLACEHOLDER, ApiDetailConfig, ApiListConfig
+from app.selector.api_schema import (
+    DIGITS_FILTER,
+    FORM_BODY,
+    ID_ATTRIBUTE_MARK,
+    ID_PLACEHOLDER,
+    ApiDetailConfig,
+    ApiListConfig,
+)
 from app.selector.schema import DETAIL_FIELDS
 
 logger = logging.getLogger(__name__)
@@ -63,10 +75,10 @@ MISSING = _Missing()
 
 async def fetch_list(client: FetchPolicy, config: ApiListConfig) -> ListParseResult:
     """목록 API 를 한 번 부르고 항목을 만든다."""
-    payload = await _fetch_json(
-        client, config.url, config.method, dict(config.body), config.headers
-    )
-    return build_items(payload, config)
+    result = await _send(client, config.url, config.method, dict(config.body), config)
+    if config.is_html:
+        return build_html_items(result.text, config)
+    return build_items(_as_json(result), config)
 
 
 async def fetch_detail(
@@ -75,8 +87,8 @@ async def fetch_detail(
     """공고 하나의 상세 API 를 부르고 필드를 만든다."""
     url = config.url.replace(ID_PLACEHOLDER, item_id)
     body = _with_id(dict(config.body), item_id)
-    payload = await _fetch_json(client, url, config.method, body, config.headers)
-    return build_detail(payload, config)
+    result = await _send(client, url, config.method, body, config)
+    return build_detail(_as_json(result), config)
 
 
 def build_items(payload: Any, config: ApiListConfig) -> ListParseResult:
@@ -122,6 +134,105 @@ def build_items(payload: Any, config: ApiListConfig) -> ListParseResult:
             f"읽지 못했다: {failures[0].message}"
         )
     return ListParseResult(matched=len(entries), items=items, failures=failures)
+
+
+def build_html_items(html: str, config: ApiListConfig) -> ListParseResult:
+    """HTML 조각으로 오는 목록에서 항목을 뽑는다.
+
+    삼성 목록이 이 경로다. 요청은 API 처럼 POST 로 물어보는데 응답이 JSON 이 아니라 HTML 조각
+    이라, 어디를 읽을지는 점 표기 경로가 아니라 CSS 셀렉터가 정한다.
+
+    | 설정 | HTML 모드에서의 뜻 |
+    |---|---|
+    | `items_path` | 항목 하나를 잡는 셀렉터 |
+    | `fields` | 항목 안에서 값을 잡는 셀렉터 |
+    | `id_field` | `<셀렉터>@<속성>`. 셀렉터를 비우면 항목 노드 자신의 속성이다 |
+
+    판정은 JSON 쪽과 같다. 항목 0건은 실패이고, 제목과 id 가 없는 항목은 남기지 않는다.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    nodes = select_nodes(soup, config.items_path, "list.items_path")
+    if not nodes:
+        raise SelectorMissError(
+            f"items_path `{config.items_path}` 가 0개 매칭됐다. 목록 조각의 구조가 바뀌었다"
+        )
+
+    items: list[ListItem] = []
+    failures: list[FieldFailure] = []
+    for index, node in enumerate(nodes):
+        values = {
+            name: field_text(node, selector, f"list.{name}[{index}]")
+            for name, selector in config.fields.items()
+        }
+        item_id = _html_id(node, config.id_field, index)
+
+        problems: list[FieldFailure] = []
+        if not values.get("title"):
+            problems.append(
+                FieldFailure(
+                    index=index,
+                    field="title",
+                    message=f"`{config.fields.get('title', '')}` 이 항목 안에서 값을 찾지 못했다",
+                )
+            )
+        if not item_id:
+            problems.append(
+                FieldFailure(
+                    index=index,
+                    field="id",
+                    message=f"id_field `{config.id_field}` 가 항목 안에서 값을 찾지 못했다",
+                )
+            )
+        if problems:
+            failures.extend(problems)
+            continue
+
+        items.append(
+            ListItem(
+                index=index,
+                title=values.get("title", ""),
+                link=config.link_template.replace(ID_PLACEHOLDER, item_id),
+                date=values.get("date", ""),
+                company=values.get("company", ""),
+                detail_key=item_id,
+            )
+        )
+
+    if not items:
+        unread = [name for name in REQUIRED_LIST_VALUES if any(f.field == name for f in failures)]
+        raise FieldParseError(
+            f"항목 {len(nodes)}건을 잡았지만 어느 항목에서도 {', '.join(unread) or 'item'} 를 "
+            f"읽지 못했다: {failures[0].message}"
+        )
+    return ListParseResult(matched=len(nodes), items=items, failures=failures)
+
+
+def _html_id(node: Tag, spec: str, index: int) -> str:
+    """`<셀렉터>@<속성>` 표기로 항목 id 를 읽는다.
+
+    `|digits` 를 붙이면 숫자만 남긴다. 삼성 공고 번호가 `data-value="22,878"` 처럼 천 단위
+    쉼표가 찍힌 채로 오는데, 그대로 상세 주소에 넣으면 `%2C` 로 인코딩돼 열리지 않는다.
+    **숫자 표기에 기대는 자리다** — 사이트가 표기를 바꾸면 여기가 먼저 깨진다
+    (`.claude/site-recipes/www-samsungcareers-com.md`).
+    """
+    wanted, _, _ = spec.partition(DIGITS_FILTER)
+    selector, mark, attribute = wanted.partition(ID_ATTRIBUTE_MARK)
+    if not mark or not attribute.strip():
+        raise FieldParseError(f"HTML 목록의 id_field 는 `<셀렉터>@<속성>` 이어야 한다: {spec}")
+
+    target = node
+    if selector.strip():
+        found = select_nodes(node, selector.strip(), f"list.id_field[{index}]")
+        if not found:
+            return ""
+        target = found[0]
+
+    raw = target.get(attribute.strip())
+    value = " ".join(raw) if isinstance(raw, list) else str(raw or "")
+    value = value.strip()
+    if spec.endswith(DIGITS_FILTER):
+        value = "".join(char for char in value if char.isdigit())
+    return value
 
 
 def build_detail(payload: Any, config: ApiDetailConfig) -> DetailParseResult:
@@ -188,30 +299,42 @@ def _item(
     )
 
 
-async def _fetch_json(
+async def _send(
     client: FetchPolicy,
     url: str,
     method: str,
     body: dict[str, Any],
-    headers: Mapping[str, str] | None = None,
-) -> Any:
-    """공용 클라이언트로 부르고 JSON 으로 읽는다. JSON 이 아니면 파싱 실패다."""
+    config: ApiListConfig | ApiDetailConfig,
+) -> FetchResult:
+    """공용 클라이언트로 한 번 부른다. 본문 형식과 헤더는 설정이 정한다.
+
+    GET 에 본문을 싣는 API 는 아직 만난 적이 없어 POST 일 때만 본문을 보낸다. 폼으로 보낼지는
+    `body_format` 이 정한다 — 삼성은 폼이 아니면 500 을, 파라미터가 하나라도 빠지면
+    `{"code":500}` 을 준다.
+    """
+    payload = body if method == "POST" else None
+    as_form = getattr(config, "body_format", "") == FORM_BODY
     result = await client.request(
         url,
         method=method,
-        json_body=body if method == "POST" else None,
-        headers=headers or None,
+        json_body=None if as_form else payload,
+        form_body=payload if as_form else None,
+        headers=config.headers or None,
     )
+    logger.info("api 응답 url=%s method=%s status=%s", url, method, result.status_code)
+    return result
+
+
+def _as_json(result: FetchResult) -> Any:
+    """응답을 JSON 으로 읽는다. JSON 이 아니면 파싱 실패다."""
     try:
-        payload = json.loads(result.text)
+        return json.loads(result.text)
     except json.JSONDecodeError as exc:
         # 전송은 됐다. 200 인데 JSON 이 아니면 endpoint 를 잘못 짚었거나 사이트가 막은 것이고,
         # 어느 쪽이든 재시도로는 풀리지 않는다
         raise FieldParseError(
-            f"응답이 JSON 이 아니다({exc}): {url} status={result.status_code}"
+            f"응답이 JSON 이 아니다({exc}): {result.url} status={result.status_code}"
         ) from exc
-    logger.info("api 응답 url=%s method=%s status=%s", url, method, result.status_code)
-    return payload
 
 
 def _with_id(value: Any, item_id: str) -> Any:
