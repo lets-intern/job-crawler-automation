@@ -6,11 +6,16 @@
 
 ## 목록
 
-| 파일 | 사이트 | 렌더링 | 마지막 확인 |
+| 파일 | 사이트 | 수집 방식 | 마지막 확인 |
 |---|---|---|---|
-| `www-hanwhain-com.md` | 한화 | Playwright 필요 | 2026-08-22 |
-| `talent-hyundai-com.md` | 현대자동차 | Playwright 필요 | 2026-08-22 |
-| `careers-lg-com.md` | LG | Playwright 필요 | 2026-08-24 |
+| `careers-lg-com.md` | LG | 목록·상세 API | 2026-08-25 |
+| `www-hanwhain-com.md` | 한화 | 목록·상세 API, 4쪽 | 2026-08-25 |
+| `www-samsungcareers-com.md` | 삼성 | 목록 API(HTML 조각)·상세 API, 2쪽 | 2026-08-25 |
+| `www-skcareers-com.md` | SK | 목록 API·상세 정적 | 2026-08-25 |
+| `talent-hyundai-com.md` | 현대자동차 | 목록·상세 API, 헤더 필요 | 2026-08-25 |
+| `recruit-lotte-co-kr.md` | 롯데그룹 | 목록·상세 정적 | 2026-08-25 |
+
+여섯 사이트 모두 정규 실행에 브라우저가 필요 없다 (2026-08-25 확인).
 
 ## 새 사이트 등록 전에
 

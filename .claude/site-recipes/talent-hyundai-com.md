@@ -2,13 +2,17 @@
 
 - 리스트 URL: https://talent.hyundai.com/theme/hall.hc
 - 상세 URL 패턴: `/apply/applyView.hc?recuYy=<연도>&recuType=<구분>&recuCls=<번호>`
-- 렌더링: Playwright 필요. 근거는 리스트 URL 의 정적 응답이 65,185자인데 본문이 13자,
-  반복 항목 0개라는 것이다. 렌더 후에는 1,331,820자에 `#applyList .apply__list > li` 가 20건 잡힌다
-- 페이지네이션: 확인하지 않았다
-- 날짜 포맷: 목록은 `D-8` 형태의 남은 일수만 보여 준다. 상세의 마감일은
-  `2026-08-15 09:00 ~ 2026-08-30 17:00` 처럼 시작과 마감이 한 문자열에 있다. 정규화 규칙은 아직 없다
+- 수집 방식: 목록·상세 둘 다 `api` (2026-08-25 전환). 브라우저를 띄우지 않는다.
+  아래 "2026-08-25: 목록도 상세도 API 다" 에 두 요청과 필요한 헤더가 있다
+- 페이지네이션: 확인하지 않았다. 목록 API 가 한 번에 20건을 준다
+- 날짜 포맷: API 의 마감일은 `20260830` 이다. **지금 `date_parse` 규칙이 읽지 못한다** —
+  아래 "마감일 형식이 지금 규칙으로는 읽히지 않는다" 참고. 렌더 경로가 주던 값은
+  `2026-08-15 09:00 ~ 2026-08-30 17:00` 이었다
 - robots.txt: 공용 fetch 클라이언트의 robots 확인을 통과했다
-- 권장 주기: 1440분으로 등록했다. 목록이 하루 단위로 바뀌는 사이트라 더 짧게 둘 이유를 찾지 못했다
+- 권장 주기: 30분으로 등록돼 있다 (workflow 6)
+
+렌더 경로의 기록은 아래에 그대로 둔다. API 가 막히면 돌아갈 곳이다. 그때의 근거는 리스트 URL 의
+정적 응답이 65,185자인데 본문이 13자, 반복 항목 0개라는 것이었다.
 
 ## 상세 링크는 속성값으로 만든다
 
@@ -67,3 +71,45 @@
 상세는 서버가 렌더한 HTML 이다. 클릭 뒤 XHR 이 0건이고 나가는 것은 문서 요청 하나다.
 구조화된 응답이 없으므로 13개 항목은 텍스트를 LLM 이 나눠야 한다
 (`.claude/tasks/todo/prd-crawler-v2.md` 5번).
+
+## 2026-08-25: 목록도 상세도 API 다. 브라우저를 띄우지 않는다
+
+수집 방식을 `api`/`api` 로 바꿨다. 두 요청 모두 헤더가 있어야 하고, 없으면 400 이다.
+
+```
+GET https://talent.hyundai.com/api/rec/AP-HM-FO-02730?hgrCd=1&lang=ko&secCode=&jdRecuCate=01&secLoad=Y
+  accept: application/json, text/plain, */*
+  referer: https://talent.hyundai.com/theme/hall.hc
+  x-hkmc-service: HM
+  x-hkmc-token: null
+  -> data.applyList 20건
+
+GET https://talent.hyundai.com/api/rec/AP-HM-FO-02800?hgrCd=1&lang=ko&recuYy=2026&recuType=N2&recuCls=296
+  referer 만 /apply/applyView.hc 로 바뀐다
+  -> data.applyInfo 157필드. 전부 평문이다
+```
+
+쿠키는 필요 없다. 헤더는 `crawlers.api_config_json` 의 `headers` 에 담는다. User-Agent 는
+담을 수 없다 — 이름은 공용 fetch 클라이언트가 정한다.
+
+**`/apply/applyView.hc` 상세 HTML 은 쓰지 않는다.** 2026-08-25 에 받아 보니 텍스트가
+1,098자뿐인 JS 껍데기였다. 위의 "상세는 서버가 렌더한 HTML 이다" 는 그 시점의 관찰이고,
+`applyInfo` 를 확인한 지금은 HTML 을 파싱할 이유가 없다.
+
+상세 주소는 한 값이 아니라 `recuYy`·`recuType`·`recuCls` 세 값으로 만든다. `id_field` 에
+`{키}` 자리를 쓴 템플릿을 넣어 세 값을 이어 붙인 것이 id 가 된다
+(`seeds/site-configs-20260825.json`).
+
+본문은 `privJdDtl`(주요 업무)·`aboutTeamNtc`(조직 소개)·`etc`(기타)를 모으고, 자격요건은
+`privMustReq`(필수)와 `prefReq`(우대)를 모은다.
+
+### 마감일 형식이 지금 규칙으로는 읽히지 않는다
+
+API 가 주는 마감일은 `applyEndDt = 20260830` 이다. `deadline` 의 `date_parse` 규칙에
+`%Y%m%d` 가 없어서 이 값은 정규화에서 실패한다. 렌더 경로가 주던
+`2026-08-15 09:00 ~ 2026-08-30 17:00` 과 형식이 다르고, 응답 157필드 어디에도 구분자가 들어간
+날짜는 없다.
+
+`raw_jobs` 에는 값이 그대로 남으므로 규칙에 `%Y%m%d` 를 더한 뒤 재정규화하면 복구된다.
+2026-08-25 기준 20건이 전부 이미 아는 공고라 새로 적재된 행은 없고, **다음에 올라오는 새 공고가
+이 문제를 처음 만난다.**
