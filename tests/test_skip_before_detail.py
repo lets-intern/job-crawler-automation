@@ -237,3 +237,25 @@ async def test_전부_마감이어도_실행은_실패가_아니다(conn: sqlite
     assert detail.calls == []
     assert result.status == "success"
     assert (result.skipped_count, result.fail_count, result.new_count) == (2, 0, 0)
+
+
+# 이미 저장한 공고 (2.4.V) --------------------
+
+
+async def test_이미_저장한_공고는_상세를_다시_열지_않는다(conn: sqlite3.Connection) -> None:
+    """`_is_known()` 은 상세 요청 앞에 있어야 한다. 뒤에 있으면 요청은 이미 나간 뒤다."""
+    detail = StubDetail()
+    items = [item(0, "백엔드 개발자", "2026-09-30"), item(1, "프론트엔드 개발자", "")]
+
+    first = await run_once(conn, target(), collectors=collectors(items, detail))
+
+    assert len(detail.calls) == 2
+    assert (first.new_count, first.skipped_count) == (2, 0)
+
+    second = await run_once(conn, target(), collectors=collectors(items, detail))
+
+    # 두 번째 실행은 상세를 한 번도 부르지 않는다. 늘어난 호출이 없다
+    assert len(detail.calls) == 2
+    assert (second.new_count, second.fail_count) == (0, 0)
+    assert second.status == "success"
+    assert len(conn.execute("SELECT id FROM raw_jobs").fetchall()) == 2
