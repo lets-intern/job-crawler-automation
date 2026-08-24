@@ -94,6 +94,10 @@ JSON_RESPONSE = "json"
 HTML_RESPONSE = "html"
 RESPONSE_FORMATS: tuple[str, ...] = (JSON_RESPONSE, HTML_RESPONSE)
 
+# 쪽 넘김의 기본 상한과 절대 상한. 쪽마다 요청이 하나씩 나가므로 설정으로도 이 위로 못 올린다
+DEFAULT_MAX_PAGES = 20
+PAGE_LIMIT = 100
+
 # HTML 응답에서 id 를 읽는 표기. `<셀렉터>@<속성>` 이고 셀렉터를 비우면 항목 노드 자신이다
 ID_ATTRIBUTE_MARK = "@"
 # 속성값에서 숫자만 남긴다. 삼성 공고 번호는 `22,878` 처럼 천 단위 쉼표가 찍혀 온다
@@ -117,6 +121,37 @@ class ApiConfigError(ValueError):
         self.reason = reason
 
 
+class ApiPagination(BaseModel):
+    """쪽을 넘기는 법. 없으면 한 번만 부른다.
+
+    쪽 번호는 본문의 `param` 자리에 들어간다. 한화는 `page` 를 0 부터, 삼성은 `currentPageNo`
+    를 1 부터 센다.
+
+    마지막 쪽인지 아는 법이 사이트마다 다르다.
+
+    | 키 | 사이트 | 뜻 |
+    |---|---|---|
+    | `has_next` | 한화 | 응답 안 그 경로가 참인 동안 계속한다 |
+    | `total_pages_selector`+`total_pages_attribute` | 삼성 | 총 쪽 수를 읽어 그만큼만 돈다 |
+    | 둘 다 없음 | - | 항목이 0건인 쪽이 나오면 멈춘다 |
+
+    `max_pages` 는 어느 경우에도 넘지 않는 상한이다. 끝나지 않는 `has_next` 를 만나면 그
+    사이트를 영원히 때리게 되므로, 판정이 무엇이든 상한이 마지막 안전장치다.
+    """
+
+    # 쪽 번호를 넣을 본문 키
+    param: str
+    # 첫 쪽 번호. 한화는 0, 삼성은 1 이다
+    start: int = 1
+    # 무한 반복을 막는 상한. 이 수만큼 부르고 무조건 멈춘다
+    max_pages: int = DEFAULT_MAX_PAGES
+    # 다음 쪽이 있는지를 담은 JSON 경로
+    has_next: str = ""
+    # 총 쪽 수가 든 노드와 그 속성. HTML 응답에서 쓴다
+    total_pages_selector: str = ""
+    total_pages_attribute: str = ""
+
+
 class ApiListConfig(BaseModel):
     """목록 API 하나. 응답의 `items_path` 가 공고 배열이다."""
 
@@ -137,6 +172,8 @@ class ApiListConfig(BaseModel):
     # 응답을 JSON 으로 읽을지 HTML 로 읽을지. `html` 이면 `items_path` 와 `fields` 는 CSS
     # 셀렉터이고 `id_field` 는 `<셀렉터>@<속성>` 이다
     response: str = JSON_RESPONSE
+    # 쪽을 넘기는 법. 없으면 한 번만 부른다
+    pagination: ApiPagination | None = None
 
     @property
     def is_html(self) -> bool:
@@ -221,6 +258,7 @@ def _list_section(value: Any) -> ApiListConfig | None:
         headers=_headers(section, "list"),
         body_format=_choice(section, "list", "body_format", BODY_FORMATS, JSON_BODY),
         response=_choice(section, "list", "response", RESPONSE_FORMATS, JSON_RESPONSE),
+        pagination=_pagination(section.get("pagination")),
     )
     if ID_PLACEHOLDER not in config.link_template:
         # 이 값이 `raw_jobs.source_url` 이 된다. 공고마다 같으면 중복 판정도 링크도 무너진다
@@ -301,6 +339,60 @@ def _body(section: Mapping[str, Any], where: str) -> dict[str, Any]:
             "unparsable", f"`{where}.body` 가 객체가 아니다: {type(body).__name__}"
         )
     return dict(body)
+
+
+def _pagination(value: Any) -> ApiPagination | None:
+    """쪽 넘김 설정. 없으면 None 이고, 그때는 목록을 한 번만 부른다."""
+    if value is None:
+        return None
+    section = _mapping(value, "list.pagination")
+    _reject_unknown(section, tuple(ApiPagination.model_fields), "list.pagination")
+
+    config = ApiPagination(
+        param=_required_text(section, "list.pagination", "param"),
+        start=_whole_number(section, "start", 1, minimum=0),
+        max_pages=_whole_number(section, "max_pages", DEFAULT_MAX_PAGES, minimum=1),
+        has_next=str(section.get("has_next") or "").strip(),
+        total_pages_selector=str(section.get("total_pages_selector") or "").strip(),
+        total_pages_attribute=str(section.get("total_pages_attribute") or "").strip(),
+    )
+    if config.max_pages > PAGE_LIMIT:
+        raise ApiConfigError(
+            "unknown_field",
+            f"`list.pagination.max_pages` 가 상한 {PAGE_LIMIT} 을 넘는다: {config.max_pages}. "
+            "쪽마다 요청이 하나씩 나간다",
+        )
+    if config.has_next and config.total_pages_selector:
+        # 둘 다 적으면 어느 쪽으로 멈춘 것인지 사유에서 알 수 없다
+        raise ApiConfigError(
+            "unknown_field",
+            "`list.pagination` 에 `has_next` 와 `total_pages_selector` 가 함께 있다. "
+            "마지막 쪽을 판정하는 법은 하나만 적는다",
+        )
+    if bool(config.total_pages_selector) != bool(config.total_pages_attribute):
+        raise ApiConfigError(
+            "missing_field",
+            "`list.pagination` 의 `total_pages_selector` 와 `total_pages_attribute` 는 "
+            "둘 다 있어야 한다. 어느 노드의 어느 속성인지가 함께 있어야 읽을 수 있다",
+        )
+    return config
+
+
+def _whole_number(section: Mapping[str, Any], name: str, default: int, *, minimum: int) -> int:
+    """쪽 번호와 상한. 정수가 아니면 무엇을 뜻하는지 추측하지 않는다."""
+    if name not in section or section[name] is None:
+        return default
+    value = section[name]
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ApiConfigError(
+            "unparsable",
+            f"`list.pagination.{name}` 이 정수가 아니다: {type(value).__name__}",
+        )
+    if value < minimum:
+        raise ApiConfigError(
+            "missing_field", f"`list.pagination.{name}` 은 {minimum} 이상이어야 한다: {value}"
+        )
+    return value
 
 
 def _choice(

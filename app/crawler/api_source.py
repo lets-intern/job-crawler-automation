@@ -32,6 +32,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Mapping
+from dataclasses import replace
 from typing import Any
 
 from bs4 import BeautifulSoup
@@ -74,11 +75,99 @@ MISSING = _Missing()
 
 
 async def fetch_list(client: FetchPolicy, config: ApiListConfig) -> ListParseResult:
-    """목록 API 를 한 번 부르고 항목을 만든다."""
-    result = await _send(client, config.url, config.method, dict(config.body), config)
+    """목록 API 를 부르고 항목을 만든다. 쪽 넘김 설정이 있으면 끝까지 넘긴다."""
+    if config.pagination is None:
+        result = await _send(client, config.url, config.method, dict(config.body), config)
+        return _read_page(result, config)
+    return await _fetch_pages(client, config)
+
+
+async def _fetch_pages(client: FetchPolicy, config: ApiListConfig) -> ListParseResult:
+    """쪽을 넘겨 가며 전부 모은다. 한화 68건(20씩 4쪽)과 삼성 16건(2쪽)이 이 경로다.
+
+    쪽 사이에도 호스트 딜레이가 그대로 걸린다. 요청이 전부 공용 fetch 클라이언트를 지나기
+    때문이고, 그래서 여기서 따로 기다리지 않는다 (`.claude/rules/crawling.md`).
+
+    멈추는 조건은 셋이다 — 사이트가 다음 쪽이 없다고 말했거나, 항목이 0건인 쪽이 나왔거나,
+    `max_pages` 에 닿았거나. 마지막 것이 없으면 끝나지 않는 `hasNext` 하나로 사이트를 영원히
+    때리게 된다.
+
+    첫 쪽이 0건인 것은 끝이 아니라 실패다. 목록을 못 읽은 실행과 공고가 없는 사이트를 같은
+    결과로 남기지 않는다.
+    """
+    pages = config.pagination
+    assert pages is not None  # 부르는 쪽이 확인했다
+
+    matched = 0
+    items: list[ListItem] = []
+    failures: list[FieldFailure] = []
+    number = pages.start
+
+    for turn in range(pages.max_pages):
+        body = dict(config.body)
+        body[pages.param] = number
+        result = await _send(client, config.url, config.method, body, config)
+        try:
+            page = _read_page(result, config)
+        except SelectorMissError:
+            if turn == 0:
+                # 첫 쪽부터 0건이다. 쪽 넘김의 끝이 아니라 목록을 가져오지 못한 것이다
+                raise
+            logger.info("목록 %s쪽이 0건이라 여기서 멈춘다 url=%s", number, config.url)
+            break
+
+        for miss in page.failures:
+            failures.append(replace(miss, index=miss.index + matched))
+        for item in page.items:
+            items.append(replace(item, index=len(items)))
+        matched += page.matched
+
+        if not _has_more(result, config, page_count=turn + 1):
+            break
+        number += 1
+    else:
+        logger.warning(
+            "목록 쪽 넘김이 상한 %s에 닿아 멈춘다 url=%s. 그 뒤 공고는 이 실행에 없다",
+            pages.max_pages,
+            config.url,
+        )
+
+    return ListParseResult(matched=matched, items=items, failures=failures)
+
+
+def _read_page(result: FetchResult, config: ApiListConfig) -> ListParseResult:
+    """응답 하나를 항목으로 읽는다. JSON 인지 HTML 조각인지는 설정이 정한다."""
     if config.is_html:
         return build_html_items(result.text, config)
     return build_items(_as_json(result), config)
+
+
+def _has_more(result: FetchResult, config: ApiListConfig, *, page_count: int) -> bool:
+    """다음 쪽이 있는가. 판정하는 법은 사이트마다 다르다."""
+    pages = config.pagination
+    assert pages is not None
+
+    if pages.has_next:
+        # 한화는 `data.hasNext` 가 마지막 쪽에서 false 가 된다
+        return _dig(_as_json(result), pages.has_next) is True
+    if pages.total_pages_selector:
+        # 삼성은 총 쪽 수를 응답 안에 넣어 준다
+        total = _total_pages(result.text, pages.total_pages_selector, pages.total_pages_attribute)
+        return total is not None and page_count < total
+    # 판정할 것이 없으면 다음 쪽을 열어 보고 0건이면 멈춘다
+    return True
+
+
+def _total_pages(html: str, selector: str, attribute: str) -> int | None:
+    """총 쪽 수. 못 읽으면 None 이고, 그때는 0건인 쪽이 나올 때까지 넘긴다."""
+    soup = BeautifulSoup(html, "html.parser")
+    nodes = select_nodes(soup, selector, "list.pagination.total_pages_selector")
+    if not nodes:
+        return None
+    raw = nodes[0].get(attribute)
+    value = " ".join(raw) if isinstance(raw, list) else str(raw or "")
+    value = value.strip()
+    return int(value) if value.isdigit() else None
 
 
 async def fetch_detail(
