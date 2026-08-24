@@ -44,6 +44,10 @@
 일이고, 설정이 덮을 수 있으면 브라우저 위장이 크롤러 등록만으로 가능해진다
 (`.claude/rules/crawling.md`).
 
+`fields` 의 값은 경로 하나이거나 경로의 배열이다. 배열이면 그 자리들을 모아 빈 줄로 잇는다.
+경로 안의 `*` 는 배열 전체를 훑는다 — `recList.*.detailContext` 는 모집 부문마다 하나씩이다.
+한 자리만 읽으면 나머지 부문의 본문이 수집 단계에서 사라진다.
+
 `response` 가 `html` 이면 같은 키가 CSS 셀렉터로 읽힌다 — `items_path` 는 항목 셀렉터,
 `fields` 는 항목 안의 셀렉터, `id_field` 는 `<셀렉터>@<속성>` 이다. `|digits` 를 붙이면
 속성값에서 숫자만 남긴다 (삼성 공고 번호에 천 단위 쉼표가 있다).
@@ -108,6 +112,9 @@ ID_PLACEHOLDER = "{id}"
 
 SECTIONS: tuple[str, ...] = ("list", "detail")
 
+# 필드 하나가 읽을 자리. 배열이면 그 자리들을 모아 빈 줄로 잇는다
+FieldPath = str | list[str]
+
 # 설정으로 담을 수 없는 헤더. 이름을 정직하게 밝히는 것은 공용 fetch 클라이언트의 일이고,
 # 크롤러 설정이 그것을 덮을 수 있으면 브라우저 위장이 설정 한 줄이 된다
 BLOCKED_HEADERS: frozenset[str] = frozenset({"user-agent"})
@@ -160,7 +167,7 @@ class ApiListConfig(BaseModel):
     body: dict[str, Any]
     items_path: str
     # 공고 필드 -> 항목 안의 JSON 경로
-    fields: dict[str, str]
+    fields: dict[str, FieldPath]
     # 항목 안에서 공고 id 를 담은 키. 상세 요청과 `link_template` 이 이 값을 쓴다
     id_field: str
     # 사람이 볼 상세 주소. `{id}` 자리에 항목 id 가 들어간다
@@ -186,8 +193,8 @@ class ApiDetailConfig(BaseModel):
     url: str
     method: str
     body: dict[str, Any]
-    # 상세 필드 -> 응답 안의 JSON 경로
-    fields: dict[str, str]
+    # 상세 필드 -> 응답 안의 JSON 경로. 배열로 적으면 여러 자리를 모은다
+    fields: dict[str, FieldPath]
     # 사이트가 요구하는 기능성 헤더. 목록과 상세가 서로 다른 `referer` 를 요구하기도 한다
     headers: dict[str, str] = {}
 
@@ -447,7 +454,9 @@ def _headers(section: Mapping[str, Any], where: str) -> dict[str, str]:
     return result
 
 
-def _fields(section: Mapping[str, Any], where: str, allowed: tuple[str, ...]) -> dict[str, str]:
+def _fields(
+    section: Mapping[str, Any], where: str, allowed: tuple[str, ...]
+) -> dict[str, FieldPath]:
     """필드 이름과 경로. 스키마에 없는 이름은 거절한다 — 무엇을 말하려던 것인지 추측하지 않는다."""
     if "fields" not in section:
         raise ApiConfigError("missing_field", f"`{where}.fields` 가 없다")
@@ -469,17 +478,38 @@ def _fields(section: Mapping[str, Any], where: str, allowed: tuple[str, ...]) ->
             f"쓸 수 있는 이름은 {', '.join(allowed)} 다",
         )
 
-    result: dict[str, str] = {}
+    result: dict[str, FieldPath] = {}
     for name, path in fields.items():
-        if not isinstance(path, str):
-            raise ApiConfigError(
-                "unparsable",
-                f"`{where}.fields.{name}` 이 문자열이 아니다: {type(path).__name__}",
-            )
+        result[str(name)] = _field_path(path, where, str(name))
+    return result
+
+
+def _field_path(path: Any, where: str, name: str) -> FieldPath:
+    """경로 하나 또는 여럿. 여럿이면 그 자리들을 모아 한 필드를 만든다.
+
+    현대는 주요 업무와 조직 소개가 다른 필드에 나뉘어 있어 한 자리만 읽으면 본문이 반쪽이
+    된다. 그런 사이트를 위해 배열로도 적을 수 있다.
+    """
+    if isinstance(path, str):
         if not path.strip():
             raise ApiConfigError("missing_field", f"`{where}.fields.{name}` 이 비어 있다")
-        result[str(name)] = path.strip()
-    return result
+        return path.strip()
+    if isinstance(path, list):
+        if not path:
+            raise ApiConfigError("missing_field", f"`{where}.fields.{name}` 이 빈 배열이다")
+        paths: list[str] = []
+        for item in path:
+            if not isinstance(item, str) or not item.strip():
+                raise ApiConfigError(
+                    "unparsable",
+                    f"`{where}.fields.{name}` 의 경로가 비었거나 문자열이 아니다: {item!r}",
+                )
+            paths.append(item.strip())
+        return paths
+    raise ApiConfigError(
+        "unparsable",
+        f"`{where}.fields.{name}` 이 문자열도 배열도 아니다: {type(path).__name__}",
+    )
 
 
 def _reject_unknown(data: Mapping[str, Any], allowed: tuple[str, ...], where: str) -> None:

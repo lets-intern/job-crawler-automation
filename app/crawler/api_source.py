@@ -58,10 +58,14 @@ from app.selector.api_schema import (
     ID_PLACEHOLDER,
     ApiDetailConfig,
     ApiListConfig,
+    FieldPath,
 )
 from app.selector.schema import DETAIL_FIELDS
 
 logger = logging.getLogger(__name__)
+
+# 배열 전체를 훑는 표시. `recList.*.detailContext` 는 모집 부문마다 하나씩이다
+WILDCARD = ".*."
 
 # `id_field` 에 쓰는 `{키}` 자리. 항목 안의 경로 이름만 받는다
 ENTRY_PLACEHOLDER = re.compile(r"\{([A-Za-z_][A-Za-z0-9_.]*)\}")
@@ -254,7 +258,7 @@ def build_html_items(html: str, config: ApiListConfig) -> ListParseResult:
     failures: list[FieldFailure] = []
     for index, node in enumerate(nodes):
         values = {
-            name: field_text(node, selector, f"list.{name}[{index}]")
+            name: _node_value(node, selector, f"list.{name}[{index}]")
             for name, selector in config.fields.items()
         }
         item_id = _html_id(node, config.id_field, index)
@@ -265,7 +269,10 @@ def build_html_items(html: str, config: ApiListConfig) -> ListParseResult:
                 FieldFailure(
                     index=index,
                     field="title",
-                    message=f"`{config.fields.get('title', '')}` 이 항목 안에서 값을 찾지 못했다",
+                    message=(
+                        f"`{_describe(config.fields.get('title', ''))}` 이 항목 안에서 "
+                        "값을 찾지 못했다"
+                    ),
                 )
             )
         if not item_id:
@@ -298,6 +305,13 @@ def build_html_items(html: str, config: ApiListConfig) -> ListParseResult:
             f"읽지 못했다: {failures[0].message}"
         )
     return ListParseResult(matched=len(nodes), items=items, failures=failures)
+
+
+def _node_value(node: Tag, selector: FieldPath, name: str) -> str:
+    """항목 안에서 값 하나. 셀렉터를 여럿 적으면 모아서 빈 줄로 잇는다."""
+    selectors = [selector] if isinstance(selector, str) else list(selector)
+    parts = [field_text(node, one, name) for one in selectors]
+    return "\n\n".join(part for part in parts if part.strip())
 
 
 def _html_id(node: Tag, spec: str, index: int) -> str:
@@ -338,8 +352,7 @@ def build_detail(payload: Any, config: ApiDetailConfig) -> DetailParseResult:
             # 설정에 없는 필드다. 사이트에 그 항목이 없다는 뜻이지 실패가 아니다
             fields[name] = ""
             continue
-        value = _dig(payload, path)
-        fields[name] = _text(value)
+        fields[name] = _value(payload, path)
         if not fields[name]:
             missing.append(name)
 
@@ -347,7 +360,8 @@ def build_detail(payload: Any, config: ApiDetailConfig) -> DetailParseResult:
     if unreadable:
         raise FieldParseError(
             f"상세 응답에서 필수 필드를 읽지 못했다: {', '.join(unreadable)}. "
-            f"경로를 확인한다: {', '.join(config.fields.get(name, '') for name in unreadable)}"
+            "경로를 확인한다: "
+            + ", ".join(_describe(config.fields.get(name, "")) for name in unreadable)
         )
     return DetailParseResult(fields=fields, missing=missing)
 
@@ -356,7 +370,7 @@ def _item(
     index: int, entry: Mapping[str, Any], config: ApiListConfig
 ) -> tuple[ListItem | None, list[FieldFailure]]:
     """항목 하나. 제목과 id 가 있어야 남는다."""
-    values = {name: _text(_dig(entry, path)) for name, path in config.fields.items()}
+    values = {name: _value(entry, path) for name, path in config.fields.items()}
     item_id = _entry_id(entry, config.id_field)
 
     problems: list[FieldFailure] = []
@@ -365,7 +379,9 @@ def _item(
             FieldFailure(
                 index=index,
                 field="title",
-                message=f"`{config.fields.get('title', '')}` 가 항목 안에서 값을 찾지 못했다",
+                message=(
+                    f"`{_describe(config.fields.get('title', ''))}` 가 항목 안에서 값을 찾지 못했다"
+                ),
             )
         )
     if not item_id:
@@ -469,6 +485,49 @@ def _with_id(value: Any, item_id: str) -> Any:
     if isinstance(value, list):
         return [_with_id(inner, item_id) for inner in value]
     return value
+
+
+def _value(payload: Any, path: FieldPath) -> str:
+    """한 필드의 값. 여러 자리에서 모을 수 있고, 모은 것은 빈 줄로 잇는다.
+
+    한 자리로는 필드가 반쪽이 되는 사이트가 있다.
+
+    | 적는 법 | 뜻 | 어디서 필요한가 |
+    |---|---|---|
+    | `data.item.body` | 그 자리 하나 | 대부분 |
+    | `data.recList.*.detailContext` | 배열 전체를 훑는다 | LG 모집 부문 6개, 삼성 직무 12개 |
+    | `["a.b", "a.c"]` | 여러 자리를 모은다 | 현대의 주요 업무와 조직 소개 |
+
+    첫 칸만 읽으면 나머지 부문의 본문이 그대로 사라진다. 수집 단계에서 사라진 값은 정규화를
+    다시 돌려도 돌아오지 않는다 (`.claude/rules/data-safety.md`).
+
+    빈 자리는 건너뛴다. 자리가 하나도 값을 내놓지 않으면 빈 문자열이고, 그것을 실패로 볼지는
+    부르는 쪽이 정한다.
+    """
+    paths = [path] if isinstance(path, str) else list(path)
+    parts: list[str] = []
+    for one in paths:
+        parts.extend(_texts(payload, one))
+    return "\n\n".join(part for part in parts if part.strip())
+
+
+def _texts(payload: Any, path: str) -> list[str]:
+    """경로 하나가 가리키는 값들. `*` 가 있으면 배열의 칸마다 하나씩이다."""
+    head, mark, tail = path.partition(WILDCARD)
+    if not mark:
+        return [_text(_dig(payload, path))]
+
+    entries = _dig(payload, head.rstrip("."))
+    if not isinstance(entries, list):
+        # 경로는 배열을 가리킨다고 적혀 있는데 배열이 아니다. 그 자리만 고치면 된다
+        return []
+    inner = tail.lstrip(".")
+    return [_text(_dig(entry, inner)) if inner else _text(entry) for entry in entries]
+
+
+def _describe(path: FieldPath) -> str:
+    """오류 문구에 적을 경로. 여럿이면 그대로 늘어놓는다."""
+    return path if isinstance(path, str) else " + ".join(path)
 
 
 def _dig(payload: Any, path: str) -> Any:
