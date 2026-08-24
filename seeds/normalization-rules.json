@@ -193,6 +193,13 @@
     },
     {
       "field_name": "body",
+      "rule_type": "html_text",
+      "priority": 5,
+      "config": {},
+      "why": "LG 상세 API 가 detailContext 를 HTML 조각으로 준다. 태그를 그냥 지우면 <br> 로 갈린 문장이 한 줄로 붙으므로 블록 태그를 줄바꿈으로 바꾸면서 함께 편다. 수집이 아니라 여기서 하는 것은 raw_jobs 를 원본으로 남기기 위해서다"
+    },
+    {
+      "field_name": "body",
       "rule_type": "regex",
       "priority": 10,
       "config": {
@@ -217,6 +224,13 @@
         "pattern": "[ \\t\\u00a0]+",
         "replacement": " "
       }
+    },
+    {
+      "field_name": "requirements",
+      "rule_type": "html_text",
+      "priority": 5,
+      "config": {},
+      "why": "LG 상세 API 가 requiredItem 을 HTML 조각으로 준다. body 와 같은 이유다"
     },
     {
       "field_name": "requirements",

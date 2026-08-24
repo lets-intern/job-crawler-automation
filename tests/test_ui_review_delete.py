@@ -1,4 +1,4 @@
-"""데이터 조회 화면에서 공고를 골라 지우기 (27.6 ~ 27.8).
+"""데이터 검수 화면에서 공고를 골라 지우기 (27.6 ~ 27.8, 30.2).
 
 실사이트에 나가지 않는다. 저장된 행을 넣고 화면 경로로만 고르고 지운다.
 
@@ -8,8 +8,8 @@
 | 확인 | 깨지면 |
 |---|---|
 | 행마다 체크박스가 있고 표를 지우기 폼이 감싼다 | 고를 방법이 없다 |
-| 머리칸 체크박스는 화면에 보이는 것만 고른다 | 100건인 줄 알고 148건을 지운다 |
-| `필터 전체` 는 조건에 걸린 수를 글자와 숫자로 밝힌다 | 무엇을 고른 것인지 화면에서 알 수 없다 |
+| 머리칸 체크박스는 이 페이지에 보이는 것만 고른다 | 20건인 줄 알고 148건을 지운다 |
+| `조건 전체` 는 조건에 걸린 수를 글자와 숫자로 밝힌다 | 무엇을 고른 것인지 화면에서 알 수 없다 |
 | 아무것도 고르지 않으면 지우기 단추가 눌리지 않는다 | 빈 요청이 확인 창을 연다 |
 | 확인 창이 세 표에서 사라질 행 수를 각각 보여준다 | 보정과 정규화 행이 조용히 함께 사라진다 |
 | 전달된 행이 섞여 있으면 그 수를 따로 알린다 | 소비 측이 이미 받아 간 것을 모르고 지운다 |
@@ -114,17 +114,17 @@ def raw_ids(conn: sqlite3.Connection) -> list[int]:
 
 
 def test_행마다_체크박스가_있고_지우기_폼이_표를_감싼다(client: TestClient) -> None:
-    html = client.get("/ui/jobs").text
+    html = client.get("/ui/review").text
 
-    assert 'id="job-select-form"' in html
-    assert 'hx-post="/ui/jobs/delete/confirm"' in html
+    assert 'id="review-select-form"' in html
+    assert 'hx-post="/ui/review/delete/confirm"' in html
     for raw_job_id in (1, 2, 3, 4, 5):
         assert f'name="raw_job_id" value="{raw_job_id}"' in html
 
 
 def test_지금_걸린_조건이_지우기_폼과_함께_간다(client: TestClient) -> None:
-    """`필터 전체` 가 화면에 보이는 것과 같은 조건이어야 한다."""
-    html = client.get("/ui/jobs", params={"workflow_id": "1", "status": "none"}).text
+    """`조건 전체` 가 화면에 보이는 것과 같은 조건이어야 한다."""
+    html = client.get("/ui/review", params={"workflow_id": "1", "status": "none"}).text
 
     assert '<input type="hidden" name="workflow_id" value="1">' in html
     assert '<input type="hidden" name="status" value="none">' in html
@@ -132,23 +132,23 @@ def test_지금_걸린_조건이_지우기_폼과_함께_간다(client: TestClie
 
 
 def test_전체_선택이_무엇을_고르는지_글자로_밝힌다(client: TestClient) -> None:
-    """`화면에 보이는 것` 과 `필터에 걸린 것` 은 다르다. 둘을 각각 이름으로 적는다."""
-    html = client.get("/ui/jobs").text
+    """`이 페이지에 보이는 것` 과 `조건에 걸린 것` 은 다르다. 둘을 각각 이름으로 적는다."""
+    html = client.get("/ui/review").text
 
-    assert "화면에 보이는 5건 모두 고르기" in html
-    assert "필터에 걸린 5건 전체 고르기" in html
-    assert 'id="job-select-count"' in html
+    assert "이 페이지의 5건 모두 고르기" in html
+    assert "조건에 걸린 5건 전체 고르기" in html
+    assert 'id="review-select-count"' in html
 
 
 def test_아무것도_고르지_않으면_지우기_단추가_눌리지_않는다(client: TestClient) -> None:
-    html = client.get("/ui/jobs").text
+    html = client.get("/ui/review").text
 
-    start = html.index('id="job-delete-open"')
+    start = html.index('id="review-delete-open"')
     assert "disabled" in html[start : start + 400]
 
 
 def test_확인_창이_세_표에서_사라질_행_수를_각각_보여준다(client: TestClient) -> None:
-    html = client.post("/ui/jobs/delete/confirm", data={"raw_job_id": ["1", "3"]}).text
+    html = client.post("/ui/review/delete/confirm", data={"raw_job_id": ["1", "3"]}).text
 
     assert "raw_jobs" in html
     assert "normalized_jobs" in html
@@ -161,15 +161,15 @@ def test_확인_창이_세_표에서_사라질_행_수를_각각_보여준다(cl
 
 
 def test_확인_창이_전달된_행의_수를_따로_알린다(client: TestClient) -> None:
-    html = client.post("/ui/jobs/delete/confirm", data={"raw_job_id": ["1", "2"]}).text
+    html = client.post("/ui/review/delete/confirm", data={"raw_job_id": ["1", "2"]}).text
 
     assert "이 중 1건은 이미 소비 측에 전달된 행이다" in html
 
 
 def test_확인_창이_고른_범위와_조건을_글자로_적는다(client: TestClient) -> None:
-    picked = client.post("/ui/jobs/delete/confirm", data={"raw_job_id": ["1"]}).text
+    picked = client.post("/ui/review/delete/confirm", data={"raw_job_id": ["1"]}).text
     whole = client.post(
-        "/ui/jobs/delete/confirm", data={"all_filtered": "1", "workflow_id": "1"}
+        "/ui/review/delete/confirm", data={"all_filtered": "1", "workflow_id": "1"}
     ).text
 
     assert "표에서 고른 공고" in picked
@@ -184,7 +184,7 @@ def test_고른_것만_세_표에서_사라지고_나머지는_남는다(
 ) -> None:
     assert counts(conn) == (5, 5, 2)
 
-    response = client.post("/ui/jobs/delete", data={"raw_job_id": ["1", "3", "5"]})
+    response = client.post("/ui/review/delete", data={"raw_job_id": ["1", "3", "5"]})
 
     assert response.status_code == 200
     assert "수집 건 3건" in response.text
@@ -204,18 +204,18 @@ def test_필터_전체로_지우면_조건에_걸린_것만_사라진다(
     client: TestClient, conn: sqlite3.Connection
 ) -> None:
     confirm = client.post(
-        "/ui/jobs/delete/confirm", data={"all_filtered": "1", "workflow_id": "2"}
+        "/ui/review/delete/confirm", data={"all_filtered": "1", "workflow_id": "2"}
     ).text
     assert 'name="raw_job_id" value="4"' in confirm
     assert 'name="raw_job_id" value="5"' in confirm
 
-    client.post("/ui/jobs/delete", data={"scope": "filtered", "raw_job_id": ["4", "5"]})
+    client.post("/ui/review/delete", data={"scope": "filtered", "raw_job_id": ["4", "5"]})
 
     assert raw_ids(conn) == [1, 2, 3]
 
 
 def test_지운_뒤_표를_다시_부르라고_알린다(client: TestClient) -> None:
-    response = client.post("/ui/jobs/delete", data={"raw_job_id": ["5"]})
+    response = client.post("/ui/review/delete", data={"raw_job_id": ["5"]})
 
     assert response.headers["HX-Trigger-After-Settle"] == "jobs-deleted"
 
@@ -223,7 +223,7 @@ def test_지운_뒤_표를_다시_부르라고_알린다(client: TestClient) -> 
 def test_지울_것이_없으면_지우지_않고_그렇다고_적는다(
     client: TestClient, conn: sqlite3.Connection
 ) -> None:
-    response = client.post("/ui/jobs/delete", data={})
+    response = client.post("/ui/review/delete", data={})
 
     assert "지울 대상이 없다" in response.text
     assert "HX-Trigger-After-Settle" not in response.headers
@@ -233,7 +233,7 @@ def test_지울_것이_없으면_지우지_않고_그렇다고_적는다(
 def test_이미_사라진_id_를_보내도_그것만_건너뛴다(
     client: TestClient, conn: sqlite3.Connection
 ) -> None:
-    response = client.post("/ui/jobs/delete", data={"raw_job_id": ["4", "999"]})
+    response = client.post("/ui/review/delete", data={"raw_job_id": ["4", "999"]})
 
     assert "수집 건 1건" in response.text
     assert raw_ids(conn) == [1, 2, 3, 5]
@@ -242,23 +242,23 @@ def test_이미_사라진_id_를_보내도_그것만_건너뛴다(
 def test_지운_건수와_요청자를_로그에_남긴다(
     client: TestClient, caplog: pytest.LogCaptureFixture
 ) -> None:
-    with caplog.at_level("INFO", logger="app.api.ui_jobs"):
-        client.post("/ui/jobs/delete", data={"raw_job_id": ["1"]})
+    with caplog.at_level("INFO", logger="app.api.review_filter"):
+        client.post("/ui/review/delete", data={"raw_job_id": ["1"]})
 
     logged = "\n".join(record.getMessage() for record in caplog.records)
-    assert "조회 화면에서 공고를 지웠다" in logged
+    assert "검수 화면에서 공고를 지웠다" in logged
     assert "raw_jobs=1" in logged
     assert "job_field_overrides=2" in logged
     assert "요청=" in logged
 
 
 def test_워크플로우를_고르면_그_수집분을_통째로_비우는_길이_열린다(client: TestClient) -> None:
-    """148건을 화면 단위로 고르게 하지 않는다. 한 사이트를 통째로 비우는 경우가 잦다."""
-    without = client.get("/ui/jobs").text
-    with_workflow = client.get("/ui/jobs", params={"workflow_id": "1"}).text
+    """148건을 페이지 단위로 고르게 하지 않는다. 한 사이트를 통째로 비우는 경우가 잦다."""
+    without = client.get("/ui/review").text
+    with_workflow = client.get("/ui/review", params={"workflow_id": "1"}).text
 
-    assert 'id="job-delete-workflow"' not in without
-    assert 'id="job-delete-workflow"' in with_workflow
+    assert 'id="review-delete-workflow"' not in without
+    assert 'id="review-delete-workflow"' in with_workflow
     assert "워크플로우 1 - LG 의 수집분 전부 지우기" in with_workflow
     assert '"scope": "workflow"' in with_workflow
 
@@ -266,7 +266,7 @@ def test_워크플로우를_고르면_그_수집분을_통째로_비우는_길�
 def test_워크플로우_범위는_나머지_조건을_보지_않는다(client: TestClient) -> None:
     """회사를 좁혀 놨어도 그 워크플로우가 모은 전부가 대상이다. 그 사실을 확인 창이 적는다."""
     html = client.post(
-        "/ui/jobs/delete/confirm",
+        "/ui/review/delete/confirm",
         data={"scope": "workflow", "workflow_id": "1", "company": "엘지화학"},
     ).text
 
@@ -289,7 +289,7 @@ def test_워크플로우_범위는_정규화되지_않은_수집_건도_포함�
     )
 
     html = client.post(
-        "/ui/jobs/delete/confirm", data={"scope": "workflow", "workflow_id": "1"}
+        "/ui/review/delete/confirm", data={"scope": "workflow", "workflow_id": "1"}
     ).text
 
     assert 'name="raw_job_id" value="9"' in html
@@ -301,12 +301,12 @@ def test_워크플로우_하나만_사라지고_다른_것은_그대로다(
     client: TestClient, conn: sqlite3.Connection
 ) -> None:
     confirm = client.post(
-        "/ui/jobs/delete/confirm", data={"scope": "workflow", "workflow_id": "1"}
+        "/ui/review/delete/confirm", data={"scope": "workflow", "workflow_id": "1"}
     ).text
     assert 'name="raw_job_id" value="1"' in confirm
 
     client.post(
-        "/ui/jobs/delete",
+        "/ui/review/delete",
         data={"scope": "workflow", "workflow_id": "1", "raw_job_id": ["1", "2", "3"]},
     )
 
@@ -319,7 +319,7 @@ def test_워크플로우_하나만_사라지고_다른_것은_그대로다(
 def test_워크플로우를_고르지_않고_그_범위로_보내면_지우지_않는다(
     client: TestClient, conn: sqlite3.Connection
 ) -> None:
-    html = client.post("/ui/jobs/delete/confirm", data={"scope": "workflow"}).text
+    html = client.post("/ui/review/delete/confirm", data={"scope": "workflow"}).text
 
     assert "지울 대상이 없다" in html
     assert counts(conn) == (5, 5, 2)
@@ -328,7 +328,7 @@ def test_워크플로우를_고르지_않고_그_범위로_보내면_지우지_�
 def test_워크플로우_범위는_걸리지_않는_조건을_적지_않는다(client: TestClient) -> None:
     """걸리지도 않는 회사 이름이 건수 옆에 있으면 그 회사 것만 지워지는 줄로 읽힌다."""
     html = client.post(
-        "/ui/jobs/delete/confirm",
+        "/ui/review/delete/confirm",
         data={"scope": "workflow", "workflow_id": "1", "company": "엘지화학"},
     ).text
 
@@ -338,7 +338,7 @@ def test_워크플로우_범위는_걸리지_않는_조건을_적지_않는다(c
 
 def test_확인_창이_다시_수집된다는_것을_적는다(client: TestClient) -> None:
     """진행중인 공고를 지우면 다음 실행에서 다시 들어온다. 모르면 왜 되살아나는지 알 수 없다."""
-    html = client.post("/ui/jobs/delete/confirm", data={"raw_job_id": ["1"]}).text
+    html = client.post("/ui/review/delete/confirm", data={"raw_job_id": ["1"]}).text
 
     assert "아직 게시 중인 공고는 다음 실행에서 다시 들어온다" in html
     assert "content_hash" in html
@@ -348,6 +348,6 @@ def test_확인_창이_다시_수집된다는_것을_적는다(client: TestClien
 
 
 def test_지운_뒤에도_다시_수집된다는_것을_적는다(client: TestClient) -> None:
-    html = client.post("/ui/jobs/delete", data={"raw_job_id": ["1"]}).text
+    html = client.post("/ui/review/delete", data={"raw_job_id": ["1"]}).text
 
     assert "다음 실행에서 다시 들어온다" in html

@@ -1,8 +1,11 @@
-"""데이터 검수 화면의 페이지·조각 라우트.
+"""데이터 검수 화면의 페이지·목록·편집 모달.
 
-사람이 수집 결과를 한 건씩 보고 틀린 값을 고치는 자리다. 조회 화면(`app/api/ui_jobs.py`)은
-"뭐가 들어왔나" 를 보는 곳이고, 여기는 "이 값이 맞나" 를 판정하는 곳이라 페이징과 편집이
-붙는다.
+사람이 수집 결과를 보고 틀린 값을 고치는 자리다. Push 30 에서 데이터 조회(`/jobs`)를 여기로
+합쳤다 — 두 화면이 같은 데이터를 두 벌로 보여주면서 목록·상세 모달·시각 표시가 겹쳤다.
+한 화면에서 좁혀서 보고, 고치고, 좁힌 것을 지운다.
+
+조회 조건과 지우기는 `app/api/review_filter.py` 다. 조건을 만드는 곳이 하나여야 표가 센
+건수와 지우기가 지우는 행이 같다.
 
 ## 페이징은 오프셋 기반이다
 
@@ -14,7 +17,7 @@
 
 이미 전달된 행을 고쳐도 소비 측이 가진 값은 바뀌지 않는다. 수동 수정은 `delivered_at` 을
 지우거나 되돌리지 않기 때문이다 (`.claude/rules/data-safety.md`). 그래서 검수는 전달 전에
-하는 것이 정상 경로고, 화면이 그 순서로 행을 내놓는다.
+하는 것이 정상 경로고, 고르지 않으면 화면이 그 순서로 행을 내놓는다.
 
 ## 이 파일은 `normalized_jobs` 를 쓰지 않는다
 
@@ -24,6 +27,8 @@
 
 표가 보여주는 값은 그래서 두 겹이다. 보정이 있으면 사람이 정한 값을, 없으면 규칙이 만든 값을
 보여주고 어느 쪽인지 단어로 적는다. `normalized_jobs` 컬럼 자체는 다음 정규화에서 갱신된다.
+빈 값 조건도 같은 두 겹을 본다 (`review_filter.empty_condition`) — 사람이 채운 필드가 계속
+`빈 값` 으로 걸리면 검수한 것이 검수 대상에 남는다.
 """
 
 from __future__ import annotations
@@ -37,6 +42,22 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 
 from app.api import crawlers
+from app.api.review_filter import (
+    DEADLINE_STATES,
+    DEFAULT_SORT,
+    DELIVERY_STATES,
+    EMPTY_CHOICES,
+    EMPTY_LABELS,
+    FIELD_LABELS,
+    SORT_LABELS,
+    JobFilter,
+    count,
+    empty_counts,
+    filter_sql,
+    order_clause,
+    read_filter,
+    workflow_label,
+)
 from app.api.ui import render, render_page
 from app.normalize.engine import OVERRIDABLE_FIELDS
 
@@ -48,17 +69,6 @@ DEFAULT_PAGE_SIZE = 20
 
 # 현재 페이지 주변으로 몇 개의 페이지 번호를 직접 누르게 둘지
 PAGE_WINDOW = 2
-
-# 고칠 수 있는 필드와 화면에 적을 이름. 키는 `OVERRIDABLE_FIELDS` 와 같아야 한다 —
-# 그쪽이 `job_field_overrides.field_name` 의 CHECK 와 이미 맞춰져 있다
-FIELD_LABELS: dict[str, str] = {
-    "company": "회사",
-    "title": "제목",
-    "department": "부서",
-    "deadline": "마감",
-    "body": "본문",
-    "requirements": "자격요건",
-}
 
 # 여러 줄로 들어오는 필드. 한 줄 입력으로 고치면 줄바꿈이 사라진다
 LONG_FIELDS: frozenset[str] = frozenset({"body", "requirements"})
@@ -80,32 +90,13 @@ _BASE = """
            n.normalized_at AS normalized_at,
            n.delivered_at  AS delivered_at,
            r.crawled_at    AS crawled_at,
+           r.content_hash  AS content_hash,
            r.workflow_id   AS workflow_id,
            w.name          AS workflow_name
       FROM normalized_jobs n
       JOIN raw_jobs r ON r.id = n.raw_job_id
       JOIN workflows w ON w.id = r.workflow_id
 """
-
-# 미전달 우선, 그다음 최신 수집 순. `delivered_at IS NULL` 은 미전달일 때 1 이라 내림차순이
-# 미전달을 앞으로 보낸다
-_ORDER = " ORDER BY (n.delivered_at IS NULL) DESC, r.crawled_at DESC, n.id DESC"
-
-
-def _filters(workflow_id: int | None, company: str, query: str) -> tuple[str, list[Any]]:
-    clauses: list[str] = []
-    params: list[Any] = []
-    if workflow_id is not None:
-        clauses.append("r.workflow_id = ?")
-        params.append(workflow_id)
-    if company:
-        clauses.append("n.company = ?")
-        params.append(company)
-    if query:
-        clauses.append("(n.title LIKE ? OR n.company LIKE ? OR n.department LIKE ?)")
-        params.extend([f"%{query}%"] * 3)
-    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
-    return where, params
 
 
 def _page_url(criteria: dict[str, str], page: int) -> str:
@@ -254,37 +245,34 @@ def review_page(request: Request) -> HTMLResponse:
 def review_table_fragment(
     request: Request,
     conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
-    workflow_id: str = "",
-    company: str = "",
-    q: str = "",
+    picked: Annotated[JobFilter, Depends(read_filter)],
+    sort: str = DEFAULT_SORT,
+    order: str = "desc",
     page: int = 1,
     page_size: int = DEFAULT_PAGE_SIZE,
 ) -> HTMLResponse:
     """검수 대상 한 페이지. 표 영역만 이 조각으로 갈린다.
 
-    `workflow_id` 를 문자열로 받는 이유는 "전체" 를 고르면 빈 값이 오기 때문이다. 정수
-    파라미터로 두면 그 빈 값이 422 가 되어 표가 갱신되지 않는다.
+    조건은 `review_filter.read_filter` 한 곳에서 읽는다. 표가 A 로 세고 지우기가 B 로 지우면
+    화면에 적힌 건수가 거짓이 된다.
+
+    필드별 빈 건수를 표 위에 함께 낸다. 조건을 걸기 전에 어디가 문제인지 보이지 않으면,
+    한 필드만 놓친 셀렉터를 찾는 방법이 148건을 눈으로 훑는 것밖에 없다.
 
     조회 조건이 폼에서 올 때는 `page` 가 함께 오지 않아 1페이지가 된다. 조건을 바꿨는데 2페이지
     자리가 유지되면 사람이 보고 있는 것과 다른 구간이 나온다.
     """
     size = page_size if page_size in PAGE_SIZES else DEFAULT_PAGE_SIZE
-    selected = int(workflow_id) if workflow_id.strip().isdigit() else None
-    where, params = _filters(selected, company.strip(), q.strip())
+    where, params = filter_sql(picked)
 
-    counted = conn.execute(
-        f"SELECT count(*) AS total FROM normalized_jobs n"
-        f" JOIN raw_jobs r ON r.id = n.raw_job_id{where}",
-        params,
-    ).fetchone()
-    total = int(counted["total"]) if counted is not None else 0
+    total = count(conn, picked)
     total_pages = max(1, math.ceil(total / size))
     # 마지막 페이지 뒤를 요청하면 마지막 페이지를 준다. 빈 표를 주면 사람은 조건이 잘못됐다고
     # 읽는다
     current = min(max(page, 1), total_pages)
 
     rows = conn.execute(
-        f"{_BASE}{where}{_ORDER} LIMIT ? OFFSET ?",
+        f"{_BASE}{where}{order_clause(sort, order)} LIMIT ? OFFSET ?",
         [*params, size, (current - 1) * size],
     ).fetchall()
     overrides = _read_overrides(conn, [int(row["raw_job_id"]) for row in rows])
@@ -301,9 +289,9 @@ def review_table_fragment(
     ]
 
     criteria = {
-        "workflow_id": workflow_id,
-        "company": company,
-        "q": q,
+        **picked.as_form(),
+        "sort": sort if sort in SORT_LABELS else DEFAULT_SORT,
+        "order": order if order in ("asc", "desc") else "desc",
         "page_size": str(size),
     }
     return render(
@@ -312,6 +300,9 @@ def review_table_fragment(
         jobs=listed,
         fields=OVERRIDABLE_FIELDS,
         labels=FIELD_LABELS,
+        empties=empty_counts(conn, picked),
+        empty_picked=picked.empty,
+        empty_labels=EMPTY_LABELS,
         total=total,
         page=current,
         page_size=size,
@@ -320,6 +311,11 @@ def review_table_fragment(
         last_index=(current - 1) * size + len(rows),
         page_numbers=_page_numbers(current, total_pages),
         page_url=lambda number: _page_url(criteria, number),
+        # 지우기가 표와 같은 조건을 들고 가게 한다. 정렬과 페이지는 걸리는 행을 바꾸지 않아
+        # 싣지 않는다
+        delete_criteria=picked.as_form(),
+        # 워크플로우를 골랐을 때만 그 사이트의 수집분을 통째로 비우는 길이 열린다
+        workflow=workflow_label(conn, picked.workflow_id),
     )
 
 
@@ -344,6 +340,12 @@ def review_filters_fragment(
         companies=[row["company"] for row in companies],
         page_sizes=PAGE_SIZES,
         default_page_size=DEFAULT_PAGE_SIZE,
+        deadline_states=DEADLINE_STATES,
+        delivery_states=DELIVERY_STATES,
+        empty_choices=EMPTY_CHOICES,
+        empty_labels=EMPTY_LABELS,
+        sort_labels=SORT_LABELS,
+        default_sort=DEFAULT_SORT,
     )
 
 

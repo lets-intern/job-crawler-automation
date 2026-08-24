@@ -13,11 +13,11 @@ from app.api import (
     crawlers,
     jobs,
     review,
+    review_filter,
     rules,
     settings,
     ui,
     ui_crawlers,
-    ui_jobs,
     ui_rules,
     ui_rules_preview,
     ui_settings,
@@ -76,7 +76,7 @@ app.include_router(ui_tests.router)
 app.include_router(ui_workflows.router)
 app.include_router(ui_rules.router)
 app.include_router(ui_rules_preview.router)
-app.include_router(ui_jobs.router)
+app.include_router(review_filter.router)
 app.include_router(review.router)
 app.include_router(ui_settings.router)
 # 조각 요청의 실패는 200 과 오류 조각으로 나간다. HTMX 가 4xx·5xx 를 갈아 끼우지 않아

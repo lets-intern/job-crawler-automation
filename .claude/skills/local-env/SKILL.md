@@ -54,7 +54,7 @@ docker compose up -d --build
 |---|---|
 | `http://localhost:8000/` | 크롤러 등록·셀렉터 생성 |
 | `http://localhost:8000/workflows` | 워크플로우 목록 |
-| `http://localhost:8000/jobs` | 수집 데이터 조회 |
+| `http://localhost:8000/review` | 수집 데이터 검수 (조회·수정·삭제가 한 화면이다) |
 | `http://localhost:8000/docs` | FastAPI 자동 문서 |
 
 ## 실패했을 때

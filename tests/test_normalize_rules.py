@@ -32,12 +32,14 @@ VALID: list[tuple[str, dict[str, Any]]] = [
     ("trim", {"collapse_whitespace": False, "strip_chars": "-·"}),
     ("date_parse", {"formats": ["%Y.%m.%d"]}),
     ("date_parse", {"formats": ["%Y.%m.%d", "%Y년 %m월 %d일"], "output_format": "%Y-%m-%d"}),
+    ("html_text", {}),
 ]
 
 INVALID: list[tuple[str, Any, str]] = [
     # 스키마에 없는 키. 오타가 조용히 무시되면 규칙이 안 먹는 이유를 못 찾는다
     ("mapping", {"map": {"a": "b"}, "fallback": "기타"}, "invalid_config"),
     ("trim", {"collapse": True}, "invalid_config"),
+    ("html_text", {"keep_tags": ["b"]}, "invalid_config"),
     # 필수 키 누락
     ("mapping", {}, "invalid_config"),
     ("regex", {"replacement": ""}, "invalid_config"),
@@ -70,7 +72,7 @@ def test_invalid_config_rejected(rule_type: str, config: Any, reason: str) -> No
 
 
 def test_every_rule_type_has_a_config() -> None:
-    """네 타입 모두 읽을 수 있어야 한다. 타입을 늘리고 스키마를 빠뜨리는 것을 막는다."""
+    """모든 타입을 읽을 수 있어야 한다. 타입을 늘리고 스키마를 빠뜨리는 것을 막는다."""
     covered = {rule_type for rule_type, _ in VALID}
     assert covered == set(RULE_TYPES)
 

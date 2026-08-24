@@ -1,14 +1,20 @@
-"""조회 상세 모달 (16.2).
+"""공고 한 건을 여는 모달 (16.2, 30.2).
 
 실사이트에 나가지 않는다. 저장된 행을 넣고 화면 경로로만 연다.
 
+Push 30 에서 조회 화면의 읽기 전용 상세 모달을 검수의 편집 모달로 합쳤다. 한 공고를 두
+모달로 보여주면 어느 쪽이 저장된 값인지 화면에서 알 수 없다. 상세에만 있던 값
+(`raw_jobs` 번호와 내용 해시)은 편집 모달로 옮겼다.
+
 | 확인 | 깨지면 |
 |---|---|
-| 표의 상세가 모달을 연다 | 상세가 표 아래로 밀려 스크롤해야 보인다 |
-| 페이지에 표 아래 상세 자리가 없다 | 상세가 열리는 자리가 둘이 되어 어느 쪽이 최신인지 모른다 |
+| 표에서 한 건을 여는 입구가 하나다 | 상세와 수정이 갈려 어느 쪽이 최신인지 모른다 |
+| 페이지에 표 아래 상세 자리가 없다 | 상세가 열리는 자리가 둘이 된다 |
 | 모달이 본문·자격요건을 자르지 않는다 | 긴 본문을 확인하려고 원문 사이트를 다시 연다 |
-| 원문 링크가 모달 안에 있다 | 상세를 닫아야 원문으로 갈 수 있다 |
-| 상세에 고치는 입력이 없다 | 조회와 검수의 역할이 섞이고, 고친 값이 어디로 갔는지 모른다 |
+| 원문 링크가 모달 안에 있다 | 모달을 닫아야 원문으로 갈 수 있다 |
+| 수집 건 번호와 내용 해시가 모달에 있다 | 어느 수집 건에서 온 값인지 확인할 자리가 없다 |
+| 없는 건을 열면 모달 안에 사유를 적는다 | 빈 모달이 열리고 왜인지 알 수 없다 |
+| 옛 주소 `/jobs` 가 `/review` 로 간다 | 북마크와 지난 기록의 링크가 죽는다 |
 """
 
 from __future__ import annotations
@@ -77,18 +83,21 @@ def client(tmp_path: pathlib.Path, conn: sqlite3.Connection) -> Iterator[TestCli
         app.dependency_overrides.clear()
 
 
-def test_표의_상세가_모달을_연다(client: TestClient) -> None:
-    html = client.get("/ui/jobs").text
+def test_표에서_한_건을_여는_입구가_하나다(client: TestClient) -> None:
+    """상세와 수정을 갈라 두지 않는다. `수정` 하나가 그 공고를 통째로 연다."""
+    html = client.get("/ui/review").text
 
-    assert 'id="job-open-3"' in html
+    assert 'id="review-open-7"' in html
     assert "data-modal-open" in html
     assert 'hx-target="#app-modal-body"' in html
-    assert 'hx-target="#job-detail"' not in html
+    # 읽기 전용 상세로 가던 옛 입구는 남기지 않는다
+    assert 'id="job-open-3"' not in html
+    assert "/ui/jobs/3" not in html
 
 
 def test_페이지에_표_아래_상세_자리가_없다(client: TestClient) -> None:
     """상세가 열리는 자리는 모달 하나다. 표 아래 영역은 남기지 않는다."""
-    html = client.get("/jobs").text
+    html = client.get("/review").text
 
     assert 'id="job-detail"' not in html
     assert "표에서 상세를 누르면 여기에 들어온다" not in html
@@ -96,7 +105,7 @@ def test_페이지에_표_아래_상세_자리가_없다(client: TestClient) -> 
 
 
 def test_모달이_본문과_자격요건을_자르지_않는다(client: TestClient) -> None:
-    html = client.get("/ui/jobs/3").text
+    html = client.get("/ui/review/modal/7").text
 
     assert "본문 시작" in html and "본문 끝" in html
     assert "자격요건 시작" in html and "자격요건 끝" in html
@@ -105,24 +114,32 @@ def test_모달이_본문과_자격요건을_자르지_않는다(client: TestCli
 
 
 def test_원문_링크가_모달_안에_있다(client: TestClient) -> None:
-    html = client.get("/ui/jobs/3").text
+    html = client.get("/ui/review/modal/7").text
 
     assert f'href="{SOURCE_URL}"' in html
     assert "원문 열기" in html
 
 
-def test_상세는_읽기_전용이다(client: TestClient) -> None:
-    """고치는 것은 검수 화면의 일이다. 두 화면의 역할을 섞지 않는다."""
-    html = client.get("/ui/jobs/3").text
+def test_수집_건_번호와_내용_해시가_모달에_있다(client: TestClient) -> None:
+    """읽기 전용 상세에만 있던 값이다. 합치면서 사라지지 않았다."""
+    html = client.get("/ui/review/modal/7").text
 
-    assert "<form" not in html
-    assert "<textarea" not in html
-    assert "hx-put" not in html and "hx-delete" not in html
-    assert 'href="/review"' in html  # 고치러 갈 자리는 알려 준다
+    assert "raw_jobs 7" in html
+    assert "hash-7" in html
 
 
-def test_없는_공고는_모달_안에_사유를_적는다(client: TestClient) -> None:
-    html = client.get("/ui/jobs/999").text
+def test_없는_건은_모달_안에_사유를_적는다(client: TestClient) -> None:
+    html = client.get("/ui/review/modal/999").text
 
-    assert "공고 999 가 없다" in html
+    assert "수집 건 999" in html
     assert "modal-body" in html
+
+
+def test_옛_조회_주소는_검수로_보낸다(client: TestClient) -> None:
+    """북마크가 죽지 않게 한다. 화면 주소만 옮겼고 제공 API 는 그대로다."""
+    moved = client.get("/jobs", follow_redirects=False)
+
+    assert moved.status_code == 307
+    assert moved.headers["location"] == "/review"
+    # 화면 주소만 옮겼다. 제공 API `/api/jobs` 는 소비 측 계약이라 그대로다
+    # (`.claude/docs/api-contract.md`, `tests/test_api_jobs.py`)
