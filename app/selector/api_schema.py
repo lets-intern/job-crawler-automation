@@ -44,6 +44,10 @@
 일이고, 설정이 덮을 수 있으면 브라우저 위장이 크롤러 등록만으로 가능해진다
 (`.claude/rules/crawling.md`).
 
+`date_is_deadline` 은 목록에서 읽은 `date` 가 그 공고의 마감일이라는 뜻이다. 참이면 마감이
+지난 공고는 상세를 열지 않고 건너뛴다. 게시일을 적어 두는 사이트에 참을 주면 어제 올라온 새
+공고가 조용히 버려지므로, 사이트마다 응답을 보고 적는다.
+
 `fields` 의 값은 경로 하나이거나 경로의 배열이다. 배열이면 그 자리들을 모아 빈 줄로 잇는다.
 경로 안의 `*` 는 배열 전체를 훑는다 — `recList.*.detailContext` 는 모집 부문마다 하나씩이다.
 한 자리만 읽으면 나머지 부문의 본문이 수집 단계에서 사라진다.
@@ -181,6 +185,9 @@ class ApiListConfig(BaseModel):
     response: str = JSON_RESPONSE
     # 쪽을 넘기는 법. 없으면 한 번만 부른다
     pagination: ApiPagination | None = None
+    # 목록에서 읽은 `date` 가 그 공고의 마감일인가. 참이면 마감이 지난 공고는 상세를 열지 않고
+    # 건너뛴다. 게시일을 적어 두는 사이트에서 참으로 두면 어제 올라온 새 공고가 버려진다
+    date_is_deadline: bool = False
 
     @property
     def is_html(self) -> bool:
@@ -266,6 +273,7 @@ def _list_section(value: Any) -> ApiListConfig | None:
         body_format=_choice(section, "list", "body_format", BODY_FORMATS, JSON_BODY),
         response=_choice(section, "list", "response", RESPONSE_FORMATS, JSON_RESPONSE),
         pagination=_pagination(section.get("pagination")),
+        date_is_deadline=_flag(section, "list", "date_is_deadline"),
     )
     if ID_PLACEHOLDER not in config.link_template:
         # 이 값이 `raw_jobs.source_url` 이 된다. 공고마다 같으면 중복 판정도 링크도 무너진다
@@ -346,6 +354,18 @@ def _body(section: Mapping[str, Any], where: str) -> dict[str, Any]:
             "unparsable", f"`{where}.body` 가 객체가 아니다: {type(body).__name__}"
         )
     return dict(body)
+
+
+def _flag(section: Mapping[str, Any], where: str, name: str) -> bool:
+    """참/거짓 하나. 안 적으면 거짓이다 — 건너뛰는 쪽이 기본값이면 안 된다."""
+    if name not in section or section[name] is None:
+        return False
+    value = section[name]
+    if not isinstance(value, bool):
+        raise ApiConfigError(
+            "unparsable", f"`{where}.{name}` 이 참/거짓이 아니다: {type(value).__name__}"
+        )
+    return value
 
 
 def _pagination(value: Any) -> ApiPagination | None:

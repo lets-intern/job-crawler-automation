@@ -21,12 +21,13 @@ import pytest
 
 from app import db
 from app.crawler import deadline as deadline_module
-from app.crawler.collect import Collectors
+from app.crawler.collect import Collectors, list_date_is_deadline
 from app.crawler.deadline import is_closed, today
 from app.crawler.parser import DetailParseResult, ListItem, ListParseResult
 from app.crawler.runner import SCHEDULE, RunTarget, run_once
 from app.normalize.rules import Rule, build_rule
-from app.selector.schema import DETAIL_FIELDS, validate_selectors
+from app.selector.api_schema import ApiConfig
+from app.selector.schema import DETAIL_FIELDS, SelectorSet, validate_selectors
 
 LIST_URL = "https://example.test/jobs"
 TODAY = date(2026, 8, 25)
@@ -143,8 +144,17 @@ class StubDetail:
         return DetailParseResult(fields=fields, missing=[])
 
 
-def collectors(items: list[ListItem], detail: StubDetail) -> Collectors:
-    return Collectors(list_mode="static", detail_mode="static", list=StubList(items), detail=detail)
+def collectors(
+    items: list[ListItem], detail: StubDetail, selectors: SelectorSet = SELECTORS
+) -> Collectors:
+    """목록 날짜를 마감일로 볼지는 실제 판정 함수가 정한다 (`app/crawler/collect.py`)."""
+    return Collectors(
+        list_mode="static",
+        detail_mode="static",
+        list=StubList(items),
+        detail=detail,
+        list_date_is_deadline=list_date_is_deadline("static", ApiConfig(), selectors),
+    )
 
 
 def item(index: int, title: str, item_date: str) -> ListItem:
@@ -220,7 +230,9 @@ async def test_상세가_마감일을_주면_목록_날짜로_거르지_않는�
     items = [item(0, "어제 올라온 공고", "2026-08-24")]
 
     result = await run_once(
-        conn, target(WITH_DETAIL_DEADLINE), collectors=collectors(items, detail)
+        conn,
+        target(WITH_DETAIL_DEADLINE),
+        collectors=collectors(items, detail, WITH_DETAIL_DEADLINE),
     )
 
     assert detail.calls == [f"{LIST_URL}/0"]

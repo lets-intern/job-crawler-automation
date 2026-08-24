@@ -397,12 +397,10 @@ async def _crawl(
             )
         )
 
-    # 목록에서 읽은 날짜를 마감일로 볼 수 있는 크롤러인지 먼저 정한다. 항목마다 다시 볼
-    # 값이 아니라 이 크롤러의 설정이다
-    list_date_is_deadline = _list_date_is_deadline(target.selectors, collectors)
-
+    # 목록에서 읽은 날짜를 마감일로 볼 수 있는 크롤러인지는 수집기가 들고 있다. 항목마다
+    # 다시 볼 값이 아니라 이 크롤러의 설정이다 (`app/crawler/collect.py`)
     for item in parsed.items[:limit]:
-        if list_date_is_deadline and is_closed(item.date, rules):
+        if collectors.list_date_is_deadline and is_closed(item.date, rules):
             # 마감이 지난 공고다. 상세를 열지 않고 넘긴다 — 실패가 아니라 건너뜀이다.
             # 읽지 못한 날짜는 진행 중으로 본다 (`app/crawler/deadline.py`)
             result.skipped_count += 1
@@ -432,22 +430,6 @@ async def _crawl(
         elif collected.state == STORED:
             result.new_count += 1
             _normalize(conn, collected, rules, rules_error, result)
-
-
-def _list_date_is_deadline(selectors: SelectorSet, collectors: Collectors) -> bool:
-    """목록에서 읽은 날짜가 그대로 마감일이 되는 크롤러인가.
-
-    `_record()` 는 상세의 마감일이 비어 있을 때만 목록 날짜를 마감일로 쓴다. `list.date` 는
-    사이트가 목록에 적어 둔 날짜일 뿐이고, 그것이 마감일인지 게시일인지는 사이트마다 다르다.
-    상세가 마감일을 주는 크롤러에서 목록 날짜를 마감으로 읽으면 어제 올라온 새 공고를 지난
-    공고로 버리게 된다.
-
-    상세가 API 면 응답이 마감일을 주는지 여기서 알 수 없다. 모르는 쪽은 열어 본다 — 건너뛰어
-    잃는 것이 열어서 드는 요청 하나보다 크다.
-    """
-    if collectors.detail_mode == API:
-        return False
-    return not selectors.detail.deadline.strip()
 
 
 async def _collect(
