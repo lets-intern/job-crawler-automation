@@ -22,6 +22,16 @@
 
 만든 설정은 돌려주기 전에 `validate_api_config()` 를 지난다. 검증을 통과하지 못하는 설정을
 제안으로 내놓으면 운영자가 저장 버튼을 누를 때 처음 알게 된다.
+
+## 채택 전에 `httpx` 로 다시 불러 본다
+
+브라우저는 쿠키와 여러 헤더를 이미 들고 있다. 그 상태에서 나간 요청이 공용 fetch 클라이언트
+로도 되는지는 별개 문제이고, **확인하지 않고 저장하면 등록만 성공하고 이후 실행이 전부
+실패한다.** `confirm_api_path()` 가 같은 요청을 공용 클라이언트로 한 번 부르고, 브라우저가
+받은 응답에서 읽은 제목·본문과 값이 같을 때만 채택한다.
+
+값으로 견주는 이유는 둘 다 피하기 위해서다. 응답 전체를 견주면 조회수 한 자리가 달라도
+거절하고, 상태 코드만 보면 로그인 페이지가 200 으로 오는 사이트를 통과시킨다.
 """
 
 from __future__ import annotations
@@ -36,6 +46,9 @@ from urllib.parse import parse_qsl, urlsplit
 
 from bs4.element import Tag
 
+from app.crawler.api_source import build_detail, fetch_detail
+from app.crawler.fetcher import FetchError, FetchPolicy
+from app.crawler.parser import CrawlDataError
 from app.crawler.playwright import ObservedRequest
 from app.selector.api_schema import (
     ApiConfig,
@@ -364,3 +377,113 @@ def _usable_id(value: str) -> bool:
 
 def _describe(path: Any) -> str:
     return path if isinstance(path, str) else " + ".join(path)
+
+
+@dataclass(frozen=True)
+class Confirmation:
+    """알아낸 경로를 `httpx` 로 다시 불러 본 결과.
+
+    `adopted` 가 참일 때만 그 경로를 저장한다. **확인 없이 저장하지 않는다** — 브라우저에서만
+    되는 요청을 저장하면 등록은 성공한 것처럼 보이고 이후 실행이 전부 실패한다.
+    """
+
+    adopted: bool
+    reason: str = ""
+    title: str = ""
+    body_length: int = 0
+
+
+async def confirm_api_path(
+    client: FetchPolicy, path: DetailPath, request: ObservedRequest
+) -> Confirmation:
+    """상세 API 제안을 공용 fetch 클라이언트로 다시 불러 같은 응답이 오는지 본다.
+
+    비교는 값으로 한다. 응답 전체를 견주면 조회수나 시각 한 자리가 달라도 거절하게 되고,
+    상태 코드만 보면 로그인 페이지가 200 으로 오는 사이트를 통과시킨다. 브라우저가 받은 응답
+    에서 읽은 제목·본문과 다시 부른 응답에서 읽은 제목·본문이 같아야 채택이다.
+    """
+    if path.api is None or path.api.detail is None or path.id_source is None:
+        return Confirmation(adopted=False, reason="상세 설정이 없다. 확인할 것이 없다")
+
+    config = path.api.detail
+    item_id = path.id_source.value
+    try:
+        expected = build_detail(json.loads(request.body), config)
+    except (json.JSONDecodeError, CrawlDataError) as exc:
+        return Confirmation(
+            adopted=False, reason=f"브라우저가 받은 응답에서 값을 읽지 못했다: {exc}"
+        )
+
+    try:
+        actual = await fetch_detail(client, config, item_id)
+    except FetchError as exc:
+        return Confirmation(
+            adopted=False,
+            reason=(
+                f"공용 fetch 클라이언트로 부르지 못했다: {exc}. "
+                "브라우저에서만 되는 요청이라면 헤더나 쿠키가 필요하다"
+            ),
+        )
+    except CrawlDataError as exc:
+        return Confirmation(
+            adopted=False,
+            reason=(
+                f"다시 부른 응답이 브라우저가 받은 것과 다르다: {exc}. "
+                "헤더나 쿠키가 필요한 요청일 수 있다"
+            ),
+        )
+
+    for name in ("title", "body"):
+        if _same(expected.fields.get(name, ""), actual.fields.get(name, "")):
+            continue
+        return Confirmation(
+            adopted=False,
+            reason=(
+                f"다시 부른 응답의 `{name}` 이 브라우저가 받은 것과 다르다. "
+                f"브라우저 {len(expected.fields.get(name, ''))}자, "
+                f"다시 부른 것 {len(actual.fields.get(name, ''))}자. "
+                "헤더나 쿠키가 필요한 요청일 수 있다"
+            ),
+        )
+
+    logger.info("상세 경로 채택 url=%s id=%s", config.url, item_id)
+    return Confirmation(
+        adopted=True,
+        title=actual.fields.get("title", ""),
+        body_length=len(actual.fields.get("body", "")),
+    )
+
+
+async def confirm_document_path(client: FetchPolicy, url: str, marker: str) -> Confirmation:
+    """상세가 HTML 문서인 경우의 확인. 브라우저에서 본 제목이 정적 응답에도 있어야 한다.
+
+    같으면 상세를 `static` 으로 둘 수 있다는 뜻이다. 없으면 그 페이지가 JS 로 그려지는
+    것이므로 채택하지 않고, 상세를 렌더로 둘지는 운영자가 정한다
+    (`.claude/rules/crawling.md` 의 "정적이 먼저, 렌더는 사이트별 승격").
+    """
+    if not marker.strip():
+        return Confirmation(adopted=False, reason="대조할 제목이 없다. 확인할 것이 없다")
+    try:
+        result = await client.fetch(url)
+    except FetchError as exc:
+        return Confirmation(adopted=False, reason=f"공용 fetch 클라이언트로 부르지 못했다: {exc}")
+
+    if _squeeze(marker) not in _squeeze(result.text):
+        return Confirmation(
+            adopted=False,
+            reason=(
+                f"정적으로 받은 문서에 제목 `{marker}` 이 없다. 브라우저에서만 그려지는 "
+                "페이지라 상세를 렌더로 둬야 한다"
+            ),
+        )
+    return Confirmation(adopted=True, title=marker, body_length=len(result.text))
+
+
+def _same(expected: str, actual: str) -> bool:
+    """두 값이 같은가. 공백과 개행 차이는 같은 것으로 본다 — 값이 지저분한 것은 정규화가
+    다루는 문제이지 경로가 다르다는 뜻이 아니다 (`CLAUDE.md`)."""
+    return _squeeze(expected) == _squeeze(actual)
+
+
+def _squeeze(value: str) -> str:
+    return " ".join(value.split())
