@@ -2,7 +2,7 @@
 
 > PRD: `.claude/tasks/todo/prd-fill-body.md`
 > Push 범위: 실패한 공고를 저장하지 않고도 무엇을 놓쳤는지 아는 자리를 만든다 (스키마)
-> 상태: 진행 중
+> 상태: 완료
 
 ## 배경 (PRD 를 안 봐도 되도록)
 
@@ -41,7 +41,7 @@ crawlers:   id, name, list_url, detail_url, selectors_json, status, created_at,
 
 ## 작업
 
-- [ ] 1.0 실패와 건너뜀을 기록할 자리를 만든다
+- [x] 1.0 실패와 건너뜀을 기록할 자리를 만든다
     - [x] 1.1 마이그레이션 0010: `crawl_runs` 에 건너뛴 수를 더한다
         - `skipped_count INTEGER NOT NULL DEFAULT 0` 를 더한다
         - 건너뜀은 실패가 아니다. 마감이 지났거나 이미 저장한 공고라 상세를 안 연 건수다
@@ -78,13 +78,13 @@ crawlers:   id, name, list_url, detail_url, selectors_json, status, created_at,
         - 되돌리는 법을 파일 주석에 적는다
         - [x] 1.3.1.V 검증: 마이그레이션 적용·역적용 확인. `ERROR_CLASSES` 의 여섯 값이 모두
               저장되고, 밖의 값은 거절되고, 역적용이 실행 기록을 남기는지 pytest 로 확인
-    - [ ] 1.4 `RunResult` 와 `_finish_run` 이 새 값을 나른다
+    - [x] 1.4 `RunResult` 와 `_finish_run` 이 새 값을 나른다
         - `app/crawler/runner.py:109` 의 `RunResult` 에 `skipped_count: int = 0` 과
           `failures: list[ItemFailure]` 를 더한다
         - `ItemFailure` 에 `title: str = ""` 을 더한다. 목록에서 읽은 제목이다
         - `_finish_run()` 이 `skipped_count` 를 쓰고 `crawl_run_failures` 에 행을 넣는다
         - **한 트랜잭션이다.** 실행 기록과 실패 목록이 갈라지면 안 된다
-        - [ ] 1.4.V 검증: 픽스처 기반 pytest — 실패 3건을 담은 `RunResult` 를 기록하고
+        - [x] 1.4.V 검증: 픽스처 기반 pytest — 실패 3건을 담은 `RunResult` 를 기록하고
               `crawl_runs.fail_count` 가 3, `crawl_run_failures` 가 3행인지 확인
 
 ## 하지 않는 것

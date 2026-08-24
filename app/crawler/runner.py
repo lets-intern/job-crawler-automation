@@ -100,9 +100,13 @@ class ItemResult:
 
 @dataclass(frozen=True)
 class ItemFailure:
+    """항목 하나가 어떻게 실패했는가. `crawl_run_failures` 행 하나가 된다."""
+
     source_url: str
     error_class: str | None
     message: str
+    # 목록에서 읽은 제목. 건수와 사유만으로는 어느 공고였는지 알 수 없어 고칠 수가 없다
+    title: str = ""
 
 
 @dataclass
@@ -115,6 +119,9 @@ class RunResult:
     success_count: int = 0
     new_count: int = 0
     fail_count: int = 0
+    # 상세를 열지 않고 넘긴 수. 실패가 아니라서 `fail_count` 와 따로 센다 — 합치면 마감 날짜
+    # 형식이 바뀌어 전부 걸러진 사이트가 "새 공고 0건" 인 정상 실행으로 보인다
+    skipped_count: int = 0
     error_class: str | None = None
     error_message: str = ""
     items: list[ItemResult] = field(default_factory=list)
@@ -391,6 +398,7 @@ async def _crawl(
                     source_url=item.link,
                     error_class=classified.error_class,
                     message=classified.message,
+                    title=item.title,
                 )
             )
             continue
@@ -575,7 +583,11 @@ def _finish_run(
     *,
     timed_out: bool = False,
 ) -> None:
-    """종료 상태와 카운트를 확정한다. 정상 파싱 0건은 실패다."""
+    """종료 상태와 카운트를 확정하고 놓친 공고를 남긴다. 정상 파싱 0건은 실패다.
+
+    실행 기록과 실패 목록은 한 트랜잭션으로 쓴다. 갈라지면 `fail_count` 는 3인데 어느 공고였는지
+    아무 데도 없는 행이 남고, 그 실행은 건수만 알고 고칠 수는 없는 기록이 된다.
+    """
     result.status = run_status(result.success_count, failure, timed_out=timed_out)
     if failure is not None:
         result.error_class = failure.error_class
@@ -589,30 +601,49 @@ def _finish_run(
         if first is not None:
             result.error_message = f"{ZERO_ITEM_MESSAGE}: {first.message}"
 
-    conn.execute(
-        """
-        UPDATE crawl_runs
-           SET finished_at = datetime('now'), status = ?, success_count = ?, new_count = ?,
-               fail_count = ?, error_class = ?, error_message = ?
-         WHERE id = ?
-        """,
-        (
-            result.status,
-            result.success_count,
-            result.new_count,
-            result.fail_count,
-            result.error_class,
-            result.error_message or None,
-            result.run_id,
-        ),
-    )
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.execute(
+            """
+            UPDATE crawl_runs
+               SET finished_at = datetime('now'), status = ?, success_count = ?, new_count = ?,
+                   fail_count = ?, skipped_count = ?, error_class = ?, error_message = ?
+             WHERE id = ?
+            """,
+            (
+                result.status,
+                result.success_count,
+                result.new_count,
+                result.fail_count,
+                result.skipped_count,
+                result.error_class,
+                result.error_message or None,
+                result.run_id,
+            ),
+        )
+        conn.executemany(
+            """
+            INSERT INTO crawl_run_failures (run_id, reason, title, source_url, message)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            [
+                (result.run_id, item.error_class, item.title, item.source_url, item.message)
+                for item in result.failures
+            ],
+        )
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+
     logger.info(
-        "run %s %s: matched=%s success=%s new=%s fail=%s error_class=%s",
+        "run %s %s: matched=%s success=%s new=%s fail=%s skipped=%s error_class=%s",
         result.run_id,
         result.status,
         result.matched,
         result.success_count,
         result.new_count,
         result.fail_count,
+        result.skipped_count,
         result.error_class,
     )
