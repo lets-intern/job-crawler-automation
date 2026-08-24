@@ -56,22 +56,28 @@
       <td>
         {# 실행은 사이트를 실제로 가져오므로 오래 걸린다. 버튼을 잠가 같은 실행이 두 번 나가지
            않게 하고, 이 자리와 결과 영역 두 곳에 기다리는 중임을 적는다 #}
+        {# 한 줄로 늘어놓으면 이 열 하나가 표를 밀어내, 1440px 에서 `테스트 실행` 이 가로
+           스크롤 밖으로 나갔다. 화면의 주된 단추가 반쯤 잘려 있던 자리라 세로로 쌓는다 #}
         <form hx-post="/ui/crawlers/{{ crawler.id }}/test-run"
               hx-target="#test-result"
               hx-swap="innerHTML"
               hx-disabled-elt="find button"
               hx-indicator="closest form, #test-result-wait">
-          <label for="mode-{{ crawler.id }}">가져오는 방식</label>
-          {# 저장값을 바꾸지 않고 한 번만 시험하는 자리다. 정적으로 되는지 렌더가 필요한지는
-             같은 크롤러를 양쪽으로 돌려 필드별 매칭 수를 비교해서 안다 #}
-          <select id="mode-{{ crawler.id }}" name="render_mode">
-            <option value="">저장 모드로 ({{ mode_word(crawler.list_mode) }})</option>
-            <option value="static">이번만 정적으로</option>
-            <option value="playwright">이번만 렌더로</option>
-          </select>
-          <label for="limit-{{ crawler.id }}">상세 건수</label>
-          <input id="limit-{{ crawler.id }}" name="limit" type="number" value="3" min="1" max="20"
-                 size="3">
+          <p class="my-0">
+            <label for="mode-{{ crawler.id }}" class="block text-xs text-slate-600">가져오는 방식</label>
+            {# 저장값을 바꾸지 않고 한 번만 시험하는 자리다. 정적으로 되는지 렌더가 필요한지는
+               같은 크롤러를 양쪽으로 돌려 필드별 매칭 수를 비교해서 안다 #}
+            <select id="mode-{{ crawler.id }}" name="render_mode" class="mt-0">
+              <option value="">저장 모드로 ({{ mode_word(crawler.list_mode) }})</option>
+              <option value="static">이번만 정적으로</option>
+              <option value="playwright">이번만 렌더로</option>
+            </select>
+          </p>
+          <p class="my-0 mt-1">
+            <label for="limit-{{ crawler.id }}" class="block text-xs text-slate-600">상세 건수</label>
+            <input id="limit-{{ crawler.id }}" name="limit" type="number" value="3" min="1" max="20"
+                   size="3" class="mt-0">
+          </p>
           <button type="submit">테스트 실행</button>
           {{ wait("사이트를 가져오는 중") }}
         </form>

@@ -20,9 +20,9 @@
       <th scope="col">설정</th>
       <th scope="col">우선순위</th>
       <th scope="col">활성</th>
-      <th scope="col">저장</th>
-      <th scope="col">활성 토글</th>
-      <th scope="col">삭제</th>
+      {# 동작은 한 열에 모은다. 열을 셋으로 나눴을 때는 1440px 에서 삭제가 가로 스크롤
+         밖으로 나가 있었다. 다른 화면의 표도 동작은 한 열이다 #}
+      <th scope="col">동작</th>
     </tr>
   </thead>
   <tbody>
@@ -64,37 +64,37 @@
         {% if rule.enabled %}{{ state("켜짐") }}{% else %}{{ state("꺼짐") }}{% endif %}
       </td>
       <td>
-        <form id="rule-form-{{ rule.id }}"
-              hx-put="/ui/rules/{{ rule.id }}"
-              hx-target="#rule-list"
-              hx-swap="innerHTML"
-              hx-disabled-elt="find button">
-          <button type="submit">저장</button>
-          <span class="wait-note">저장하는 중</span>
-        </form>
-      </td>
-      <td>
-        <button type="button"
-                hx-post="/ui/rules/{{ rule.id }}/toggle"
+        <div class="flex flex-wrap items-center gap-1">
+          <form id="rule-form-{{ rule.id }}"
+                hx-put="/ui/rules/{{ rule.id }}"
                 hx-target="#rule-list"
                 hx-swap="innerHTML"
-                hx-disabled-elt="this"
-                hx-indicator="closest td">{% if rule.enabled %}끄기{% else %}켜기{% endif %}</button>
-        <span class="wait-note">바꾸는 중</span>
-      </td>
-      <td>
-        <button type="button"
-                hx-delete="/ui/rules/{{ rule.id }}"
-                hx-target="#rule-list"
-                hx-swap="innerHTML"
-                hx-disabled-elt="this"
-                hx-indicator="closest td"
-                hx-confirm="규칙 {{ rule.id }} 를 지운다. 되돌릴 수 없다. 계속할까">삭제</button>
-        <span class="wait-note">지우는 중</span>
+                hx-disabled-elt="find button">
+            <button type="submit">저장</button>
+            {{ wait("저장하는 중") }}
+          </form>
+          {# 대기 문구를 제 id 로 가리킨다. `closest td` 로 잡으면 이 칸의 문구 셋이
+             한꺼번에 겹쳐 뜬다 #}
+          <button type="button"
+                  hx-post="/ui/rules/{{ rule.id }}/toggle"
+                  hx-target="#rule-list"
+                  hx-swap="innerHTML"
+                  hx-disabled-elt="this"
+                  hx-indicator="#rule-toggle-wait-{{ rule.id }}">{% if rule.enabled %}끄기{% else %}켜기{% endif %}</button>
+          {{ wait("켜고 끄는 중", "rule-toggle-wait-" ~ rule.id) }}
+          <button type="button"
+                  hx-delete="/ui/rules/{{ rule.id }}"
+                  hx-target="#rule-list"
+                  hx-swap="innerHTML"
+                  hx-disabled-elt="this"
+                  hx-indicator="#rule-delete-wait-{{ rule.id }}"
+                  hx-confirm="규칙 {{ rule.id }} 를 지운다. 되돌릴 수 없다. 계속할까">삭제</button>
+          {{ wait("지우는 중", "rule-delete-wait-" ~ rule.id) }}
+        </div>
       </td>
     </tr>
     {% else %}
-    {{ empty_row(10, "등록된 규칙이 없다. 아래 규칙 추가로 첫 규칙을 만든다. 규칙이 없으면 추출된 값이 그대로 저장된다") }}
+    {{ empty_row(8, "등록된 규칙이 없다. 아래 규칙 추가로 첫 규칙을 만든다. 규칙이 없으면 추출된 값이 그대로 저장된다") }}
     {% endfor %}
   </tbody>
 </table>
