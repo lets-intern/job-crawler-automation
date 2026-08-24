@@ -113,6 +113,37 @@ GET https://talent.hyundai.com/api/rec/AP-HM-FO-02730?hgrCd=1&lang=ko&secCode=&j
 여섯 사이트 합계 약 **304건**이다 (지금 233건). 상세 요청이 300번 넘고 호스트별 딜레이가
 붙으므로 **한 워크플로우가 30분 안에 끝나는지 확인해야 한다.** SK 104건이 가장 오래 걸린다.
 
+### 응답 픽스처가 이미 받아져 있다
+
+`/private/tmp/claude-501/-Users-a-workspace-job-crawler-automation/8c8655d7-40a5-4f35-ba2c-60ccf81bdc49/scratchpad/fixtures/`
+에 여섯 사이트의 목록·상세 응답 16개와 `README.md` 가 있다. 전부 `curl` 로 브라우저 없이 받은
+것이다. **`tests/fixtures/` 로 옮겨 쓰고 실사이트 요청은 최종 확인 때만 한다.**
+
+`README.md` 에 요청 형식·필요한 헤더·페이지 넘기는 법·필드 매핑이 정리돼 있다.
+
+### 현대 상세도 API 로 된다
+
+`GET https://talent.hyundai.com/api/rec/AP-HM-FO-02800?hgrCd=1&lang=ko&recuYy=2026&recuType=N2&recuCls=296`
+가 200 이고 `data.applyInfo` 에 157개 필드가 **평문으로** 들어 있다. HTML 을 파싱할 이유가 없다.
+
+| 뜻 | 필드 |
+|---|---|
+| 제목 | `recuNoticeNm` |
+| 주요 업무 | `privJdDtl` |
+| 필수 조건 | `privMustReq` |
+| 우대 조건 | `prefReq` |
+| 조직 소개 | `aboutTeamNtc` |
+| 기타 | `etc` |
+
+**`/apply/applyView.hc` 상세 HTML 은 쓰지 마라.** 텍스트가 1,098자뿐인 JS 껍데기다.
+
+현대 상세 요청에도 `x-hkmc-service: HM` 헤더가 필요하다. `referer` 는 `applyView.hc` 다.
+
+### 이제 여섯 사이트 모두 브라우저 없이 목록과 상세를 받는다
+
+SK·롯데는 상세가 서버 렌더 HTML 이고(각 4,496자·6,621자) 나머지 넷은 API 다. 어느 쪽이든
+`httpx` 로 받는다. **정규 실행에 브라우저가 필요한 사이트는 없다.**
+
 ## 관련 파일
 
 - `app/selector/api_schema.py:85` - `ApiListConfig` / `ApiDetailConfig` 형식
@@ -129,12 +160,12 @@ GET https://talent.hyundai.com/api/rec/AP-HM-FO-02730?hgrCd=1&lang=ko&secCode=&j
 ## 작업
 
 - [ ] 4.0 여섯 사이트를 목록 API 로 돌린다
-    - [ ] 4.1 응답 픽스처를 저장한다
-        - 여섯 사이트의 목록 응답과 상세 응답을 `tests/fixtures/` 에 넣는다
-        - 파일명에 날짜를 넣는다 (`sk-list-api-20260825.json` 형식). 사이트가 바뀌면 언제 받은
-          것인지가 유일한 단서다
-        - **실사이트 요청은 여기서 한 번씩만 한다.** 이후 작업은 전부 이 픽스처로 한다
-        - [ ] 4.1.V 검증: 픽스처마다 항목 수와 필수 키가 있는지 pytest 로 확인
+    - [ ] 4.1 받아 둔 픽스처를 `tests/fixtures/` 로 옮긴다
+        - 위 스크래치패드 경로에서 16개를 옮긴다. 이름은 그대로 둔다 (날짜가 들어 있다)
+        - `hyundai-detail-20260825.html` 은 JS 껍데기라 **옮기지 않는다**
+        - **실사이트 요청을 새로 하지 않는다.** 이미 받아 둔 것으로 충분하다
+        - [ ] 4.1.V 검증: 픽스처마다 항목 수와 필수 키가 있는지 pytest 로 확인.
+              한화 4쪽 합 68, 삼성 2쪽 합 16, LG 88, SK 104 를 숫자로 확인한다
     - [ ] 4.2 API 설정에 헤더 자리를 만든다
         - 현대는 `x-hkmc-service: HM` 헤더가 없으면 400 이다. 위 측정에 전체 주소와 헤더가 있다
         - `app/selector/api_schema.py` 의 `ApiListConfig`·`ApiDetailConfig` 에 헤더를 담는
