@@ -259,3 +259,52 @@ async def test_이미_저장한_공고는_상세를_다시_열지_않는다(conn
     assert (second.new_count, second.fail_count) == (0, 0)
     assert second.status == "success"
     assert len(conn.execute("SELECT id FROM raw_jobs").fetchall()) == 2
+
+
+# 건너뛴 수를 실행 기록에 (2.5.V) --------------------
+
+
+async def test_마감과_기존_공고를_합쳐_건너뛴_수로_남긴다(conn: sqlite3.Connection) -> None:
+    """마감 2건·기존 3건이면 건너뜀 5, 실패 0 이다. 둘을 합치면 고칠 것과 정상이 섞인다."""
+    detail = StubDetail()
+    known = [item(index, f"기존 공고 {index}", "2026-09-30") for index in range(3)]
+    await run_once(conn, target(), collectors=collectors(known, detail))
+    assert len(detail.calls) == 3
+
+    expired = [
+        item(3, "지난 공고", "2026-08-24"),
+        item(4, "지난 공고 2", "2026-01-01"),
+    ]
+    result = await run_once(conn, target(), collectors=collectors(known + expired, detail))
+
+    assert (result.skipped_count, result.fail_count, result.new_count) == (5, 0, 0)
+    assert result.status == "success"
+    # 다섯 건 모두 상세 요청이 나가지 않았다
+    assert len(detail.calls) == 3
+
+    row = conn.execute(
+        "SELECT skipped_count, fail_count, new_count, status FROM crawl_runs WHERE id = ?",
+        (result.run_id,),
+    ).fetchone()
+    assert (row["skipped_count"], row["fail_count"], row["new_count"]) == (5, 0, 0)
+    assert row["status"] == "success"
+
+
+async def test_건너뜀과_실패는_같은_실행에서도_섞이지_않는다(conn: sqlite3.Connection) -> None:
+    detail = StubDetail()
+    stored = [item(0, "기존 공고", "2026-09-30")]
+    await run_once(conn, target(), collectors=collectors(stored, detail))
+
+    items = [
+        *stored,
+        item(1, "지난 공고", "2026-08-24"),
+        ListItem(index=2, title="상세가 없는 공고", link=LIST_URL, date="", detail_absent=True),
+        item(3, "새 공고", "2026-09-30"),
+    ]
+    result = await run_once(conn, target(), collectors=collectors(items, detail))
+
+    assert (result.skipped_count, result.fail_count, result.new_count) == (2, 1, 1)
+    row = conn.execute(
+        "SELECT skipped_count, fail_count FROM crawl_runs WHERE id = ?", (result.run_id,)
+    ).fetchone()
+    assert (row["skipped_count"], row["fail_count"]) == (2, 1)

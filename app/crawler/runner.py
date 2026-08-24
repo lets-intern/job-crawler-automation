@@ -129,8 +129,9 @@ class RunResult:
     success_count: int = 0
     new_count: int = 0
     fail_count: int = 0
-    # 상세를 열지 않고 넘긴 수. 실패가 아니라서 `fail_count` 와 따로 센다 — 합치면 마감 날짜
-    # 형식이 바뀌어 전부 걸러진 사이트가 "새 공고 0건" 인 정상 실행으로 보인다
+    # 적재하지 않고 넘긴 수. 마감이 지났거나 이미 아는 공고다. 실패가 아니라서 `fail_count`
+    # 와 따로 센다 — 합치면 마감 날짜 형식이 바뀌어 전부 걸러진 사이트가 "새 공고 0건" 인
+    # 정상 실행으로 보인다
     skipped_count: int = 0
     error_class: str | None = None
     error_message: str = ""
@@ -425,7 +426,10 @@ async def _crawl(
 
         result.items.append(collected)
         result.success_count += 1
-        if collected.state == STORED:
+        if collected.state == KNOWN:
+            # 이미 아는 공고라 적재하지 않았다. 마감으로 넘긴 것과 같은 자리에 센다
+            result.skipped_count += 1
+        elif collected.state == STORED:
             result.new_count += 1
             _normalize(conn, collected, rules, rules_error, result)
 
