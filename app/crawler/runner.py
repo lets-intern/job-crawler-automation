@@ -15,6 +15,10 @@
 `source_url` 로 아는 공고인지만 보고, 아는 공고면 상세를 가져오지 않는다. 상세까지 간 건에
 대해서만 `content_hash` 를 만들어 마지막으로 한 번 더 확인한다.
 
+본문을 얻지 못한 공고는 적재하지 않고 실패로 남긴다. 목록에서 읽은 값만 넣고 성공으로 넘기면
+`body` 가 빈 행이 쌓이고, 그것을 소비 측이 본문 없는 공고로 받는다. 대신 어느 공고를 왜 놓쳤는지가
+`crawl_run_failures` 에 제목과 함께 남는다.
+
 `raw_jobs` 는 append-only 다. 기존 행을 갱신하지 않는다 (`.claude/rules/data-safety.md`).
 
 워크플로우가 없는 테스트 실행은 `raw_jobs` 에 적재하지 않는다. 적재할 워크플로우가 없기
@@ -36,6 +40,8 @@ from app.crawler.failures import (
     FAILED,
     SUCCESS,
     ZERO_ITEM_MESSAGE,
+    DetailEmptyError,
+    DetailUnreachableError,
     Failure,
     classify,
     run_status,
@@ -47,7 +53,6 @@ from app.normalize.engine import NormalizeError, insert_normalized, load_rules
 from app.normalize.rules import Rule
 from app.selector.api_schema import ApiConfigError, parse_api_config
 from app.selector.schema import (
-    DETAIL_FIELDS,
     DetailSelectors,
     ListSelectors,
     SelectorSchemaError,
@@ -413,18 +418,31 @@ async def _crawl(
 async def _collect(
     conn: sqlite3.Connection, target: RunTarget, item: ListItem, collectors: Collectors
 ) -> ItemResult:
-    """항목 하나를 처리한다. 아는 공고면 상세를 가져오지 않는다."""
-    if item.detail_absent:
-        # 상세로 갈 길이 없는 사이트다. 목록에서 읽은 것만으로 항목을 만든다.
-        # 같은 주소를 여러 항목이 공유하므로 `source_url` 로는 중복을 가릴 수 없고,
-        # content_hash 가 title·deadline 으로 가른다.
-        record = _record(item, dict.fromkeys(DETAIL_FIELDS, ""))
-    else:
-        if _is_known(conn, target.workflow_id, "source_url", item.link):
-            return ItemResult(source_url=item.link, state=KNOWN, fields={})
+    """항목 하나를 처리한다. 아는 공고면 상세를 가져오지 않는다.
 
-        detail = await collectors.detail.collect(item)
-        record = _record(item, detail.fields)
+    본문을 얻지 못한 공고는 적재하지 않고 실패로 낸다. 목록에서 읽은 값만 넣고 성공으로
+    넘기면 `body` 가 빈 행이 쌓이고, 소비 측은 그것을 본문이 없는 공고로 받는다
+    (`.claude/tasks/todo/prd-fill-body.md`).
+
+    실패는 둘로 갈린다. 상세로 갈 길이 없는 것은 `detail_unreachable` 이고 상세를 열었는데
+    읽을 것이 없는 것은 `detail_empty` 다 — 앞은 경로를 다시 찾아야 하고 뒤는 본문 셀렉터만
+    고치면 된다. 어느 공고였는지는 부르는 쪽이 목록에서 읽은 제목으로 적는다.
+    """
+    if item.detail_absent:
+        # 상세로 갈 길이 없는 사이트다. 목록에는 본문이 없으므로 이 공고는 적재할 수 없다.
+        raise DetailUnreachableError(
+            "상세로 갈 길이 없어 본문을 얻지 못했다. `list.link` 나 `list.link_template`, "
+            "상세 API 중 하나로 상세에 닿는 길을 등록해야 한다"
+        )
+
+    if _is_known(conn, target.workflow_id, "source_url", item.link):
+        return ItemResult(source_url=item.link, state=KNOWN, fields={})
+
+    detail = await collectors.detail.collect(item)
+    record = _record(item, detail.fields)
+    if not record["body"].strip():
+        # 상세는 열렸는데 본문이 없다. 나머지 필드가 채워져 있어도 적재하지 않는다.
+        raise DetailEmptyError("상세를 열었지만 본문이 비었다. 상세의 본문 셀렉터를 고친다")
     digest = content_hash(record)
 
     if target.workflow_id is None:

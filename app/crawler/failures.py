@@ -51,6 +51,18 @@ TIMEOUT = "timeout"
 ZERO_ITEM_MESSAGE = "정상 파싱된 항목이 0건이다. 신규 0건인 정상 실행이 아니라 실패다"
 
 
+class DetailUnreachableError(CrawlDataError):
+    """링크·속성·클릭 어느 것으로도 상세에 못 갔다. 본문이 올 곳이 없다."""
+
+    error_class = "detail_unreachable"
+
+
+class DetailEmptyError(CrawlDataError):
+    """상세는 열렸는데 본문이 비었다. 그 공고는 `raw_jobs` 에 넣지 않는다."""
+
+    error_class = "detail_empty"
+
+
 @dataclass(frozen=True)
 class Failure:
     """`crawl_runs` 의 `error_class`, `error_message` 한 쌍."""
