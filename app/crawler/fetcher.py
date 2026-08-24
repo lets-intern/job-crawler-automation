@@ -31,6 +31,9 @@ from app.config import Settings, get_settings
 _BACKOFF_BASE_SECONDS = 1.0
 _ROBOTS_PATH = "/robots.txt"
 
+# 연락처를 채우지 않았을 때 나가는 이름. 이 값이 보이면 `CRAWL_USER_AGENT` 가 비어 있다
+UNSET_USER_AGENT = "job-crawler-automation (contact: unset)"
+
 
 class FetchError(Exception):
     """fetch 실패의 공통 타입.
@@ -109,7 +112,10 @@ class Fetcher:
         sleep: Callable[[float], Awaitable[None]] | None = None,
     ) -> None:
         resolved = settings or get_settings()
-        self._user_agent = resolved.crawl_user_agent
+        # 빈 값은 설정하지 않은 것으로 본다. compose 는 변수를 넣지 않아도 `""` 를 채워
+        # 넘기는데, 그대로 두면 이름 없이 요청이 나간다 — 정직하게 밝히라는 규칙과 정반대다
+        # (`.claude/rules/crawling.md`). `app/api/auth.py` 가 비밀번호에 쓴 것과 같은 방식이다
+        self._user_agent = resolved.crawl_user_agent.strip() or UNSET_USER_AGENT
         self._delay_seconds = resolved.crawl_delay_seconds
         self._max_retries = resolved.crawl_max_retries
         self._clock = clock or time.monotonic
