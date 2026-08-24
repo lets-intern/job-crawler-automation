@@ -59,3 +59,58 @@ URL 을 만드는 것은 없는 번호를 지어내는 것이고, 그렇게 만�
 |---|---|---|---|
 | 2026-08-22 | 렌더 모드로 등록 시도 (crawler 2) | 목록 항목에 상세 링크가 없다 | 등록만 남기고 중단. 스키마가 `href` 외의 링크 수단을 받아야 한다 |
 | 2026-08-22 | 속성 + 템플릿 방식으로도 안 되는 것을 확인 (Push 14) | 렌더된 DOM 에 `rtSeq` 가 0건이라 템플릿에 끼울 값이 없다 | 등록하지 않는다. 실행하지 않았으므로 새 `crawl_runs` 행도 없다 |
+
+## 2026-08-24: 풀렸다. 위의 "불가능" 판정은 더 이상 맞지 않는다
+
+두 가지 길이 다 된다.
+
+### 1. 목록 API (권장)
+
+```
+POST https://hwadm.hanwhain.com/new-backend/portal/api/rcRecruit/search-rcrt
+  content-type: application/json
+  referer: https://www.hanwhain.com/
+  body {"langCd":"ko","searchText":"","sdSeqList":null,"rtNrcrtYn":"","rtCarrYn":""}
+```
+
+브라우저 없이 `curl` 로 200, 5,383바이트, `data.list` 에 20건이다. 항목마다 이렇게 들어 있다.
+
+| 키 | 뜻 | 예 |
+|---|---|---|
+| `rtSeq` | 공고 번호. 상세 URL 에 끼운다 | `19463` |
+| `rtNm` | 제목 | `LIFEPLUS부문 'LIFEPLUS TV 마케팅 기획 및 운영` |
+| `sdNm` | 계열사 | `한화생명` |
+| `rtAcptStrtDttm` / `rtAcptEndDttm` | 접수 시작·마감 | `2026.08.12 08:00` / `2026.08.25 15:00` |
+
+계열사 11곳이 확인됐다 — (주)한화 글로벌부문, (주)한화 전략부문, 한화모멘텀, 한화생명,
+한화솔루션/큐셀, 한화에어로스페이스, 한화엔진, 한화오션, 한화오션에코텍, 한화첨단소재,
+한화투자증권.
+
+위에서 "렌더된 DOM 어디에도 `rtSeq` 가 문자열로 남지 않는다" 고 적은 것은 사실이다. DOM 이
+아니라 **그 DOM 을 채운 응답**에 있었다. 목록 HTML 만 본 것이 그때의 한계였다.
+
+`hwadm.hanwhain.com` 은 별도 호스트다. 공용 fetch 클라이언트가 호스트별로 robots 와 딜레이를
+따로 잡으므로 그 경로로 나가면 된다.
+
+**robots.txt 가 없다.** `www.hanwhain.com/robots.txt` 와 `hwadm.hanwhain.com/robots.txt` 가
+둘 다 200 을 주지만 내용은 SPA 셸 HTML 이다. 지시가 적힌 robots 파일이 아니므로 제한이
+명시되지 않은 상태이고, 그렇다고 넉넉히 다녀도 된다는 뜻은 아니다. 딜레이는 그대로 지킨다.
+
+### 2. 항목 클릭
+
+항목에 `a` 가 없어도 클릭하면 이동한다. Vue 라우터가 클릭을 받아 주소를 바꾸고, 이동한 뒤
+`page.url` 을 읽으면 상세 주소를 알 수 있다.
+
+2026-08-24 측정: 목록 로드 4.51초, 항목 20건, 앞 5개 항목의 `a` 개수 전부 0.
+클릭 3건 모두 이동했고 걸린 시간은 항목당 1.25~1.27초다.
+
+```
+[0] 1.27초  https://www.hanwhain.com/portal/apply/recruit/detail?rtSeq=19463
+[1] 1.25초  https://www.hanwhain.com/portal/apply/recruit/detail?rtSeq=19483
+[2] 1.26초  https://www.hanwhain.com/portal/apply/recruit/detail?rtSeq=19482
+```
+
+주소 형식이 위에 적어 둔 `?rtSeq=` 패턴과 같다.
+
+클릭은 API 를 찾지 못한 사이트에서도 통하는 일반적인 방법이지만, 항목마다 이동과 복귀가 필요해
+API 보다 느리다. **API 가 있으면 API 를 쓴다.**
