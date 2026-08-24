@@ -53,7 +53,7 @@
                 hx-target="#crawler-result"
                 hx-swap="innerHTML"
                 hx-disabled-elt="this"
-                hx-indicator="#crawler-result-wait">셀렉터 편집</button>
+                hx-indicator="closest td, #crawler-result-wait">셀렉터 편집</button>
         {# 삭제는 되돌릴 수 없다. 누르기 전에 hx-confirm 이 한 번 확인을 받는다.
            승격된 크롤러인지는 여기서 판정하지 않는다 — API 가 409 로 거절하고 그 사유가
            결과 영역에 그대로 들어온다 (`app/api/crawlers.py`) #}
@@ -63,7 +63,8 @@
                 hx-target="#crawler-result"
                 hx-swap="innerHTML"
                 hx-disabled-elt="this"
-                hx-indicator="#crawler-result-wait">삭제</button>
+                hx-indicator="closest td, #crawler-result-wait">삭제</button>
+        {{ wait("결과 영역을 채우는 중") }}
       </td>
     </tr>
     {% else %}
