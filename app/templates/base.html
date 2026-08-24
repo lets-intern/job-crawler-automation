@@ -36,15 +36,17 @@
     @layer components {
       /* 요청이 도는 동안만 보이는 대기 문구. HTMX 가 hx-indicator 대상에 htmx-request 를 붙인다.
          아이콘을 쓰지 않는다 — 문구와 점멸로만 만든다 (`.claude/rules/writing.md`) */
-      /* 자리를 미리 잡아 둔다. display 를 켜고 끄면 문구가 들어올 때 배치가 밀린다 */
       /* 본문과 같은 색·크기면 상태로 읽히지 않는다. 테두리를 둘러 "지금 도는 중" 이라는
          것이 한 눈에 보이게 하고, 화면 어디서든 같은 모양으로 나온다 */
+      /* 자리를 미리 잡아 두지 않는다. 테두리가 생긴 뒤로는 안 보이는 상자가 제 폭을 차지해,
+         좁은 화면에서 카드마다 빈 줄이 생겼다 (28.1 에서 420px 확인). 문구가 들어올 때
+         옆 단추가 조금 밀리지만, 그때 그 단추는 이미 잠겨 있다 */
       .wait-note {
-        @apply invisible inline-flex items-center gap-1 rounded-md border border-slate-300
+        @apply hidden items-center gap-1 rounded-md border border-slate-300
                bg-white px-2 py-0.5 text-sm font-medium text-slate-700;
       }
       .htmx-request .wait-note,
-      .wait-note.htmx-request { @apply visible animate-pulse; }
+      .wait-note.htmx-request { @apply inline-flex animate-pulse; }
       /* 표 안에서는 자리를 잡아 두면 그 칸이 늘 넓어진다. 흐름에서 빼서 열 폭을 건드리지 않는다 */
       .data-table .wait-note {
         @apply absolute bottom-0 left-3 z-10 whitespace-nowrap rounded bg-white/90 px-1 text-xs;
