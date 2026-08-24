@@ -46,7 +46,7 @@ def _form(
     conn: sqlite3.Connection,
     *,
     message: str = "",
-    error: str = "",
+    error: dict[str, str] | None = None,
 ) -> HTMLResponse:
     """설정 폼 하나. 저장 결과도 이 조각으로 돌아온다."""
     return render(
@@ -79,12 +79,17 @@ def update_setting_fragment(
     try:
         parsed = int(value)
     except ValueError:
-        return _form(request, conn, error=f"정수가 아니다: {value!r}")
+        # 실패에는 사유와 다음에 할 일이 함께 나온다 (`app/api/ui.py` 의 `NEXT_STEPS`)
+        return _form(
+            request,
+            conn,
+            error={"reason": "invalid_input", "message": f"정수가 아니다: {value!r}"},
+        )
 
     try:
         saved = settings_api.update_setting(key, settings_api.SettingUpdate(value=parsed), conn)
     except HTTPException as exc:
-        return _form(request, conn, error=error_detail(exc)["message"])
+        return _form(request, conn, error=error_detail(exc))
 
     return _form(request, conn, message=f"{saved.key} 를 {saved.value} 로 저장했다")
 

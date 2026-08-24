@@ -167,10 +167,10 @@ def test_the_test_screen_does_not_call_a_list_only_detail_field_a_failure() -> N
 
     report = {row["path"]: row for row in _field_report(items, selectors)}
 
-    assert report["detail.body"]["state"] == "해당 없음"
+    assert report["detail.body"]["state"] == "건너뜀"
     assert "상세 페이지를 따라가지 않는" in report["detail.body"]["reason"]
     # 값이 있는 자리도 상세에서 온 것이 아니다. 어디서 왔는지 사유에 적는다
-    assert report["detail.title"]["state"] == "해당 없음"
+    assert report["detail.title"]["state"] == "건너뜀"
     assert "목록에서 읽은 것이다" in report["detail.title"]["reason"]
     # 목록 필드의 판정은 그대로다
     assert report["list.title"]["state"] == "성공"

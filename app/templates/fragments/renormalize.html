@@ -1,22 +1,23 @@
 {# 재정규화 영역. 규칙 편집(#rule-list)과 갈라져 있고, 규칙 저장이 이 영역을 갱신하지 않는다.
    실행 중일 때만 자기 자신을 2초마다 다시 부른다. 끝나면 폴링 속성 없이 렌더되어 멈춘다 #}
+{% from "macros.html" import failure, state, wait %}
 <div id="renormalize-panel"
      {% if progress.running %}hx-get="/ui/renormalize" hx-trigger="every 2s" hx-target="this" hx-swap="outerHTML"{% endif %}>
   {% if error %}
-  <p class="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-red-800"><span class="font-semibold">시작하지 못했다</span>: {{ error }}</p>
+  {{ failure(error.reason, error.message, title="시작하지 못했다") }}
   {% endif %}
 
   <p>대상: <code>raw_jobs</code> {{ target_count }}건. 지금 규칙으로 다시 정규화한다.</p>
 
   {% if progress.running %}
-  <p>상태: <span class="state-warn">실행 중</span> <span class="text-xs text-slate-500">(시작 {{ progress.started_at | as_time }})</span></p>
+  <p>상태: {{ state("실행 중", tone="warn") }} <span class="text-xs text-slate-500">(시작 {{ progress.started_at | as_time }})</span></p>
   <p>진행: 처리 {{ progress.processed }}건, 실패 {{ progress.failed }}건 / 대상 {{ progress.total }}건</p>
   <progress class="max-w-md" value="{{ progress.processed + progress.failed }}" max="{{ progress.total or 1 }}"></progress>
   {% elif progress.started_at %}
-  <p>상태: <span class="state-ok">종료</span> <span class="text-xs text-slate-500">(시작 {{ progress.started_at | as_time }}, 종료 {{ progress.finished_at | as_time }})</span></p>
+  <p>상태: {{ state("종료") }} <span class="text-xs text-slate-500">(시작 {{ progress.started_at | as_time }}, 종료 {{ progress.finished_at | as_time }})</span></p>
   <p>결과: 대상 {{ progress.total }}건 중 처리 {{ progress.processed }}건, 실패 {{ progress.failed }}건</p>
   {% else %}
-  <p>상태: <span class="state-idle">실행한 적 없음</span></p>
+  <p>상태: {{ state("실행한 적 없음") }}</p>
   {% endif %}
 
   {% if progress.errors %}
@@ -32,7 +33,7 @@
     <button type="button" hx-post="/ui/renormalize"
             hx-target="#renormalize-panel" hx-swap="outerHTML"
             hx-disabled-elt="this" hx-indicator="#renormalize-wait">재정규화 실행</button>
-    <span id="renormalize-wait" class="wait-note">{{ target_count }}건을 다시 정규화하는 중. 건수만큼 걸린다</span>
+    {{ wait(target_count ~ "건을 다시 정규화하는 중. 건수만큼 걸린다", "renormalize-wait") }}
     <button type="button" hx-get="/ui/renormalize"
             hx-target="#renormalize-panel" hx-swap="outerHTML">취소</button>
     {% else %}

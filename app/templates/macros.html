@@ -22,8 +22,9 @@
 </div>
 {% endmacro %}
 
-{# 실패가 아닌 안내. 실패와 같은 상자 모양을 쓰되 색이 다르다 #}
-{% macro notice(text) %}
+{# 실패가 아닌 안내. 실패와 같은 상자 모양을 쓰되 색이 다르다.
+   `notice` 는 여러 조각이 변수 이름으로 쓰고 있어 이름을 달리 둔다 #}
+{% macro notice_box(text) %}
 <div class="notice notice-idle">{{ text }}</div>
 {% endmacro %}
 

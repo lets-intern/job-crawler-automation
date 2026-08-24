@@ -1,13 +1,8 @@
 {# 테스트 실행 결과. 상태는 단어로만 적는다 #}
 {# `failure` 는 항목별 실패 루프의 변수 이름과 겹친다. 매크로는 다른 이름으로 받는다 #}
-{% from "macros.html" import badge, state, blank, failure as failure_box, empty %}
+{% from "macros.html" import badge, state, blank, failure as failure_box, empty, empty_row %}
 {% if error %}
-<h3>실행할 수 없다</h3>
-<dl>
-  <dt>사유</dt><dd>{{ error.reason }}</dd>
-  <dt>내용</dt><dd>{{ error.message }}</dd>
-  {% if next_step(error.reason) %}<dt>다음</dt><dd>{{ next_step(error.reason) }}</dd>{% endif %}
-</dl>
+{{ failure_box(error.reason, error.message, title="실행할 수 없다") }}
 {% else %}
 <h3>실행 요약</h3>
 <div class="table-scroll">
@@ -98,11 +93,12 @@
       </td>
       {% for key, path in fields %}
       {% set value = item.fields.get(key, "") %}
-      <td class="cell-text">{{ value[:preview_limit] }}{% if value|length > preview_limit %} ... (이하 생략){% endif %}</td>
+      {# 빈 칸은 반대 뜻으로 읽힌다. 값이 없으면 없다고 적는다 (`.claude/rules/writing.md`) #}
+      <td class="cell-text">{% if value %}{{ value[:preview_limit] }}{% if value|length > preview_limit %} ... (이하 생략){% endif %}{% else %}{{ blank("값 없음") }}{% endif %}</td>
       {% endfor %}
     </tr>
     {% else %}
-    <tr><td colspan="{{ fields|length + 2 }}">미리보기가 없다. 실행이 항목을 하나도 남기지 못했다</td></tr>
+    {{ empty_row(fields|length + 2, "미리보기가 없다. 실행이 항목을 하나도 남기지 못했다 — 위의 실행 요약과 필드별 판정에 무엇이 막았는지 적혀 있다") }}
     {% endfor %}
   </tbody>
 </table>
@@ -130,7 +126,7 @@
 </table>
 </div>
 {% else %}
-<p>항목별 실패는 없다.</p>
+{{ empty("항목별 실패는 없다. 가져온 항목은 모두 끝까지 처리됐다") }}
 {% endif %}
 
 {# 실패한 필드가 있을 때만 붙는다. 고치기·저장·다시 실행이 이 자리 하나에 있어서,

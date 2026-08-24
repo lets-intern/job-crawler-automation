@@ -2,11 +2,7 @@
    이 조각의 어떤 동작도 재정규화를 부르지 않는다 — 그 버튼은 다른 영역에 있다 #}
 {% from "macros.html" import state, empty_row, wait, failure %}
 {% if error %}
-<div class="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
-  <p><span class="font-semibold">저장하지 못했다</span> — 사유: {{ error.reason }}</p>
-  <p class="mt-1">{{ error.message }}</p>
-  {% if next_step(error.reason) %}<p class="mt-1">다음: {{ next_step(error.reason) }}</p>{% endif %}
-</div>
+{{ failure(error.reason, error.message, title="저장하지 못했다") }}
 {% endif %}
 {% if message %}
 <p class="font-medium text-slate-700">{{ message }}</p>
@@ -93,12 +89,12 @@
                 hx-swap="innerHTML"
                 hx-disabled-elt="this"
                 hx-indicator="closest td"
-                hx-confirm="규칙 {{ rule.id }} 를 지운다. 계속할까">삭제</button>
+                hx-confirm="규칙 {{ rule.id }} 를 지운다. 되돌릴 수 없다. 계속할까">삭제</button>
         <span class="wait-note">지우는 중</span>
       </td>
     </tr>
     {% else %}
-    <tr><td colspan="9" class="cell-text text-slate-600">등록된 규칙이 없다. 아래 <span class="font-medium">규칙 추가</span> 로 첫 규칙을 만든다. 규칙이 없으면 추출된 값이 그대로 저장된다</td></tr>
+    {{ empty_row(10, "등록된 규칙이 없다. 아래 규칙 추가로 첫 규칙을 만든다. 규칙이 없으면 추출된 값이 그대로 저장된다") }}
     {% endfor %}
   </tbody>
 </table>

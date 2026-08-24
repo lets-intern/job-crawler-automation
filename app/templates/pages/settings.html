@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "macros.html" import wait %}
+{% from "macros.html" import wait, empty %}
 {% block title %}운영 설정{% endblock %}
 {% block heading %}운영 설정{% endblock %}
 {% block content %}
@@ -10,7 +10,7 @@
     한 번 저장된 뒤로는 환경변수를 고쳐도 이 값이 이긴다.
   </p>
   <div id="settings-form" hx-get="/ui/settings" hx-trigger="load" hx-swap="innerHTML">
-    <p>설정을 불러오는 중</p>
+    {{ empty("설정을 불러오는 중") }}
   </div>
 </section>
 

@@ -1,5 +1,5 @@
 {# 규칙 미리보기. 아무것도 저장하지 않는다 — 값을 넣어 보고 결과를 확인하는 자리다 #}
-{% from "macros.html" import failure, blank, wait %}
+{% from "macros.html" import failure, blank, wait, empty %}
 <form hx-post="/ui/rules/preview" hx-target="#rule-preview" hx-swap="innerHTML"
       class="space-y-3">
   <div class="flex flex-wrap items-end gap-3">
@@ -48,10 +48,7 @@
 </form>
 
 {% if error %}
-<div class="mt-3 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
-  <p><span class="font-semibold">규칙을 읽지 못했다</span></p>
-  <p class="mt-1">{{ error }}</p>
-</div>
+{{ failure("invalid_input", error, title="규칙을 읽지 못했다") }}
 {% elif steps %}
 <div class="table-scroll mt-3">
 <table class="data-table">
@@ -67,7 +64,7 @@
     <tr>
       <td class="text-slate-500">(원문)</td>
       <td class="font-mono text-xs">{{ sample }}</td>
-      <td class="text-slate-500">-</td>
+      <td>{{ blank("해당 없음") }}</td>
     </tr>
     {% for step in steps %}
     <tr>
@@ -75,10 +72,10 @@
       <td class="font-mono text-xs">
         {% if step.error %}<span class="text-red-700">{{ step.error }}</span>
         {% elif step.value %}{{ step.value }}
-        {% else %}<span class="text-slate-500">값 없음</span>{% endif %}
+        {% else %}{{ blank("값 없음") }}{% endif %}
       </td>
       <td>{% if step.changed %}<span class="font-medium">바뀜</span>
-          {% else %}<span class="text-slate-500">변화 없음</span>{% endif %}</td>
+          {% else %}{{ blank("변화 없음") }}{% endif %}</td>
     </tr>
     {% endfor %}
   </tbody>
@@ -90,7 +87,7 @@
   {% else %}<span class="font-semibold">없음</span> — 이 필드는 NULL 로 저장된다{% endif %}
 </p>
 {% elif sample %}
-<p class="mt-3 text-sm text-slate-600">{{ field_name }} 에 걸린 규칙이 없다. 값이 그대로 저장된다.</p>
+{{ empty(field_name ~ " 에 걸린 규칙이 없다. 위 규칙 표에서 이 필드에 규칙을 추가하면 여기에 단계가 나온다. 지금은 값이 그대로 저장된다") }}
 {% else %}
-<p class="mt-3 text-sm text-slate-600">시험할 값을 넣고 미리보기를 누르면 규칙이 무엇을 하는지 단계별로 보인다. 아무것도 저장되지 않는다.</p>
+{{ empty("시험할 값을 넣고 미리보기를 누르면 규칙이 무엇을 하는지 단계별로 보인다. 아무것도 저장되지 않는다") }}
 {% endif %}

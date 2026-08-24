@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "macros.html" import empty %}
 {% block title %}정규화 규칙{% endblock %}
 {% block heading %}정규화 규칙{% endblock %}
 {% block content %}
@@ -6,7 +7,7 @@
   <h3>규칙</h3>
   <p>규칙 변경은 이후 정규화되는 건부터 적용된다. 이미 정규화된 데이터는 그대로다.</p>
   <div id="rule-list" hx-get="/ui/rules" hx-trigger="load" hx-swap="innerHTML">
-    <p>규칙을 불러오는 중</p>
+    {{ empty("규칙을 불러오는 중") }}
   </div>
 </section>
 
@@ -21,7 +22,7 @@
   {# hx-vals 를 여기 두면 안 된다. HTMX 는 그것을 자식 폼까지 물려주고, 폼이 보낸 값을
      덮어써서 입력한 값이 서버에 도달하지 못한다 #}
   <div id="rule-preview" hx-get="/ui/rules/preview" hx-trigger="load" hx-swap="innerHTML">
-    <p>미리보기를 불러오는 중</p>
+    {{ empty("미리보기를 불러오는 중") }}
   </div>
 </section>
 
@@ -36,7 +37,7 @@
   </p>
   <div id="renormalize-panel" hx-get="/ui/renormalize" hx-trigger="load"
        hx-target="this" hx-swap="outerHTML">
-    <p>상태를 불러오는 중</p>
+    {{ empty("상태를 불러오는 중") }}
   </div>
 </section>
 {% endblock %}

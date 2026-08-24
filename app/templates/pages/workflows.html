@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "macros.html" import empty %}
 {% block title %}워크플로우{% endblock %}
 {% block heading %}워크플로우 목록{% endblock %}
 {% block content %}
@@ -6,7 +7,7 @@
   <p>중지·재개, 주기 변경, 임계치 저장은 누른 카드만 갈아 끼운다. 스케줄러 잡도 같은 요청에서 맞춰진다.</p>
   <p>여기에 올리는 것은 <a class="font-medium underline" href="/tests">테스트 실행</a> 화면의 승격이다.</p>
   <div id="workflow-list" hx-get="/ui/workflows" hx-trigger="load" hx-swap="innerHTML">
-    <p>목록을 불러오는 중</p>
+    {{ empty("목록을 불러오는 중") }}
   </div>
 </section>
 {% endblock %}

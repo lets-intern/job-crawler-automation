@@ -59,7 +59,7 @@
            결과 영역에 그대로 들어온다 (`app/api/crawlers.py`) #}
         <button type="button"
                 hx-delete="/ui/crawlers/{{ crawler.id }}"
-                hx-confirm="크롤러 {{ crawler.id }}({{ crawler.name }}) 를 지운다. 되돌릴 수 없다."
+                hx-confirm="크롤러 {{ crawler.id }}({{ crawler.name }}) 를 지운다. 되돌릴 수 없다. 계속할까"
                 hx-target="#crawler-result"
                 hx-swap="innerHTML"
                 hx-disabled-elt="this"

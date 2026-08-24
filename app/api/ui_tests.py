@@ -8,6 +8,9 @@
 운영자가 이 화면을 여는 이유는 "어느 필드가 왜 비었나" 하나다. 그래서 실행 요약보다 필드별
 표가 먼저 온다. 실패한 필드에는 사유를 같이 적는다.
 
+판정 낱말은 셋이다 — `성공`, `실패`, `건너뜀`. 판정하지 않은 필드를 셀렉터 생성 화면은
+`건너뜀`, 이 화면은 `해당 없음` 이라고 적던 것을 `건너뜀` 하나로 맞췄다 (Push 28).
+
 | 화면에 적는 사유 | 판정 근거 |
 |---|---|
 | `셀렉터 없음` | 셀렉터가 빈 문자열이다. 사이트에 그 항목이 없다는 뜻이라 실패가 아니다 |
@@ -119,13 +122,13 @@ def _field_report(items: list[Any], selectors: Any) -> list[dict[str, Any]]:
         filled = sum(1 for item in counted if item.fields.get(key, "").strip())
 
         if detail_skipped and path.startswith("detail."):
-            state = "해당 없음"
+            state = "건너뜀"
             reason = "상세 페이지를 따라가지 않는 사이트다. 상세 셀렉터는 쓰이지 않는다"
             if filled:
                 # 실행이 목록에서 읽은 값을 이 자리에 넣었다 (`app/crawler/runner.py`)
                 reason = "상세 페이지를 따라가지 않는 사이트다. 이 값은 목록에서 읽은 것이다"
         elif not selector:
-            state, reason = "해당 없음", "셀렉터 없음 (사이트에 그 항목이 없다)"
+            state, reason = "건너뜀", "셀렉터 없음 (사이트에 그 항목이 없다)"
         elif total == 0:
             state, reason = "실패", "판정할 항목이 없다"
         elif filled == 0:
@@ -245,7 +248,7 @@ async def test_run_fragment(
 
 
 def failed_fields_of(report: list[dict[str, Any]]) -> list[str]:
-    """필드별 판정에서 실패로 적힌 이름. 건너뜀(`해당 없음`)은 실패가 아니라 빠진다."""
+    """필드별 판정에서 실패로 적힌 이름. `건너뜀` 은 실패가 아니라 빠진다."""
     return [row["path"] for row in report if row["state"] == "실패"]
 
 
