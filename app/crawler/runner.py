@@ -6,6 +6,9 @@
 흐름은 목록 파싱 → 신규 판정 → 신규 건만 상세 → `raw_jobs` append → 정규화다
 (`.claude/docs/architecture.md` 실행 흐름).
 
+마감이 지난 공고와 이미 아는 공고는 상세를 열지 않고 건너뛴다. 건너뛴 수는 `skipped_count` 로
+따로 세고 `fail_count` 와 섞지 않는다 — 건너뜀은 정상이고 실패는 고칠 것이다.
+
 정규화는 적재한 건에 대해서만 돌고, 실패해도 실행을 죽이지 않는다. 규칙이 틀렸다고 수집한
 공고를 버리면 규칙을 고쳐도 되살릴 원본이 없다. 실패한 건은 `raw_jobs` 에 그대로 남고
 `fail_count` 로 세어져, 규칙을 고친 뒤 재정규화로 복구된다.
@@ -36,6 +39,7 @@ from dataclasses import dataclass, field
 
 from app.config import get_settings
 from app.crawler.collect import API, Collectors, html_collectors, open_collectors
+from app.crawler.deadline import is_closed
 from app.crawler.failures import (
     FAILED,
     LIST_EMPTY,
@@ -392,7 +396,17 @@ async def _crawl(
             )
         )
 
+    # 목록에서 읽은 날짜를 마감일로 볼 수 있는 크롤러인지 먼저 정한다. 항목마다 다시 볼
+    # 값이 아니라 이 크롤러의 설정이다
+    list_date_is_deadline = _list_date_is_deadline(target.selectors, collectors)
+
     for item in parsed.items[:limit]:
+        if list_date_is_deadline and is_closed(item.date, rules):
+            # 마감이 지난 공고다. 상세를 열지 않고 넘긴다 — 실패가 아니라 건너뜀이다.
+            # 읽지 못한 날짜는 진행 중으로 본다 (`app/crawler/deadline.py`)
+            result.skipped_count += 1
+            continue
+
         try:
             collected = await _collect(conn, target, item, collectors)
         except Exception as exc:
@@ -414,6 +428,22 @@ async def _crawl(
         if collected.state == STORED:
             result.new_count += 1
             _normalize(conn, collected, rules, rules_error, result)
+
+
+def _list_date_is_deadline(selectors: SelectorSet, collectors: Collectors) -> bool:
+    """목록에서 읽은 날짜가 그대로 마감일이 되는 크롤러인가.
+
+    `_record()` 는 상세의 마감일이 비어 있을 때만 목록 날짜를 마감일로 쓴다. `list.date` 는
+    사이트가 목록에 적어 둔 날짜일 뿐이고, 그것이 마감일인지 게시일인지는 사이트마다 다르다.
+    상세가 마감일을 주는 크롤러에서 목록 날짜를 마감으로 읽으면 어제 올라온 새 공고를 지난
+    공고로 버리게 된다.
+
+    상세가 API 면 응답이 마감일을 주는지 여기서 알 수 없다. 모르는 쪽은 열어 본다 — 건너뛰어
+    잃는 것이 열어서 드는 요청 하나보다 크다.
+    """
+    if collectors.detail_mode == API:
+        return False
+    return not selectors.detail.deadline.strip()
 
 
 async def _collect(
@@ -610,7 +640,9 @@ def _finish_run(
     실행 기록과 실패 목록은 한 트랜잭션으로 쓴다. 갈라지면 `fail_count` 는 3인데 어느 공고였는지
     아무 데도 없는 행이 남고, 그 실행은 건수만 알고 고칠 수는 없는 기록이 된다.
     """
-    result.status = run_status(result.success_count, failure, timed_out=timed_out)
+    result.status = run_status(
+        result.success_count, failure, timed_out=timed_out, skipped_count=result.skipped_count
+    )
     if failure is not None:
         result.error_class = failure.error_class
         result.error_message = failure.message

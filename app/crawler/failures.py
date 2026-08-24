@@ -82,14 +82,23 @@ def classify(exc: BaseException) -> Failure:
     return Failure(error_class=None, message=f"분류되지 않은 실패({type(exc).__name__}): {exc}")
 
 
-def run_status(success_count: int, failure: Failure | None = None, timed_out: bool = False) -> str:
-    """실행 하나의 종료 상태. 실패가 있거나 정상 파싱이 0건이면 `failed` 다.
+def run_status(
+    success_count: int,
+    failure: Failure | None = None,
+    timed_out: bool = False,
+    skipped_count: int = 0,
+) -> str:
+    """실행 하나의 종료 상태. 실패가 있거나 처리한 항목이 0건이면 `failed` 다.
 
     시간 제한에 걸린 실행은 `failed` 가 아니라 `timeout` 이다. 둘을 합치면 "셀렉터가 깨졌다" 와
     "사이트가 느리다" 가 같은 값으로 남아 조치가 갈리지 않는다.
+
+    건너뛴 항목도 처리한 항목이다. 목록을 정상으로 읽었고 마감됐거나 이미 아는 공고여서 상세를
+    열지 않았을 뿐이라, 전부 건너뛴 실행은 실패가 아니다. 그것까지 실패로 세면 마감이 지난
+    공고만 남은 사이트가 매번 실패로 남고 자동 중지에 걸린다.
     """
     if timed_out:
         return TIMEOUT
-    if failure is not None or success_count == 0:
+    if failure is not None or (success_count == 0 and skipped_count == 0):
         return FAILED
     return SUCCESS
