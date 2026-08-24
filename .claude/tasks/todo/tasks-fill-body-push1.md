@@ -50,13 +50,13 @@ crawlers:   id, name, list_url, detail_url, selectors_json, status, created_at,
         - 되돌리는 법을 파일 주석에 적는다
         - [x] 1.1.V 검증: 마이그레이션 적용·역적용 확인. 적용 후 기존 `crawl_runs` 행이 그대로
               남고 새 열이 0 인지 pytest 로 확인
-    - [ ] 1.2 마이그레이션 0010: `crawl_run_failures` 표를 만든다
+    - [x] 1.2 마이그레이션 0010: `crawl_run_failures` 표를 만든다
         - 열: `id`, `run_id`(`crawl_runs(id)` 를 가리킨다), `reason`, `title`, `source_url`, `message`,
           `created_at`
         - `run_id` 에 인덱스를 건다. 실행 하나의 실패를 모아 보는 것이 유일한 조회 방식이다
         - **`raw_jobs` 가 아니다.** 여기 들어간 것은 수집 데이터가 아니라 실행 기록이다
         - 보관: 실행 기록이 지워지면 같이 지워진다. `ON DELETE CASCADE` 를 건다
-        - [ ] 1.2.V 검증: 마이그레이션 적용·역적용 확인. 행을 넣고 `crawl_runs` 행을 지우면
+        - [x] 1.2.V 검증: 마이그레이션 적용·역적용 확인. 행을 넣고 `crawl_runs` 행을 지우면
               같이 지워지는지 pytest 로 확인
     - [ ] 1.3 실패 종류를 넓힌다
         - `app/crawler/failures.py` 의 `ERROR_CLASSES` 에 넷을 더한다

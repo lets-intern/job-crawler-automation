@@ -84,6 +84,27 @@ SQLite 파일 하나. 경로는 `DATABASE_PATH` 가 정하고 Docker named volum
 `error_class` 가 세 가지로 나뉘어 있는 이유는 조치가 각각 다르기 때문이다.
 `transport` 만 재시도 대상이다. `.claude/rules/crawling.md` 참조.
 
+### crawl_run_failures
+
+실행 하나가 놓친 공고를 한 줄씩 남긴다. **수집 데이터가 아니라 실행 기록이다** — `raw_jobs` 와
+성격이 다르다.
+
+| 컬럼 | 설명 |
+|---|---|
+| id | |
+| run_id | 어느 실행이 놓쳤는지. `crawl_runs(id)`, `ON DELETE CASCADE` |
+| reason | `crawl_runs.error_class` 와 같은 값. 분류하지 못한 실패는 NULL |
+| title | 목록에서 읽은 제목 |
+| source_url | 목록에서 읽은 주소 |
+| message | 실패 내용 |
+| created_at | |
+
+건수만으로는 고칠 수 없어서 제목과 목록에서 읽은 주소까지 남긴다. 조회는 실행 하나의 실패를
+모아 보는 것 하나뿐이라 `run_id` 에만 인덱스(`idx_crawl_run_failures_run_id`)를 건다.
+
+보관 기한을 따로 두지 않는다. 실행 기록이 지워지면 같이 지워진다. 실패 목록은 그 실행을
+설명하는 것이지 혼자 남아 뜻이 있는 기록이 아니다.
+
 ### raw_jobs
 
 원본 수집 데이터. **append-only.** 정규화가 이 테이블을 고치지 않는다.
