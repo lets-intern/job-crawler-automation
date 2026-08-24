@@ -64,6 +64,55 @@ SK   content-type: application/x-www-form-urlencoded
   제한이 명시되지 않은 것이지 넉넉히 다녀도 된다는 뜻이 아니다. 딜레이를 그대로 지킨다
 - 나머지는 등록할 때 공용 fetch 클라이언트가 호스트별로 확인한다
 
+## 2026-08-25 추가 측정 — 이미 확인된 것 (다시 재지 마세요)
+
+### 총 건수와 페이지네이션
+
+| 사이트 | 지금 수집 | API 총 건수 | 페이지 |
+|---|---|---|---|
+| LG | 88 | **88** (`data.listCount`) | 한 번에 전부 |
+| 한화 | 미등록 | **68** (`data.totalCount`) | **20건씩 4쪽** |
+| 삼성 | 3 | **16** (`divCnt data-max="2"`) | **2쪽 (9 + 7)** |
+| SK | 20 | **104** (`totalCount`) | 한 번에 전부 |
+| 현대 | 20 | 20 (`data.applyList`) | 확인 못 함 |
+| 롯데 | 8 | 8 | 정적 한 장 |
+
+**한화와 삼성은 페이지를 넘겨야 한다.**
+
+한화는 본문에 `page` 를 더한다. `page=0,1,2,3` 에서 각각 20/20/20/8건이고 `hasNext` 가
+마지막에 `false` 가 된다. `totalCount` 는 첫 쪽에만 온다.
+
+```
+{"langCd":"ko","searchText":"","sdSeqList":null,"rtNrcrtYn":"","rtCarrYn":"","page":0}
+```
+
+삼성은 `currentPageNo` 를 올린다. 1쪽 9건, 2쪽 7건. 총 수와 쪽 수는 응답 안의
+`<input class="divCnt" data-value="16" data-max="2">` 에 있다.
+
+### 현대 목록 API 는 헤더가 필요하다
+
+헤더 없이 부르면 **400** 이 온다. 이 두 개를 넣으면 200 이고 58,300바이트다.
+
+```
+GET https://talent.hyundai.com/api/rec/AP-HM-FO-02730?hgrCd=1&lang=ko&secCode=&jdRecuCate=01&secLoad=Y
+  accept: application/json, text/plain, */*
+  referer: https://talent.hyundai.com/theme/hall.hc
+  x-hkmc-service: HM
+  x-hkmc-token: null
+```
+
+공고는 `data.applyList` 20건이다. 쿠키는 필요 없다(쿠키 없이 200 을 받았다).
+`api/rec/AP-HM-FO-02720` 은 `themaInfo` 만 주므로 목록이 아니다.
+
+**`x-hkmc-service` 같은 사이트 전용 헤더를 API 설정에 담을 수 있어야 한다.**
+`app/selector/api_schema.py` 의 `ApiListConfig`·`ApiDetailConfig` 에 헤더 자리가 없으면 더한다.
+이것이 4.2 의 실제 작업이다.
+
+### 예상 수집량
+
+여섯 사이트 합계 약 **304건**이다 (지금 233건). 상세 요청이 300번 넘고 호스트별 딜레이가
+붙으므로 **한 워크플로우가 30분 안에 끝나는지 확인해야 한다.** SK 104건이 가장 오래 걸린다.
+
 ## 관련 파일
 
 - `app/selector/api_schema.py:85` - `ApiListConfig` / `ApiDetailConfig` 형식
@@ -86,18 +135,21 @@ SK   content-type: application/x-www-form-urlencoded
           것인지가 유일한 단서다
         - **실사이트 요청은 여기서 한 번씩만 한다.** 이후 작업은 전부 이 픽스처로 한다
         - [ ] 4.1.V 검증: 픽스처마다 항목 수와 필수 키가 있는지 pytest 로 확인
-    - [ ] 4.2 현대 목록 API 의 파라미터를 확인한다
-        - 엔드포인트는 `GET https://talent.hyundai.com/api/rec/AP-HM-FO-02730` 이다.
-          `hgrCd=1&lang=ko&secCode=&jdR...` 까지만 관측됐고 전체 형식은 확인하지 않았다
-        - 렌더하면서 나가는 요청을 관찰해 전체 주소를 얻고 `httpx` 로 재현한다
-        - 재현되지 않으면 현대는 목록을 렌더로 두고 상세는 항목 속성으로 간다. 그것도 된다
-        - [ ] 4.2.V 검증: `httpx` 로 호출해 렌더된 목록과 같은 건수가 나오는지
-    - [ ] 4.3 목록 API 가 첫 장만 주는지 확인한다
-        - SK 는 렌더된 화면에 20건이었는데 API 는 104건을 준다. 다른 곳도 같을 수 있다
-        - LG 88, 한화 20, 삼성 9 가 전체인지 첫 장인지 본다. 페이지 파라미터가 있으면 끝까지
-          받는다
-        - **한 번에 다 받는 것과 나눠 받는 것 중 사이트에 가벼운 쪽을 고른다**
-        - [ ] 4.3.V 검증: 사이트별 총 건수를 표로 남기고 렌더된 화면의 건수와 비교
+    - [ ] 4.2 API 설정에 헤더 자리를 만든다
+        - 현대는 `x-hkmc-service: HM` 헤더가 없으면 400 이다. 위 측정에 전체 주소와 헤더가 있다
+        - `app/selector/api_schema.py` 의 `ApiListConfig`·`ApiDetailConfig` 에 헤더를 담는
+          자리를 더하고 `app/crawler/api_source.py:189` 의 `_fetch_json()` 이 그것을 보낸다
+        - **브라우저 위장은 하지 않는다.** User-Agent 는 공용 fetch 클라이언트 것을 그대로 쓰고,
+          사이트가 요구하는 기능성 헤더만 담는다 (`.claude/rules/crawling.md`)
+        - [ ] 4.2.V 검증: 픽스처 기반 pytest — 설정에 담은 헤더가 요청에 실려 나가는지.
+              실사이트 확인은 4.4 에서 한 번에 한다
+    - [ ] 4.3 페이지를 끝까지 받는다
+        - 한화(68건, 20씩 4쪽)와 삼성(16건, 2쪽)이 대상이다. 위 측정에 파라미터가 있다
+        - 마지막 쪽인지 판정하는 법이 사이트마다 다르다 — 한화는 `hasNext`, 삼성은
+          `divCnt data-max`. 둘 다 담을 수 있게 만든다
+        - **쪽 사이에도 호스트 딜레이를 지킨다.** 페이지를 연달아 때리지 않는다
+        - 무한 반복을 막는 상한을 둔다. `hasNext` 가 끝나지 않는 응답에 걸리면 안 된다
+        - [ ] 4.3.V 검증: 저장한 쪽별 픽스처로 한화 68건, 삼성 16건이 모이는지 pytest
     - [ ] 4.4 여섯 크롤러를 새 경로로 등록한다
         - 기존 크롤러는 셀렉터 중심이라 구성이 다르다. 지우고 다시 만든다
         - 각 크롤러에 목록 API 설정과 상세 경로(API 또는 링크 또는 항목 속성)를 넣는다
