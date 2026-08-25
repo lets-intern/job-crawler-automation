@@ -1,5 +1,11 @@
-{# 등록된 크롤러 표. 페이지 로드 때 한 번, 등록·저장 뒤 OOB 로 다시 들어온다 #}
-{% from "macros.html" import badge, empty_row, wait %}
+{# 등록된 크롤러 표. 페이지 로드 때 한 번, 등록·저장 뒤 OOB 로 다시 들어온다.
+
+   경로 열은 이 크롤러가 어떤 방식으로 도는지를 낱말로 적는다. 낱말 옆의 작은 글씨는 저장값과
+   실제 엔드포인트·주소 형식이다 — 낱말만 있으면 같은 낱말을 단 두 크롤러가 서로 다른 곳을
+   부르는 것을 화면에서 알 수 없다 (`app/api/ui.py` 의 `describe_path`).
+
+   경로는 운영자가 정한다. 여기서 저장한 값을 등록할 때의 자동 판정이 다시 덮어쓰지 않는다 #}
+{% from "macros.html" import badge, blank, empty_row, wait %}
 <div class="table-scroll">
 <table class="data-table">
   <caption>등록된 크롤러</caption>
@@ -8,7 +14,7 @@
       <th scope="col" class="num">번호</th>
       <th scope="col">이름</th>
       <th scope="col">상태</th>
-      <th scope="col">렌더</th>
+      <th scope="col">경로</th>
       <th scope="col">회사명</th>
       <th scope="col">리스트 URL</th>
       <th scope="col">동작</th>
@@ -25,22 +31,40 @@
         {% else %}{{ badge("초안") }}{% endif %}
         <span class="text-xs text-slate-500">({{ crawler.status }})</span>
       </td>
-      <td>
-        {# 테스트 실행 화면의 `저장 모드` 열과 같은 말로 적는다. 한쪽만 `playwright` 로
-           적으면 같은 값이 화면마다 다른 것으로 읽힌다 #}
-        <span class="font-medium">{{ mode_word(crawler.list_mode) }}</span>
-        <span class="text-xs text-slate-500">({{ crawler.list_mode }})</span>
-        {# 승격은 운영자가 정한다. 자동으로 렌더로 올라가는 경로는 없다.
-           이 행의 주된 동작은 셀렉터 편집이다. 모드 토글은 보통 무게로 둔다 #}
-        <form hx-put="/ui/crawlers/{{ crawler.id }}/render-mode"
+      <td class="cell-text">
+        <p class="my-0">목록: <span class="font-medium">{{ crawler.path.list_word }}</span>
+          <span class="text-xs text-slate-500">({{ crawler.path.list_mode }})</span></p>
+        <p class="my-0 break-all text-xs text-slate-600">{{ crawler.path.list_note }}</p>
+        <p class="my-0 mt-1">상세: <span class="font-medium">{{ crawler.path.detail_word }}</span>
+          <span class="text-xs text-slate-500">({{ crawler.path.detail_mode }})</span></p>
+        <p class="my-0 break-all text-xs text-slate-600">{{ crawler.path.detail_note }}</p>
+        {# 시각은 `as_time` 을 반드시 지난다. 안 지나면 UTC 가 그대로 나온다 (`app/api/ui.py`) #}
+        <p class="my-0 mt-1 text-xs text-slate-600">마지막 확인:
+          {% if crawler.path.checked_at %}{{ crawler.path.checked_at | as_time }}{% else %}{{ blank("확인한 실행 없음") }}{% endif %}
+        </p>
+        <p class="my-0 text-xs text-slate-500">{{ crawler.path.checked_note }}</p>
+        {# 목록과 상세를 따로 고른다. 한 값으로 함께 옮기던 옛 토글은 `api` 로 도는 크롤러를
+           조용히 정적으로 내려앉혔다 (`app/api/crawlers.py` 의 `update_collect_modes`) #}
+        <form class="mt-1" hx-put="/ui/crawlers/{{ crawler.id }}/collect-modes"
               hx-target="#crawler-result"
               hx-swap="innerHTML"
               hx-disabled-elt="find button"
               hx-indicator="closest form, #crawler-result-wait">
-          <input type="hidden" name="render_mode"
-                 value="{% if crawler.list_mode == 'playwright' %}static{% else %}playwright{% endif %}">
-          <button type="submit" class="btn-quiet">{% if crawler.list_mode == 'playwright' %}정적으로{% else %}렌더로{% endif %}</button>
-          {{ wait("바꾸는 중") }}
+          <label for="list-mode-{{ crawler.id }}" class="block text-xs text-slate-600">목록을 얻는 법</label>
+          <select id="list-mode-{{ crawler.id }}" name="list_mode" class="mt-0">
+            <option value="static" {% if crawler.list_mode == 'static' %}selected{% endif %}>정적 목록</option>
+            <option value="api" {% if crawler.list_mode == 'api' %}selected{% endif %}>목록 API</option>
+            <option value="playwright" {% if crawler.list_mode == 'playwright' %}selected{% endif %}>목록 렌더</option>
+          </select>
+          <label for="detail-mode-{{ crawler.id }}" class="mt-1 block text-xs text-slate-600">상세를 얻는 법</label>
+          <select id="detail-mode-{{ crawler.id }}" name="detail_mode" class="mt-0">
+            <option value="static" {% if crawler.detail_mode == 'static' %}selected{% endif %}>문서를 정적으로</option>
+            <option value="api" {% if crawler.detail_mode == 'api' %}selected{% endif %}>상세 API</option>
+            <option value="playwright" {% if crawler.detail_mode == 'playwright' %}selected{% endif %}>문서를 렌더로</option>
+          </select>
+          <br>
+          <button type="submit" class="btn-quiet">경로 저장</button>
+          {{ wait("경로를 저장하는 중") }}
         </form>
       </td>
       <td>{{ crawler.default_company or "안 적음" }}</td>

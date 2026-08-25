@@ -18,18 +18,35 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from dataclasses import asdict
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 from app.api import crawlers
-from app.api.ui import render
+from app.api.ui import describe_path, render
+
+# 마지막으로 성공한 실행이 언제 끝났는가. 테스트 실행은 `crawl_runs.crawler_id`, 주기·수동
+# 실행은 워크플로우를 거쳐 크롤러에 붙는다. 실패로 끝난 실행은 경로를 확인해 주지 않으므로
+# 세지 않는다 — 여기 적히는 시각은 "그때는 이 경로로 실제로 가져왔다" 는 뜻이다
+_CHECKED_AT = """
+    (SELECT r.finished_at
+       FROM crawl_runs r
+       LEFT JOIN workflows w ON w.id = r.workflow_id
+      WHERE r.status = 'success'
+        AND COALESCE(w.crawler_id, r.crawler_id) = c.id
+      ORDER BY r.id DESC LIMIT 1)
+"""
 
 _LIST_QUERY = (
-    "SELECT id, name, status, list_url, detail_url, default_company, "
-    "list_mode, detail_mode "
-    "FROM crawlers ORDER BY id DESC"
+    "SELECT c.id AS id, c.name AS name, c.status AS status, c.list_url AS list_url, "
+    "c.detail_url AS detail_url, c.default_company AS default_company, "
+    "c.list_mode AS list_mode, c.detail_mode AS detail_mode, "
+    "c.api_config_json AS api_config_json, c.selectors_json AS selectors_json, "
+    "c.created_at AS created_at, "
+    f"{_CHECKED_AT} AS checked_at "
+    "FROM crawlers c ORDER BY c.id DESC"
 )
 
 router = APIRouter(tags=["ui"], include_in_schema=False)
@@ -46,9 +63,34 @@ def error_detail(exc: HTTPException) -> dict[str, str]:
     return {"reason": str(exc.status_code), "message": str(detail)}
 
 
-def crawler_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    """등록된 크롤러 전부. 테스트 실행 화면도 같은 목록을 쓴다."""
-    return list(conn.execute(_LIST_QUERY).fetchall())
+def crawler_rows(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """등록된 크롤러 전부. 테스트 실행 화면도 같은 목록을 쓴다.
+
+    행마다 `path` 가 붙는다. 어떤 방식으로 도는지를 낱말로 옮긴 것이고, 판정은 여기서 끝난다 —
+    템플릿은 낱말을 그리기만 한다 (`.claude/agents/ui-worker.md`).
+    """
+    return [_with_path(row) for row in conn.execute(_LIST_QUERY).fetchall()]
+
+
+def _with_path(row: sqlite3.Row) -> dict[str, Any]:
+    """크롤러 한 행 + 경로 낱말. 화면이 읽는 값은 전부 이 딕셔너리 안에 있다."""
+    checked_at = str(row["checked_at"] or "")
+    return {
+        **{key: row[key] for key in row.keys()},
+        "path": describe_path(
+            list_mode=str(row["list_mode"]),
+            detail_mode=str(row["detail_mode"]),
+            list_url=str(row["list_url"] or ""),
+            api_config_json=row["api_config_json"],
+            selectors_json=row["selectors_json"],
+            checked_at=checked_at,
+            checked_note=(
+                "성공한 실행이 마지막으로 이 경로로 가져온 때다"
+                if checked_at
+                else "성공한 실행이 아직 없다. 테스트 실행으로 확인한다"
+            ),
+        ),
+    }
 
 
 def pretty_selectors(selectors_json: str) -> str:
@@ -74,6 +116,7 @@ def _result(
     error: dict[str, str] | None = None,
     generation: dict[str, Any] | None = None,
     repair: dict[str, Any] | None = None,
+    path: dict[str, Any] | None = None,
 ) -> HTMLResponse:
     """결과 영역 하나를 렌더한다. `conn` 을 주면 크롤러 목록도 함께 갱신한다(OOB)."""
     return render(
@@ -86,8 +129,35 @@ def _result(
         error=error,
         generation=generation,
         repair=repair,
+        path=path,
         crawlers=crawler_rows(conn) if conn is not None else None,
     )
+
+
+def _path_panel(conn: sqlite3.Connection, created: crawlers.CrawlerOut) -> dict[str, Any]:
+    """등록할 때 정해진 경로와 그 근거. 낱말은 표와 같은 함수가 만든다.
+
+    저장된 행을 다시 읽는 이유는 알아낸 상세 API 설정이 그 행에만 있기 때문이다. 응답의 모드만
+    보고 적으면 `상세 API` 라고 써 놓고 어느 엔드포인트인지는 말하지 못한다.
+    """
+    row = conn.execute(
+        "SELECT list_url, api_config_json, selectors_json FROM crawlers WHERE id = ?",
+        (created.id,),
+    ).fetchone()
+    view = describe_path(
+        list_mode=created.list_mode,
+        detail_mode=created.detail_mode,
+        list_url=str(row["list_url"]) if row is not None else "",
+        api_config_json=row["api_config_json"] if row is not None else None,
+        selectors_json=row["selectors_json"] if row is not None else None,
+    )
+    return {
+        **asdict(view),
+        # 무엇을 보고 그렇게 정했는지. 판정만 남기면 다음 사람이 처음부터 다시 잰다
+        "evidence": created.path_evidence,
+        "reason": created.path_reason,
+        "failure": created.path_failure,
+    }
 
 
 def _created_notice(created: crawlers.CrawlerOut) -> str:
@@ -114,6 +184,7 @@ async def create_crawler_fragment(
     list_url: Annotated[str, Form()],
     conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
     generate: Annotated[crawlers.GenerateFn, Depends(crawlers.get_generator)],
+    discover: Annotated[crawlers.DiscoverFn, Depends(crawlers.get_discoverer)],
     detail_url: Annotated[str, Form()] = "",
     name: Annotated[str, Form()] = "",
     default_company: Annotated[str, Form()] = "",
@@ -138,7 +209,7 @@ async def create_crawler_fragment(
         render_mode=render_mode,
     )
     try:
-        created = await crawlers.create_crawler(payload, conn, generate)
+        created = await crawlers.create_crawler(payload, conn, generate, discover)
     except HTTPException as exc:
         return _result(request, error=error_detail(exc))
 
@@ -149,6 +220,7 @@ async def create_crawler_fragment(
         status=created.status,
         selectors_json=json.dumps(created.selectors.model_dump(), ensure_ascii=False, indent=2),
         notice=_created_notice(created),
+        path=_path_panel(conn, created),
         generation={
             "matches": created.matches,
             "failed_fields": created.failed_fields,
@@ -242,31 +314,42 @@ def _repair_notice(result: crawlers.RepairOut) -> str:
     return " ".join(parts)
 
 
-@router.put("/ui/crawlers/{crawler_id}/render-mode", response_class=HTMLResponse)
-def switch_render_mode_fragment(
+@router.put("/ui/crawlers/{crawler_id}/collect-modes", response_class=HTMLResponse)
+def switch_collect_modes_fragment(
     request: Request,
     crawler_id: int,
-    render_mode: Annotated[str, Form()],
+    list_mode: Annotated[str, Form()],
+    detail_mode: Annotated[str, Form()],
     conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
 ) -> HTMLResponse:
-    """정적과 렌더 사이를 옮긴다. 표의 버튼 하나가 이 경로를 부른다.
+    """표에서 고른 경로를 저장한다. 목록과 상세를 따로 정한다.
 
-    셀렉터는 그대로 둔다. 렌더된 DOM 이 정적 HTML 과 다를 수 있어서, 올린 뒤에는 테스트
-    실행으로 다시 확인해야 한다.
+    운영자가 정한 값이다. 등록할 때의 자동 판정은 그 행을 만들 때 한 번 쓰이고, 저장된 뒤에
+    다시 덮어쓰는 경로는 없다 (`app/api/crawlers.py` 의 `update_collect_modes`).
     """
     try:
-        saved = crawlers.update_render_mode(
-            crawler_id, crawlers.RenderModeUpdate(render_mode=render_mode), conn
+        saved = crawlers.update_collect_modes(
+            crawler_id,
+            crawlers.CollectModesUpdate(list_mode=list_mode, detail_mode=detail_mode),
+            conn,
         )
     except HTTPException as exc:
-        return _result(request, error=error_detail(exc))
+        return _result(request, conn=conn, error=error_detail(exc))
 
+    # 낱말은 저장된 행 전체를 보고 정해진다. 모드 두 값만 보면 상세로 가는 법이 링크인지
+    # 항목 속성인지 알 수 없어 `알 수 없음` 이 찍힌다
+    rows = [row for row in crawler_rows(conn) if row["id"] == saved.id]
+    view = (
+        rows[0]["path"]
+        if rows
+        else describe_path(list_mode=saved.list_mode, detail_mode=saved.detail_mode)
+    )
     return _result(
         request,
         conn=conn,
         notice=(
-            f"크롤러 {saved.id} 를 {saved.render_mode} 모드로 바꿨다. "
-            "셀렉터가 그 모드에서도 맞는지 테스트 실행으로 확인한다."
+            f"크롤러 {saved.id} 의 경로를 {view.list_word} / {view.detail_word} 로 저장했다. "
+            "그 경로로 실제로 가져와지는지 테스트 실행으로 확인한다."
         ),
     )
 

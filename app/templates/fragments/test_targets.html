@@ -1,9 +1,8 @@
 {# 실행 대상 목록. 실행 뒤에는 크롤러 상태(draft -> tested)가 바뀌므로 OOB 로 다시 들어온다.
 
-   모드는 두 자리로 갈린다. "저장 모드" 열은 `crawlers.list_mode` 와 `detail_mode` 를 함께
-   바꾸고, 실행 폼의
-   "가져오는 방식" 은 이번 실행 한 번만 다른 경로로 돈다. 비교가 이 화면의 일이라 시험할
-   때마다 저장값이 따라 바뀌면 안 된다 (`app/api/ui_tests.py`).
+   모드는 두 자리로 갈린다. "경로" 열은 저장된 `crawlers.list_mode` 와 `detail_mode` 를 낱말로
+   적고, 실행 폼의 "가져오는 방식" 은 이번 실행 한 번만 다른 경로로 돈다. 비교가 이 화면의
+   일이라 시험할 때마다 저장값이 따라 바뀌면 안 된다 (`app/api/ui_tests.py`).
 
    승격 줄은 테스트를 통과한 크롤러 바로 아래에 붙는다. 실행 결과가 이 표를 다시 들여보내므로,
    방금 `tested` 가 된 크롤러의 승격 수단이 실행 직후 같은 화면에 나타난다
@@ -19,7 +18,7 @@
       <th scope="col" class="num">번호</th>
       <th scope="col">이름</th>
       <th scope="col">상태</th>
-      <th scope="col">저장 모드</th>
+      <th scope="col">경로</th>
       <th scope="col">리스트 URL</th>
       <th scope="col">동작</th>
     </tr>
@@ -35,11 +34,21 @@
         {% else %}{{ badge("초안") }}{% endif %}
         <span class="text-xs text-slate-500">({{ crawler.status }})</span>
       </td>
-      <td>
-        {# 워크플로우 실행이 읽는 값이다. 여기서 바꾸면 다음 주기부터 그 경로로 돈다 #}
-        <span class="font-medium">{{ mode_word(crawler.list_mode) }}</span>
-        <span class="text-xs text-slate-500">({{ crawler.list_mode }})</span>
-        <form hx-put="/ui/test-targets/{{ crawler.id }}/render-mode"
+      <td class="cell-text">
+        {# 워크플로우 실행이 읽는 값이다. 크롤러 등록 화면과 같은 낱말로 적는다
+           (`app/api/ui.py` 의 `describe_path`) #}
+        <p class="my-0">목록: <span class="font-medium">{{ crawler.path.list_word }}</span>
+          <span class="text-xs text-slate-500">({{ crawler.path.list_mode }})</span></p>
+        <p class="my-0">상세: <span class="font-medium">{{ crawler.path.detail_word }}</span>
+          <span class="text-xs text-slate-500">({{ crawler.path.detail_mode }})</span></p>
+        {% if crawler.list_mode == 'api' or crawler.detail_mode == 'api' %}
+        {# 이 토글은 목록과 상세를 정적·렌더 한 값으로 함께 옮긴다. API 로 도는 크롤러에 쓰면
+           알아낸 API 경로가 조용히 내려앉으므로 여기서는 내밀지 않는다. 목록과 상세를 따로
+           고르는 자리는 크롤러 등록 화면이다 #}
+        <p class="my-0 mt-1 text-xs text-slate-600">경로는
+          <a class="font-medium underline" href="/">크롤러 등록</a> 화면에서 바꾼다</p>
+        {% else %}
+        <form class="mt-1" hx-put="/ui/test-targets/{{ crawler.id }}/render-mode"
               hx-target="#test-targets"
               hx-swap="innerHTML"
               hx-disabled-elt="find button"
@@ -49,6 +58,7 @@
           <button type="submit" class="btn-quiet">{% if crawler.list_mode == 'playwright' %}정적으로 저장{% else %}렌더로 저장{% endif %}</button>
           {{ wait("바꾸는 중") }}
         </form>
+        {% endif %}
       </td>
       <td class="cell-url">
         <span class="cell-url-value" title="{{ crawler.list_url }}">{{ crawler.list_url }}</span>

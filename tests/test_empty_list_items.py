@@ -24,8 +24,10 @@ from fastapi.testclient import TestClient
 from app import db
 from app.api import crawlers as crawlers_api
 from app.main import app
+from app.selector.detail_path import document_path
+from app.selector.discovery import Discovery
 from app.selector.generator import GenerationResult, Usage
-from app.selector.schema import validate_selectors
+from app.selector.schema import SelectorSet, validate_selectors
 from app.selector.verify import verify_selectors
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
@@ -120,6 +122,7 @@ def use_generator(payload: dict[str, Any], list_html: str) -> None:
         return result
 
     app.dependency_overrides[crawlers_api.get_generator] = lambda: generate
+    stub_discoverer()
 
 
 def rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
@@ -216,3 +219,23 @@ def test_an_empty_list_is_still_the_other_failure(
     assert response.status_code == 422
     assert response.json()["detail"]["reason"] == "list_not_found"
     assert rows(conn) == []
+
+
+def stub_discoverer() -> None:
+    """경로 판정도 갈아끼운다. 기본 경로는 실사이트를 다시 가져오고 브라우저까지 연다.
+
+    등록은 셀렉터 생성 다음에 상세로 가는 길을 알아본다 (`app/api/crawlers.py` 의
+    `create_crawler`). 여기서 갈아끼우지 않으면 이 테스트가 네트워크에 매달린다
+    (`.claude/rules/core.md`).
+    """
+
+    async def discover(list_url: str, selectors: SelectorSet) -> Discovery:
+        return Discovery(
+            list_mode="static",
+            detail_mode="static",
+            detail=document_path(f"{list_url}1/", "목록 항목의 링크를 그대로 따라간다"),
+            evidence="정적 목록에서 항목과 상세 주소를 찾았다. 브라우저를 띄우지 않았다",
+            list_count=1,
+        )
+
+    app.dependency_overrides[crawlers_api.get_discoverer] = lambda: discover

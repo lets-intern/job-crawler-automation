@@ -17,7 +17,9 @@ HTMX 와 Tailwind 둘 다 CDN 에서 받는다.
 
 from __future__ import annotations
 
+import json
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime, tzinfo
 from functools import lru_cache
 from pathlib import Path
@@ -34,7 +36,10 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from app.config import get_settings
+from app.crawler.collect import API
 from app.crawler.playwright import PLAYWRIGHT, STATIC
+from app.selector.api_schema import ApiConfig, ApiConfigError, parse_api_config
+from app.selector.schema import SelectorSchemaError, SelectorSet, validate_selectors
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +155,129 @@ MODE_WORDS: dict[str, str] = {STATIC: "정적", PLAYWRIGHT: "렌더"}
 def mode_word(mode: str) -> str:
     """모드 이름 하나. 모르는 값이면 저장된 값을 그대로 보여준다."""
     return MODE_WORDS.get(mode, mode)
+
+
+# 크롤러 하나가 어떤 방식으로 도는지를 적는 낱말. 저장값(`static`/`api`/`playwright`)은 그대로
+# 두고 사람이 읽는 자리에만 이 말을 쓴다 (`.claude/tasks/todo/prd-fill-body.md` 5절).
+LIST_WORDS: dict[str, str] = {API: "목록 API", PLAYWRIGHT: "목록 렌더", STATIC: "정적 목록"}
+DETAIL_API_WORD = "상세 API"
+# 항목의 `a[href]` 를 그대로 따라간다
+DETAIL_LINK_WORD = "링크"
+# 항목의 값으로 주소를 조립한다 (`link_template` 의 `{id}` 나 `{속성이름}`)
+DETAIL_TEMPLATE_WORD = "항목 속성"
+# 목록 항목에 상세로 갈 값이 없다. 실패가 아니라 그런 크롤러라는 사실이다
+DETAIL_NONE_WORD = "상세 없음"
+UNKNOWN_PATH_WORD = "알 수 없음"
+
+
+@dataclass(frozen=True)
+class PathView:
+    """크롤러 하나가 목록과 상세를 얻는 법. 판정은 여기 오기 전에 끝나 있다.
+
+    `*_note` 는 낱말 옆에 적는 실제 값이다 — 엔드포인트, 주소 형식, 셀렉터. 낱말만 적으면
+    두 크롤러가 같은 낱말을 달고도 서로 다른 곳을 부르는 것을 화면에서 구분할 수 없다.
+
+    `checked_at` 은 저장된 UTC 문자열 그대로다. 시간대 변환은 템플릿의 `as_time` 이 한다.
+    """
+
+    list_mode: str
+    list_word: str
+    list_note: str
+    detail_mode: str
+    detail_word: str
+    detail_note: str
+    checked_at: str = ""
+    checked_note: str = ""
+
+
+def _api_endpoint(section: Any) -> str:
+    return f"{section.method} {section.url}"
+
+
+def _list_path(list_mode: str, list_url: str, config: ApiConfig | None) -> str:
+    """목록을 어디서 얻는지 한 줄. `api` 면 엔드포인트, 아니면 목록 주소다."""
+    if list_mode != API:
+        return list_url
+    if config is None or config.list is None:
+        return "목록 API 설정이 없다. 이 크롤러는 목록을 가져오지 못한다"
+    return _api_endpoint(config.list)
+
+
+def _detail_path(
+    detail_mode: str,
+    config: ApiConfig | None,
+    selectors: SelectorSet | None,
+    list_mode: str,
+) -> tuple[str, str]:
+    """상세로 가는 법. 낱말과 그 근거가 되는 실제 값을 함께 돌려준다."""
+    if detail_mode == API:
+        if config is None or config.detail is None:
+            return DETAIL_API_WORD, "상세 API 설정이 없다. 이 크롤러는 상세를 가져오지 못한다"
+        return DETAIL_API_WORD, _api_endpoint(config.detail)
+
+    # 상세가 문서다. 그 주소를 항목에서 어떻게 얻는지가 남은 갈림길이다
+    if list_mode == API:
+        if config is None or config.list is None:
+            return UNKNOWN_PATH_WORD, "목록 API 설정이 없어 상세 주소를 만들 수 없다"
+        return DETAIL_TEMPLATE_WORD, config.list.link_template
+    if selectors is None:
+        return UNKNOWN_PATH_WORD, "셀렉터를 읽지 못했다. 셀렉터 편집에서 확인한다"
+    if selectors.list.link_template.strip():
+        return DETAIL_TEMPLATE_WORD, selectors.list.link_template
+    if selectors.list.link.strip():
+        return DETAIL_LINK_WORD, f"항목의 {selectors.list.link} 가 가리키는 주소"
+    return DETAIL_NONE_WORD, "목록 항목에 상세로 갈 값이 없다. 본문은 채워지지 않는다"
+
+
+def describe_path(
+    *,
+    list_mode: str,
+    detail_mode: str,
+    list_url: str = "",
+    api_config_json: str | None = None,
+    selectors_json: str | None = None,
+    checked_at: str = "",
+    checked_note: str = "",
+) -> PathView:
+    """저장된 값 하나로 경로를 낱말로 옮긴다. 읽지 못한 설정은 그 사실을 적는다.
+
+    설정이 깨져 있어도 화면은 뜬다. 못 읽었다는 사실이 낱말 자리에 그대로 적히고, 그것이
+    "설정이 없다" 와 "화면이 안 그린다" 를 가른다.
+    """
+    try:
+        config: ApiConfig | None = parse_api_config(api_config_json)
+    except ApiConfigError as exc:
+        config = None
+        broken = f"API 설정을 읽지 못했다: {exc}"
+        return PathView(
+            list_mode=list_mode,
+            list_word=LIST_WORDS.get(list_mode, list_mode),
+            list_note=broken if list_mode == API else list_url,
+            detail_mode=detail_mode,
+            detail_word=UNKNOWN_PATH_WORD,
+            detail_note=broken,
+            checked_at=checked_at,
+            checked_note=checked_note,
+        )
+
+    selectors: SelectorSet | None = None
+    if selectors_json:
+        try:
+            selectors = validate_selectors(json.loads(selectors_json))
+        except (json.JSONDecodeError, SelectorSchemaError):
+            selectors = None
+
+    detail_word, detail_note = _detail_path(detail_mode, config, selectors, list_mode)
+    return PathView(
+        list_mode=list_mode,
+        list_word=LIST_WORDS.get(list_mode, list_mode),
+        list_note=_list_path(list_mode, list_url, config),
+        detail_mode=detail_mode,
+        detail_word=detail_word,
+        detail_note=detail_note,
+        checked_at=checked_at,
+        checked_note=checked_note,
+    )
 
 
 # 라우트가 자기 조각에 직접 렌더하는 실패에도 같은 문구가 붙게 한다

@@ -19,8 +19,10 @@ from app import db
 from app.api import crawlers as crawlers_api
 from app.crawler.fetcher import RobotsDisallowedError, TransportError
 from app.main import app
+from app.selector.detail_path import document_path
+from app.selector.discovery import Discovery
 from app.selector.generator import GenerationResult, SelectorGenerationError, Usage
-from app.selector.schema import validate_selectors
+from app.selector.schema import SelectorSet, validate_selectors
 from app.selector.verify import verify_selectors
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
@@ -121,6 +123,7 @@ def use_generator(result: Any) -> list[str]:
         return result
 
     app.dependency_overrides[crawlers_api.get_generator] = lambda: generate
+    stub_discoverer()
     return called_with
 
 
@@ -581,7 +584,12 @@ def test_registration_defaults_to_static(client: TestClient, conn: sqlite3.Conne
 def test_registration_can_start_in_render_mode(
     client: TestClient, conn: sqlite3.Connection
 ) -> None:
-    """렌더로 등록하면 셀렉터 생성도 렌더된 HTML 을 본다."""
+    """렌더로 등록하면 셀렉터 생성도 렌더된 HTML 을 본다.
+
+    저장되는 목록 모드는 운영자가 고른 그대로다. 상세 모드는 경로 판정이 정한다 — 목록이
+    렌더여야 하는 사이트도 상세 문서는 정적으로 열리는 것이 보통이고, 둘을 한 값으로 묶으면
+    실행마다 필요 없는 브라우저가 하나 뜬다 (`app/selector/discovery.py`).
+    """
     called_with = use_generator(result_for(GENERATED))
 
     response = client.post(
@@ -593,7 +601,7 @@ def test_registration_can_start_in_render_mode(
     assert called_with == ["playwright"]
     assert (rows(conn)[0]["list_mode"], rows(conn)[0]["detail_mode"]) == (
         "playwright",
-        "playwright",
+        "static",
     )
 
 
@@ -649,3 +657,23 @@ def test_switching_render_mode_on_a_missing_crawler_is_404(client: TestClient) -
     response = client.put("/api/crawlers/999/render-mode", json={"render_mode": "playwright"})
 
     assert response.status_code == 404
+
+
+def stub_discoverer() -> None:
+    """경로 판정도 갈아끼운다. 기본 경로는 실사이트를 다시 가져오고 브라우저까지 연다.
+
+    등록은 셀렉터 생성 다음에 상세로 가는 길을 알아본다 (`app/api/crawlers.py` 의
+    `create_crawler`). 여기서 갈아끼우지 않으면 이 테스트가 네트워크에 매달린다
+    (`.claude/rules/core.md`).
+    """
+
+    async def discover(list_url: str, selectors: SelectorSet) -> Discovery:
+        return Discovery(
+            list_mode="static",
+            detail_mode="static",
+            detail=document_path(f"{list_url}1/", "목록 항목의 링크를 그대로 따라간다"),
+            evidence="정적 목록에서 항목과 상세 주소를 찾았다. 브라우저를 띄우지 않았다",
+            list_count=1,
+        )
+
+    app.dependency_overrides[crawlers_api.get_discoverer] = lambda: discover
