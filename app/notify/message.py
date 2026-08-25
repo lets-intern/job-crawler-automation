@@ -27,6 +27,9 @@ TITLE_LIMIT = 60
 # 새 공고 알림에 붙는 태그. ntfy 의 이모지 단축이름이다
 NEW_JOBS_TAGS: tuple[str, ...] = ("briefcase",)
 
+# 테스트 전송의 태그. 새 공고 알림과 달라야 휴대폰에서 둘이 구분된다
+TEST_TAGS: tuple[str, ...] = ("white_check_mark",)
+
 # 값이 비어 있을 때 그 자리에 적는 말. 빈 줄로 두면 공고가 없는 것으로 읽힌다
 _UNTITLED = "제목 없음"
 
@@ -58,6 +61,25 @@ def build_new_jobs_message(
         title=f"{site_name} 새 공고 {total}건",
         body=_body(jobs),
         tags=NEW_JOBS_TAGS,
+        click=click,
+    )
+
+
+def build_test_message(*, click: str = "") -> NtfyMessage:
+    """설정 확인용 알림 하나. 새 공고 알림과 헷갈리지 않아야 한다.
+
+    새 공고 알림의 모양을 그대로 빌려 쓰지 않는다. `... 새 공고 2건` 이라는 제목이 뜨면
+    운영자는 공고가 실제로 두 건 들어온 것으로 읽는다. 제목과 태그를 따로 두어 이것이
+    확인용이라는 사실이 알림만 보고도 남게 한다.
+    """
+    return NtfyMessage(
+        title="알림 설정 확인",
+        body=(
+            "이 알림이 보이면 설정이 맞다.\n\n"
+            "실제 알림은 실행이 끝나고 새 공고가 들어왔을 때 오고, "
+            "이 자리에 회사와 공고 제목이 들어간다."
+        ),
+        tags=TEST_TAGS,
         click=click,
     )
 

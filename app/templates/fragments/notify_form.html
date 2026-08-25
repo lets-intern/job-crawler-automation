@@ -1,0 +1,111 @@
+{# 알림 설정. 저장 결과도 테스트 전송 결과도 이 조각 하나로 돌아온다 #}
+{% from "macros.html" import failure, notice_box, state, wait %}
+{% if error %}
+{{ failure(error.reason, error.message, title="저장하지 못했다") }}
+{% endif %}
+{% if message %}
+{{ notice_box(message) }}
+{% endif %}
+{% if sent %}
+<div class="notice {{ 'notice-idle' if sent.ok else 'notice-bad' }}"
+     role="{{ 'status' if sent.ok else 'alert' }}">
+  <p>
+    <span class="font-semibold">테스트 전송</span>
+    {{ state("성공") if sent.ok else state("실패") }} — {{ sent.detail }}
+  </p>
+  <p class="mt-1">보낸 시각: {{ sent_at | as_time }}</p>
+</div>
+{% endif %}
+
+<form hx-put="/ui/notify" hx-target="#notify-form" hx-swap="innerHTML"
+      hx-disabled-elt="find button">
+  <fieldset>
+    <legend>새 공고 알림 (ntfy)</legend>
+    <p>
+      <label for="notify-enabled" class="inline-flex items-center gap-2">
+        <input id="notify-enabled" name="enabled" type="checkbox" value="1"
+               {% if config.enabled %}checked{% endif %}>
+        알림을 보낸다
+      </label>
+      <br>
+      <span class="text-sm text-slate-600">
+        꺼 두면 실행이 끝나도 아무것도 보내지 않는다. 지금은
+        {{ state("켜짐") if config.enabled else state("꺼짐") }} 이다.
+      </span>
+    </p>
+    <p>
+      <label for="notify-server-url">서버 주소</label>
+      <br>
+      <input id="notify-server-url" name="server_url" type="url" size="40"
+             value="{{ config.server_url }}">
+      <br>
+      <span class="text-sm text-slate-600">http:// 나 https:// 로 시작한다</span>
+    </p>
+    <p>
+      <label for="notify-topic">토픽</label>
+      <br>
+      <input id="notify-topic" name="topic" type="text" size="20" value="{{ config.topic }}">
+      <br>
+      <span class="text-sm text-slate-600">
+        보내는 곳은 <code>{{ config.server_url }}/{{ config.topic }}</code> 가 된다
+      </span>
+    </p>
+    <p>
+      <label for="notify-priority">우선순위</label>
+      <br>
+      <select id="notify-priority" name="priority">
+        {% for value in priorities %}
+        <option value="{{ value }}" {% if config.priority == value %}selected{% endif %}>{{ value }}</option>
+        {% endfor %}
+      </select>
+    </p>
+    <p>
+      <label for="notify-min-new-count">몇 건 이상일 때 보낼지 (1 이상의 정수)</label>
+      <br>
+      <input id="notify-min-new-count" name="min_new_count" type="number" step="1" size="6"
+             value="{{ config.min_new_count }}">
+      <br>
+      <span class="text-sm text-slate-600">
+        한 실행에 새로 적재된 공고가 이 수 이상일 때만 보낸다. 공고마다 보내지 않고
+        실행 하나에 한 번 보낸다
+      </span>
+    </p>
+    <p>
+      <label for="notify-click-base">운영 화면 주소</label>
+      <br>
+      <input id="notify-click-base" name="click_base" type="url" size="40"
+             value="{{ config.click_base }}">
+      <br>
+      <span class="text-sm text-slate-600">
+        {% if config.click_url %}
+        알림을 누르면 <code>{{ config.click_url }}</code> 가 열린다
+        {% else %}
+        비워 두면 눌러도 아무 데도 열리지 않는다. 알림 자체는 그대로 간다
+        {% endif %}
+      </span>
+    </p>
+    <p>
+      <button type="submit">저장</button>
+      {{ wait("저장하는 중") }}
+    </p>
+  </fieldset>
+</form>
+
+<form hx-post="/ui/notify/test" hx-target="#notify-form" hx-swap="innerHTML"
+      hx-disabled-elt="find button">
+  <fieldset>
+    <legend>테스트 전송</legend>
+    <p>
+      <span class="font-semibold text-slate-900">저장된 설정</span>으로 한 번 보낸다.
+      폼에 적어 둔 값이 아니라 실행이 실제로 쓰게 될 값이라, 고쳤으면 먼저 저장한다.
+    </p>
+    <p class="text-sm text-slate-600">
+      실제로 알림이 간다. 켜기·끄기와 상관없이 보낸다 — 켜기 전에 주소가 맞는지 확인하는
+      것이 이 단추의 쓸모다.
+    </p>
+    <p>
+      <button type="submit">테스트 전송</button>
+      {{ wait("보내는 중") }}
+    </p>
+  </fieldset>
+</form>
