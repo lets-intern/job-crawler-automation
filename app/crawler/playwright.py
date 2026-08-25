@@ -260,6 +260,20 @@ def _content_type(response: Any) -> str:
     return ""
 
 
+@dataclass(frozen=True)
+class ProbeSession:
+    """렌더해 놓고 아직 닫지 않은 페이지 하나. 등록할 때 눌러 보는 자리가 쓴다.
+
+    `html` 과 `url` 은 클릭 전의 것이다. 클릭 뒤의 값은 누른 쪽이 다시 읽는다.
+    """
+
+    page: Any
+    context: Any
+    log: RequestLog
+    html: str
+    url: str
+
+
 class RenderError(FetchError):
     """렌더 실패. 타임아웃과 브라우저 오류가 여기 들어온다."""
 
@@ -315,6 +329,39 @@ class Renderer:
         async with self._fetcher.guard(url):
             result = await self._render(url, log=log)
         return result, log.requests
+
+    @asynccontextmanager
+    async def open_probe(self, url: str) -> AsyncIterator[ProbeSession]:
+        """목록을 렌더한 채로 열어 둔다. 등록할 때 항목을 눌러 보는 자리만 쓴다.
+
+        `fetch()` 는 HTML 한 장을 받고 페이지를 닫는다. 눌러 보려면 페이지가 살아 있어야 하고,
+        누른 뒤에 나가는 요청까지 같은 로그에 모여야 한다. 새 탭도 같은 로그에 붙인다 — SK 는
+        상세가 새 탭에서 열린다.
+
+        호스트 잠금은 이 블록이 끝날 때까지 잡고 있다. 브라우저가 페이지 하나를 그리며 같은
+        호스트로 여러 요청을 내는 동안 정적 요청이 끼어들면 딜레이가 사실이 아니게 된다
+        (`app/crawler/fetcher.py` 의 `guard()`).
+        """
+        browser = await self._browser_instance()
+        timeout_ms = int(self._timeout * 1000)
+        async with self._fetcher.guard(url):
+            context = await browser.new_context(user_agent=self._fetcher.user_agent)
+            log = RequestLog()
+            try:
+                page = await context.new_page()
+                log.attach(page)
+                context.on("page", log.attach)
+                await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+                await _settle(page)
+                await log.drain()
+                yield ProbeSession(
+                    page=page, context=context, log=log, html=await page.content(), url=page.url
+                )
+            finally:
+                with suppress(Exception):
+                    await log.drain()
+                with suppress(Exception):
+                    await context.close()
 
     async def aclose(self) -> None:
         """브라우저를 닫는다. 두 번 불러도 안전하다."""
