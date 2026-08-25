@@ -718,3 +718,40 @@ async def test_확인은_브라우저를_닫은_뒤에_한다() -> None:
     assert discovery.ok is True
     assert discovery.detail_mode == STATIC
     assert opened == [LIST_URL]
+
+
+@pytest.mark.asyncio
+async def test_주소_형식을_알고_나면_목록을_정적으로_둔다() -> None:
+    """두산·네이버. 항목은 정적으로 다 있고 상세 주소만 `onclick` 에 있었다."""
+    opened: list[str] = []
+    page_html = "<html><body><h1>온보딩 프로그램 운영 지원</h1></body></html>"
+    second = "<html><body><h1>재무회계 담당</h1></body></html>"
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(200, text=ROBOTS)
+        if request.url.path == "/jobs":
+            # 정적으로도 목록이 다 온다. 없던 것은 상세 주소뿐이다
+            return httpx.Response(200, text=ONCLICK_LIST)
+        anno = request.url.params.get("annoId", "")
+        return httpx.Response(200, text=page_html if anno == "30005276" else second)
+
+    client = fetcher_for(handle)
+    element = StubElement()
+    session = session_for(ONCLICK_LIST, [element])
+    element.action = lambda: setattr(session.page, "url", VIEW_URL)
+    try:
+        discovery = await discover_detail_path(
+            LIST_URL,
+            LINKLESS_SELECTORS,
+            fetcher=client,
+            sleep=nosleep,
+            open_probe=opener(session, opened),
+        )
+    finally:
+        await client.aclose()
+
+    assert discovery.ok is True
+    assert discovery.list_mode == STATIC
+    assert discovery.detail_mode == STATIC
+    assert "목록을 정적으로 둔다" in discovery.evidence

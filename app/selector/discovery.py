@@ -115,7 +115,7 @@ async def discover_detail_path(
     `sleep` 은 클릭 뒤 기다리는 자리다. 시험이 실제로 3초를 기다리지 않게 바꿔 끼운다
     (`app/crawler/fetcher.py` 의 `clock`·`sleep` 과 같은 자리).
     """
-    static_items, static_note = await _items_from_static(fetcher, list_url, selectors)
+    static_html, static_items, static_note = await _items_from_static(fetcher, list_url, selectors)
     static_count = len(static_items)
 
     if static_items and not _needs_more(static_items, selectors):
@@ -148,7 +148,13 @@ async def discover_detail_path(
     async with open_probe(list_url) as session:
         probed = await _probe(session, selectors=selectors, sleep=sleep)
 
-    return await _judge(probed, fetcher=fetcher, selectors=selectors, static_count=static_count)
+    return await _judge(
+        probed,
+        fetcher=fetcher,
+        selectors=selectors,
+        static_count=static_count,
+        static_html=static_html,
+    )
 
 
 @dataclass(frozen=True)
@@ -197,6 +203,7 @@ async def _judge(
     fetcher: FetchPolicy,
     selectors: SelectorSet,
     static_count: int,
+    static_html: str = "",
 ) -> Discovery:
     """모아 온 것으로 판정한다. 알아낸 경로를 `httpx` 로 다시 불러 확인하는 것도 여기서다."""
     prefix = f"정적 목록에 항목 {static_count}건"
@@ -284,6 +291,14 @@ async def _judge(
         requests=outcome.requests,
     )
     if link is not None:
+        # 주소 형식을 알고 나면 정적 HTML 로도 목록이 읽히는 사이트가 있다. 두산과 네이버가
+        # 그렇다 — 항목은 정적으로 다 있고 상세 주소만 `onclick` 에 있었다. 그때는 목록을
+        # 정적으로 둔다. 렌더 한 번이 정적 fetch 의 몇십 배다 (`.claude/rules/crawling.md`)
+        if list_path is None and _static_list_works(static_html, selectors, link, probed.url):
+            list_mode = STATIC
+            link_note = (
+                f"{link_note}. 그 형식으로 정적 HTML 에서도 목록이 읽혀 목록을 정적으로 둔다"
+            )
         return Discovery(
             list_mode=list_mode,
             detail_mode=STATIC,
@@ -463,13 +478,34 @@ def _links(html: str, base_url: str) -> list[str]:
 
 async def _items_from_static(
     fetcher: FetchPolicy, list_url: str, selectors: SelectorSet
-) -> tuple[list[ListItem], str]:
-    """1번. 정적으로 받아 항목을 잡아 본다. 실패도 사유 문장으로 돌려준다."""
+) -> tuple[str, list[ListItem], str]:
+    """1번. 정적으로 받아 항목을 잡아 본다. 실패도 사유 문장으로 돌려준다.
+
+    받은 HTML 을 함께 돌려주는 이유는 뒤에서 한 번 더 보기 때문이다. 상세 주소 형식을 알아낸
+    뒤에는 같은 HTML 로 목록이 읽히는지가 달라질 수 있다.
+    """
     try:
         page = await fetcher.fetch(list_url)
     except FetchError as exc:
-        return [], f"정적 fetch 가 실패했다: {exc}"
-    return _items_from_html(page.text, page.url, selectors)
+        return "", [], f"정적 fetch 가 실패했다: {exc}"
+    items, note = _items_from_html(page.text, page.url, selectors)
+    return page.text, items, note
+
+
+def _static_list_works(
+    static_html: str, selectors: SelectorSet, link: LinkProposal, base_url: str
+) -> bool:
+    """알아낸 주소 형식을 얹으면 정적 HTML 만으로 목록이 읽히는가.
+
+    읽힌다면 이 크롤러는 실행마다 브라우저를 띄울 이유가 없다. 판정은 실행 때와 같은 파서로
+    한다 — 여기서 따로 세면 "판정은 정적이라는데 실행은 0건" 이 생긴다.
+    """
+    if not static_html.strip():
+        return False
+    items, _ = _items_from_html(
+        static_html, base_url, selectors.model_copy(update={"list": link.selectors(selectors.list)})
+    )
+    return bool(items)
 
 
 def _items_from_html(
