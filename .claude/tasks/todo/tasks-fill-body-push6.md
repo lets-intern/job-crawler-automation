@@ -19,8 +19,24 @@
 - **`normalization_rules` 27개.** 다시 만들 이유가 없고 `html_text` 규칙이 그중에 있다
 - **`app_settings`**
 - `schema_migrations`
+- **`crawlers` 6개와 `workflows` 6개.** Push 4 가 새 경로로 이미 만들었다
 
-`crawlers` 와 `workflows` 는 Push 4 에서 새 경로로 다시 만든다.
+## 실행 시점 정정 (2026-08-25)
+
+작업 파일을 쓴 시점과 실행 시점의 사실이 다르다. 실행 전에 확인한 것을 적는다.
+
+본문 없는 86건(LG 83, 삼성 3)은 Push 4·5 를 진행하는 동안 이미 지워졌다. 실행 직전 운영 DB 는
+`raw_jobs` 314, `normalized_jobs` 314, `crawl_runs` 215, `normalization_rules` 27, `crawlers` 6,
+`workflows` 6, `job_field_overrides` 2 이고 본문 빈 건은 0 이다.
+
+그래도 비우고 다시 채운다. 현대 20건과 롯데 8건이 옛 셀렉터 경로로 들어온 것이고 `source_url` 이
+같아 재수집으로는 덮이지 않는다. 두 경로에서 온 값이 섞여 있는 것을 한 경로로 맞추는 것이 이
+Push 의 목적이다.
+
+`crawlers` 6개와 `workflows` 6개는 Push 4 가 새 경로로 이미 만들어 두었다. 아래 "하지 않는 것" 대로
+여기서 다시 만들지 않고, 지우지도 않는다.
+
+한화(워크플로우 7)만 주기가 360분이다. 6.5 에서 나머지 다섯과 같은 30분으로 맞춘다.
 
 ## 관련 파일
 
@@ -44,11 +60,16 @@
 ## 작업
 
 - [ ] 6.0 비우고 다시 채운다
-    - [ ] 6.1 백업을 뜬다
+    - [x] 6.1 백업을 뜬다
         - `VACUUM INTO` 로 사본을 만들어 스크래치패드에 꺼낸다
         - 파일명에 날짜와 무엇 직전인지 적는다 (`backup-before-reset-20260825.db`)
         - 사본을 다른 포트에 띄워 열리는지 확인한다. 열리지 않는 백업은 백업이 아니다
-        - [ ] 6.1.V 검증: 사본을 다른 포트에 띄워 화면이 뜨고 건수가 원본과 같은지 확인
+        - [x] 6.1.V 검증: 사본을 다른 포트에 띄워 화면이 뜨고 건수가 원본과 같은지 확인
+            - `GET /ui/settings/export` (`VACUUM INTO`) 로 3,035,136 바이트를 받아
+              `push6/backup-before-reset-20260825.db` 로 두었다. `integrity_check` 는 `ok`
+            - 사본을 포트 8140 에 띄워 `/`, `/workflows`, `/jobs`, `/rules`, `/tests`,
+              `/settings` 여섯 화면이 전부 200 으로 떴다
+            - 제공 API 로 전체를 훑어 원본 314건, 사본 314건으로 같다. 확인 뒤 8140 은 내렸다
     - [ ] 6.2 수집 데이터를 비운다
         - 위 배경의 다섯 표를 비운다. 외래키 순서를 지키고 한 트랜잭션으로 한다
         - `normalization_rules` 와 `app_settings` 가 그대로인지 비운 직후에 센다
