@@ -231,7 +231,12 @@ async def run_workflow(
         workflow_id=workflow_id,
         new_count=result.new_count,
         jobs=[
-            NewJob(company=item.fields["company"], title=item.fields["title"])
+            NewJob(
+                company=item.fields["company"],
+                title=item.fields["title"],
+                # 알림에서 눌러 바로 열 자리다
+                url=item.source_url,
+            )
             for item in result.items
             if item.state == STORED
         ],

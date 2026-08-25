@@ -36,10 +36,13 @@ _UNTITLED = "제목 없음"
 
 @dataclass(frozen=True)
 class NewJob:
-    """알림에 한 줄로 들어가는 공고. 이름을 적는 데 필요한 두 값만 든다."""
+    """알림에 한 줄로 들어가는 공고."""
 
     company: str
     title: str
+    # 공고 원본 주소. 알림에서 이 자리를 눌러 바로 열게 한다. 비어 있으면 링크 없이 글자만
+    # 적는다 — 목록만 긁고 상세로 가지 못한 공고가 그렇다
+    url: str = ""
 
 
 def build_new_jobs_message(
@@ -61,7 +64,7 @@ def build_new_jobs_message(
         title=f"{site_name} 새 공고 {total}건",
         body=_body(jobs),
         tags=NEW_JOBS_TAGS,
-        click=click,
+        click=_click(jobs, click),
     )
 
 
@@ -103,9 +106,26 @@ def _body(jobs: Sequence[NewJob]) -> str:
     return "\n".join(lines)
 
 
+def _click(jobs: Sequence[NewJob], fallback: str) -> str:
+    """알림을 그냥 눌렀을 때 열 곳. 첫 공고의 원본 주소다.
+
+    여러 건이 한 알림에 들어오므로 하나만 고를 수밖에 없다. 나머지는 본문의 링크로 연다.
+    주소가 없는 공고뿐이면 설정에 적어 둔 주소로 떨어진다.
+    """
+    for job in jobs:
+        url = job.url.strip()
+        if url:
+            return url
+    return fallback
+
+
 def _line(job: NewJob) -> str:
-    """공고 한 줄. 회사가 있으면 굵게 앞세우고, 없으면 제목만 적는다."""
+    """공고 한 줄. 회사가 있으면 굵게 앞세우고, 제목은 원본 주소로 건다."""
     title = _clip(job.title.strip()) or _UNTITLED
+    url = job.url.strip()
+    if url:
+        # 마크다운 링크. 제목에 든 대괄호가 링크를 깨뜨리므로 먼저 지운다
+        title = f"[{title.replace('[', '').replace(']', '')}]({url})"
     company = job.company.strip()
     if not company:
         return title

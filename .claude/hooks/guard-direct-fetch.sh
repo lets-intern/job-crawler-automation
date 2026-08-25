@@ -16,6 +16,9 @@ esac
 # The client itself is the one place allowed to do this.
 case "$FILE_PATH" in
   *app/crawler/fetcher.py) exit 0 ;;
+  # 우리가 운영하는 알림 서버로 나간다. robots 를 물을 상대가 아니고 지킬 딜레이도
+  # 없다 (.claude/rules/crawling.md 의 One fetch client).
+  *app/notify/*.py) exit 0 ;;
   *tests/*) exit 0 ;;
 esac
 

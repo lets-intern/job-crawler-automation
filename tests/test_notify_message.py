@@ -104,3 +104,50 @@ def test_태그는_붙고_본문_문장에는_그림문자가_없다() -> None:
 def _pictograms(text: str) -> list[str]:
     """그림문자로 읽히는 글자. 유니코드 분류가 `So`(기타 기호)인 것이 이모지·픽토그램이다."""
     return [character for character in text if unicodedata.category(character) == "So"]
+
+
+def test_제목이_공고_원본_주소로_걸린다() -> None:
+    """알림에서 바로 그 공고를 열 수 있어야 한다. 검수 화면이 아니라 원본이다."""
+    message = build_new_jobs_message(
+        site_name="LG",
+        jobs=[NewJob(company="LG전자", title="백엔드 개발자", url="https://x.test/jobs/1")],
+    )
+
+    assert "[백엔드 개발자](https://x.test/jobs/1)" in message.body
+    assert message.click == "https://x.test/jobs/1"
+
+
+def test_주소가_없으면_링크_없이_글자만_적는다() -> None:
+    """목록만 긁고 상세로 가지 못한 공고가 그렇다. 빈 링크를 만들지 않는다."""
+    message = build_new_jobs_message(
+        site_name="LG",
+        jobs=[NewJob(company="LG전자", title="백엔드 개발자")],
+        click="https://x.test/review",
+    )
+
+    assert "](" not in message.body
+    assert "백엔드 개발자" in message.body
+    assert message.click == "https://x.test/review"
+
+
+def test_주소_있는_첫_공고로_연다() -> None:
+    """앞쪽에 주소 없는 공고가 섞여 있어도 누를 곳이 사라지지 않는다."""
+    message = build_new_jobs_message(
+        site_name="LG",
+        jobs=[
+            NewJob(company="LG", title="주소 없음"),
+            NewJob(company="LG", title="주소 있음", url="https://x.test/jobs/2"),
+        ],
+    )
+
+    assert message.click == "https://x.test/jobs/2"
+
+
+def test_제목의_대괄호가_링크를_깨뜨리지_않는다() -> None:
+    """`[정보보안센터] IT보안 담당자` 처럼 대괄호로 시작하는 제목이 흔하다."""
+    message = build_new_jobs_message(
+        site_name="LG",
+        jobs=[NewJob(company="LG", title="[정보보안센터] IT보안", url="https://x.test/jobs/3")],
+    )
+
+    assert "[정보보안센터 IT보안](https://x.test/jobs/3)" in message.body
