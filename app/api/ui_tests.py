@@ -24,9 +24,9 @@
 `detail.title` 과 `detail.deadline` 에 값이 있는 것은 실행이 목록에서 읽은 값을 그 자리에
 넣기 때문이다 (`app/crawler/runner.py` 의 `_record`).
 
-실행 전체가 실패한 경우의 사유는 `crawl_runs.error_class` 그대로다. 항목별 실패는
-`RunResult.failures` 가 들고 있는 것을 그대로 표로 옮긴다 — 이 값은 `crawl_runs` 에 남지
-않으므로, 실행 직후 이 화면이 유일하게 보여줄 수 있는 자리다.
+실행 전체가 실패한 경우의 사유는 `crawl_runs.error_class` 그대로다. 놓친 공고 하나하나는
+`crawl_run_failures` 에서 읽는다 — 실행이 끝난 뒤에도 남아 있어서 워크플로우 화면이 같은
+조각으로 같은 실패를 본다 (`app/api/ui_runs.py`).
 
 ## 모드를 바꾸는 것과 한 번 시험하는 것
 
@@ -68,6 +68,7 @@ from fastapi.responses import HTMLResponse
 from app.api import crawlers
 from app.api.ui import mode_word, render
 from app.api.ui_crawlers import crawler_rows, error_detail, pretty_selectors
+from app.api.ui_runs import run_failures
 from app.crawler.fetcher import Fetcher
 from app.crawler.parser import list_only
 from app.crawler.runner import KNOWN
@@ -231,6 +232,9 @@ async def test_run_fragment(
         request,
         "fragments/test_result.html",
         result=result,
+        # 놓친 공고는 실행 기록에서 읽는다. 워크플로우 화면이 여는 것과 같은 조각·같은 함수다
+        # (`app/api/ui_runs.py`)
+        failures=run_failures(conn, result.run_id),
         fields=FIELDS,
         report=report,
         preview_limit=PREVIEW_LIMIT,

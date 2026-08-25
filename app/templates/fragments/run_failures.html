@@ -1,0 +1,46 @@
+{# 실행 하나가 놓친 공고. `crawl_run_failures` 행을 그대로 표로 낸다.
+
+   건수만으로는 고칠 수 없어서 어느 공고였는지(제목·목록에서 읽은 주소)를 같이 적는다.
+   사유 이름만으로도 무엇을 할지 모르므로 `NEXT_STEPS` 의 다음 행동이 사유 옆에 붙는다
+   (`app/api/ui_runs.py`).
+
+   테스트 실행 화면과 워크플로우 카드가 이 조각 하나를 같이 쓴다 #}
+{% from "macros.html" import blank, empty, state %}
+{% if failures.total %}
+<div class="table-scroll">
+<table class="data-table">
+  <caption>실행 {{ failures.run_id }} 이 놓친 공고 {{ failures.total }}건{% if failures.total > failures.limit %} (앞 {{ failures.limit }}건만 그린다){% endif %}</caption>
+  <thead>
+    <tr>
+      <th scope="col">사유</th>
+      <th scope="col">다음 행동</th>
+      <th scope="col">제목</th>
+      <th scope="col">목록에서 읽은 주소</th>
+      <th scope="col">메시지</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in failures.rows %}
+    <tr>
+      <td>
+        {{ state(item.reason_word, tone="bad") }}
+        {% if item.reason %}<span class="text-xs text-slate-500">({{ item.reason }})</span>{% endif %}
+      </td>
+      <td class="cell-text">{% if item.next %}{{ item.next }}{% else %}{{ blank("분류를 몰라 다음 행동을 적지 못한다. 메시지를 읽는다") }}{% endif %}</td>
+      <td class="cell-text">{% if item.title %}{{ item.title }}{% else %}{{ blank("제목 없음") }}{% endif %}</td>
+      <td class="cell-url">
+        {% if item.source_url %}
+        <a class="cell-url-value" href="{{ item.source_url }}" target="_blank" rel="noreferrer"
+           title="{{ item.source_url }}">{{ item.source_url }}</a>
+        {% else %}{{ blank("주소 없음") }}{% endif %}
+      </td>
+      <td class="cell-text">{% if item.message %}{{ item.message }}{% else %}{{ blank("메시지 없음") }}{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+{# "없음" 으로 끝내지 않는다. 무엇이 정상인지 적는다 (`.claude/rules/writing.md`) #}
+{{ empty("실행 " ~ failures.run_id ~ " 이 놓친 공고는 없다. 목록에서 잡은 공고가 모두 본문까지 왔다는 뜻이다") }}
+{% endif %}

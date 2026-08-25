@@ -20,6 +20,7 @@ from app.api import (
     ui_crawlers,
     ui_rules,
     ui_rules_preview,
+    ui_runs,
     ui_settings,
     ui_tests,
     ui_workflows,
@@ -74,6 +75,7 @@ app.include_router(ui.router)
 app.include_router(ui_crawlers.router)
 app.include_router(ui_tests.router)
 app.include_router(ui_workflows.router)
+app.include_router(ui_runs.router)
 app.include_router(ui_rules.router)
 app.include_router(ui_rules_preview.router)
 app.include_router(review_filter.router)

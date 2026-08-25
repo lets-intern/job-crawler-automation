@@ -1,6 +1,6 @@
 {# 테스트 실행 결과. 상태는 단어로만 적는다 #}
-{# `failure` 는 항목별 실패 루프의 변수 이름과 겹친다. 매크로는 다른 이름으로 받는다 #}
-{% from "macros.html" import badge, state, blank, failure as failure_box, empty, empty_row %}
+{# `failure` 는 이 조각이 받는 값 이름과 겹친다. 매크로는 다른 이름으로 받는다 #}
+{% from "macros.html" import badge, state, blank, failure as failure_box, empty_row %}
 {% if error %}
 {{ failure_box(error.reason, error.message, title="실행할 수 없다") }}
 {% else %}
@@ -110,30 +110,10 @@
 </table>
 </div>
 
-<h3>항목별 실패</h3>
-{% if result.failures %}
-<div class="table-scroll">
-<table class="data-table">
-  <caption>이 실행에서만 볼 수 있는 값이다 (crawl_runs 에는 남지 않는다)</caption>
-  <thead>
-    <tr><th scope="col">원문 URL</th><th scope="col">분류</th><th scope="col">사유</th></tr>
-  </thead>
-  <tbody>
-    {% for failure in result.failures %}
-    <tr>
-      <td class="cell-url">
-        <span class="cell-url-value" title="{{ failure.source_url }}">{{ failure.source_url }}</span>
-      </td>
-      <td>{{ state(failure.error_class or "분류 없음", tone="bad") }}</td>
-      <td class="cell-text">{{ failure.message }}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-</div>
-{% else %}
-{{ empty("항목별 실패는 없다. 가져온 항목은 모두 끝까지 처리됐다") }}
-{% endif %}
+<h3>실패한 공고</h3>
+{# 이 표는 `crawl_run_failures` 에서 읽는다. 실행이 끝난 뒤에도 남아 있어서 워크플로우 화면이
+   같은 조각으로 같은 실패를 본다 (`app/api/ui_runs.py`) #}
+{% include "fragments/run_failures.html" %}
 
 {# 실패한 필드가 있을 때만 붙는다. 고치기·저장·다시 실행이 이 자리 하나에 있어서,
    고치러 등록 화면으로 건너갔다 돌아올 일이 없다 (`app/api/ui_tests.py`) #}

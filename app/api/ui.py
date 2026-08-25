@@ -93,6 +93,25 @@ NEXT_STEPS: dict[str, str] = {
 }
 
 
+# 실패 사유를 사람이 읽는 낱말로. 저장값은 그대로 영어다 (`.claude/rules/writing.md`).
+# 사유를 모르는 실패는 `분류 없음` 이다 — 모르는 실패를 아는 실패로 위장하면 그 사이트를
+# 계속 잘못 고치게 된다 (`migrations/0010_run_failures.sql`)
+REASON_WORDS: dict[str, str] = {
+    "transport": "사이트에 못 닿음",
+    "selector_miss": "셀렉터가 빗나감",
+    "parse": "값을 못 읽음",
+    "list_empty": "목록이 비었음",
+    "detail_unreachable": "상세에 못 감",
+    "detail_empty": "본문이 비었음",
+}
+UNKNOWN_REASON_WORD = "분류 없음"
+
+
+def reason_word(reason: str) -> str:
+    """실패 사유 하나의 낱말. 모르는 값이면 `분류 없음` 이다."""
+    return REASON_WORDS.get(reason, UNKNOWN_REASON_WORD)
+
+
 @lru_cache(maxsize=8)
 def _zone(name: str) -> tzinfo:
     """이름으로 시간대를 찾는다. 못 찾으면 UTC 다 — 화면이 죽는 것보다 낫다."""
@@ -283,6 +302,7 @@ def describe_path(
 # 라우트가 자기 조각에 직접 렌더하는 실패에도 같은 문구가 붙게 한다
 templates.env.globals["next_step"] = next_step
 templates.env.globals["mode_word"] = mode_word
+templates.env.globals["reason_word"] = reason_word
 templates.env.filters["as_time"] = format_time
 
 
