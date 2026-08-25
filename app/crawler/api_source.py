@@ -32,7 +32,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import replace
 from typing import Any
 
@@ -508,7 +508,27 @@ def _value(payload: Any, path: FieldPath) -> str:
     parts: list[str] = []
     for one in paths:
         parts.extend(_texts(payload, one))
-    return "\n\n".join(part for part in parts if part.strip())
+    return "\n\n".join(_unique(parts))
+
+
+def _unique(parts: Iterable[str]) -> list[str]:
+    """같은 값이 여러 칸에 들어 있으면 한 번만 적는다.
+
+    `*` 로 배열을 훑으면 칸마다 값을 하나씩 얻는데, 그 값이 칸마다 같은 경우가 있다.
+    한화는 모집 부문이 셋이어도 근무지가 셋 다 `서울` 이라 그대로 이으면 `서울 서울 서울`
+    이 된다. 조직명도 마찬가지다.
+
+    순서는 지킨다. 처음 나온 자리에 남는다.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for part in parts:
+        text = part.strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        out.append(part)
+    return out
 
 
 def _texts(payload: Any, path: str) -> list[str]:
