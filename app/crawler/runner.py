@@ -6,6 +6,9 @@
 흐름은 목록 파싱 → 신규 판정 → 신규 건만 상세 → `raw_jobs` append → 정규화다
 (`.claude/docs/architecture.md` 실행 흐름).
 
+마감이 지난 공고와 이미 아는 공고는 상세를 열지 않고 건너뛴다. 건너뛴 수는 `skipped_count` 로
+따로 세고 `fail_count` 와 섞지 않는다 — 건너뜀은 정상이고 실패는 고칠 것이다.
+
 정규화는 적재한 건에 대해서만 돌고, 실패해도 실행을 죽이지 않는다. 규칙이 틀렸다고 수집한
 공고를 버리면 규칙을 고쳐도 되살릴 원본이 없다. 실패한 건은 `raw_jobs` 에 그대로 남고
 `fail_count` 로 세어져, 규칙을 고친 뒤 재정규화로 복구된다.
@@ -14,6 +17,10 @@
 `deadline` 까지 넣어 만드는데, 상세를 가져오기 전에는 그 값이 없다. 그래서 목록 단계에서는
 `source_url` 로 아는 공고인지만 보고, 아는 공고면 상세를 가져오지 않는다. 상세까지 간 건에
 대해서만 `content_hash` 를 만들어 마지막으로 한 번 더 확인한다.
+
+본문을 얻지 못한 공고는 적재하지 않고 실패로 남긴다. 목록에서 읽은 값만 넣고 성공으로 넘기면
+`body` 가 빈 행이 쌓이고, 그것을 소비 측이 본문 없는 공고로 받는다. 대신 어느 공고를 왜 놓쳤는지가
+`crawl_run_failures` 에 제목과 함께 남는다.
 
 `raw_jobs` 는 append-only 다. 기존 행을 갱신하지 않는다 (`.claude/rules/data-safety.md`).
 
@@ -32,10 +39,14 @@ from dataclasses import dataclass, field
 
 from app.config import get_settings
 from app.crawler.collect import API, Collectors, html_collectors, open_collectors
+from app.crawler.deadline import is_closed
 from app.crawler.failures import (
     FAILED,
+    LIST_EMPTY,
     SUCCESS,
     ZERO_ITEM_MESSAGE,
+    DetailEmptyError,
+    DetailUnreachableError,
     Failure,
     classify,
     run_status,
@@ -47,7 +58,6 @@ from app.normalize.engine import NormalizeError, insert_normalized, load_rules
 from app.normalize.rules import Rule
 from app.selector.api_schema import ApiConfigError, parse_api_config
 from app.selector.schema import (
-    DETAIL_FIELDS,
     DetailSelectors,
     ListSelectors,
     SelectorSchemaError,
@@ -100,9 +110,13 @@ class ItemResult:
 
 @dataclass(frozen=True)
 class ItemFailure:
+    """항목 하나가 어떻게 실패했는가. `crawl_run_failures` 행 하나가 된다."""
+
     source_url: str
     error_class: str | None
     message: str
+    # 목록에서 읽은 제목. 건수와 사유만으로는 어느 공고였는지 알 수 없어 고칠 수가 없다
+    title: str = ""
 
 
 @dataclass
@@ -115,6 +129,10 @@ class RunResult:
     success_count: int = 0
     new_count: int = 0
     fail_count: int = 0
+    # 적재하지 않고 넘긴 수. 마감이 지났거나 이미 아는 공고다. 실패가 아니라서 `fail_count`
+    # 와 따로 센다 — 합치면 마감 날짜 형식이 바뀌어 전부 걸러진 사이트가 "새 공고 0건" 인
+    # 정상 실행으로 보인다
+    skipped_count: int = 0
     error_class: str | None = None
     error_message: str = ""
     items: list[ItemResult] = field(default_factory=list)
@@ -379,7 +397,15 @@ async def _crawl(
             )
         )
 
+    # 목록에서 읽은 날짜를 마감일로 볼 수 있는 크롤러인지는 수집기가 들고 있다. 항목마다
+    # 다시 볼 값이 아니라 이 크롤러의 설정이다 (`app/crawler/collect.py`)
     for item in parsed.items[:limit]:
+        if collectors.list_date_is_deadline and is_closed(item.date, rules):
+            # 마감이 지난 공고다. 상세를 열지 않고 넘긴다 — 실패가 아니라 건너뜀이다.
+            # 읽지 못한 날짜는 진행 중으로 본다 (`app/crawler/deadline.py`)
+            result.skipped_count += 1
+            continue
+
         try:
             collected = await _collect(conn, target, item, collectors)
         except Exception as exc:
@@ -391,13 +417,17 @@ async def _crawl(
                     source_url=item.link,
                     error_class=classified.error_class,
                     message=classified.message,
+                    title=item.title,
                 )
             )
             continue
 
         result.items.append(collected)
         result.success_count += 1
-        if collected.state == STORED:
+        if collected.state == KNOWN:
+            # 이미 아는 공고라 적재하지 않았다. 마감으로 넘긴 것과 같은 자리에 센다
+            result.skipped_count += 1
+        elif collected.state == STORED:
             result.new_count += 1
             _normalize(conn, collected, rules, rules_error, result)
 
@@ -405,18 +435,31 @@ async def _crawl(
 async def _collect(
     conn: sqlite3.Connection, target: RunTarget, item: ListItem, collectors: Collectors
 ) -> ItemResult:
-    """항목 하나를 처리한다. 아는 공고면 상세를 가져오지 않는다."""
-    if item.detail_absent:
-        # 상세로 갈 길이 없는 사이트다. 목록에서 읽은 것만으로 항목을 만든다.
-        # 같은 주소를 여러 항목이 공유하므로 `source_url` 로는 중복을 가릴 수 없고,
-        # content_hash 가 title·deadline 으로 가른다.
-        record = _record(item, dict.fromkeys(DETAIL_FIELDS, ""))
-    else:
-        if _is_known(conn, target.workflow_id, "source_url", item.link):
-            return ItemResult(source_url=item.link, state=KNOWN, fields={})
+    """항목 하나를 처리한다. 아는 공고면 상세를 가져오지 않는다.
 
-        detail = await collectors.detail.collect(item)
-        record = _record(item, detail.fields)
+    본문을 얻지 못한 공고는 적재하지 않고 실패로 낸다. 목록에서 읽은 값만 넣고 성공으로
+    넘기면 `body` 가 빈 행이 쌓이고, 소비 측은 그것을 본문이 없는 공고로 받는다
+    (`.claude/tasks/todo/prd-fill-body.md`).
+
+    실패는 둘로 갈린다. 상세로 갈 길이 없는 것은 `detail_unreachable` 이고 상세를 열었는데
+    읽을 것이 없는 것은 `detail_empty` 다 — 앞은 경로를 다시 찾아야 하고 뒤는 본문 셀렉터만
+    고치면 된다. 어느 공고였는지는 부르는 쪽이 목록에서 읽은 제목으로 적는다.
+    """
+    if item.detail_absent:
+        # 상세로 갈 길이 없는 사이트다. 목록에는 본문이 없으므로 이 공고는 적재할 수 없다.
+        raise DetailUnreachableError(
+            "상세로 갈 길이 없어 본문을 얻지 못했다. `list.link` 나 `list.link_template`, "
+            "상세 API 중 하나로 상세에 닿는 길을 등록해야 한다"
+        )
+
+    if _is_known(conn, target.workflow_id, "source_url", item.link):
+        return ItemResult(source_url=item.link, state=KNOWN, fields={})
+
+    detail = await collectors.detail.collect(item)
+    record = _record(item, detail.fields)
+    if not record["body"].strip():
+        # 상세는 열렸는데 본문이 없다. 나머지 필드가 채워져 있어도 적재하지 않는다.
+        raise DetailEmptyError("상세를 열었지만 본문이 비었다. 상세의 본문 셀렉터를 고친다")
     digest = content_hash(record)
 
     if target.workflow_id is None:
@@ -575,44 +618,76 @@ def _finish_run(
     *,
     timed_out: bool = False,
 ) -> None:
-    """종료 상태와 카운트를 확정한다. 정상 파싱 0건은 실패다."""
-    result.status = run_status(result.success_count, failure, timed_out=timed_out)
+    """종료 상태와 카운트를 확정하고 놓친 공고를 남긴다. 정상 파싱 0건은 실패다.
+
+    쓸 항목이 하나도 없이 끝난 실행은 `list_empty` 다. 사유 없이 건수만 남기면 목록을 못 읽은
+    실행과 원인을 모르는 실행이 같은 행으로 보인다.
+
+    실행 기록과 실패 목록은 한 트랜잭션으로 쓴다. 갈라지면 `fail_count` 는 3인데 어느 공고였는지
+    아무 데도 없는 행이 남고, 그 실행은 건수만 알고 고칠 수는 없는 기록이 된다.
+    """
+    result.status = run_status(
+        result.success_count, failure, timed_out=timed_out, skipped_count=result.skipped_count
+    )
     if failure is not None:
         result.error_class = failure.error_class
         result.error_message = failure.message
     elif result.status == FAILED:
         # 실행 전체는 예외 없이 끝났는데 남은 항목이 0건인 경우다. 항목별 실패가 있으면 그
-        # 분류를 그대로 쓰고, 없으면 모르는 채로 둔다. 추측해서 셋 중 하나로 적지 않는다.
+        # 분류를 그대로 쓴다 — 놓친 이유를 이미 알고 있으므로 추측할 것이 없다.
         first = result.failures[0] if result.failures else None
-        result.error_class = first.error_class if first is not None else None
-        result.error_message = ZERO_ITEM_MESSAGE
         if first is not None:
+            result.error_class = first.error_class
             result.error_message = f"{ZERO_ITEM_MESSAGE}: {first.message}"
+        else:
+            # 항목별 실패조차 없다. 목록이 쓸 항목을 하나도 내놓지 않은 것이라 고칠 자리는
+            # 목록 셀렉터나 목록을 얻는 방식이다 (`app/crawler/failures.py`).
+            result.error_class = LIST_EMPTY
+            result.error_message = ZERO_ITEM_MESSAGE
 
-    conn.execute(
-        """
-        UPDATE crawl_runs
-           SET finished_at = datetime('now'), status = ?, success_count = ?, new_count = ?,
-               fail_count = ?, error_class = ?, error_message = ?
-         WHERE id = ?
-        """,
-        (
-            result.status,
-            result.success_count,
-            result.new_count,
-            result.fail_count,
-            result.error_class,
-            result.error_message or None,
-            result.run_id,
-        ),
-    )
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.execute(
+            """
+            UPDATE crawl_runs
+               SET finished_at = datetime('now'), status = ?, success_count = ?, new_count = ?,
+                   fail_count = ?, skipped_count = ?, error_class = ?, error_message = ?
+             WHERE id = ?
+            """,
+            (
+                result.status,
+                result.success_count,
+                result.new_count,
+                result.fail_count,
+                result.skipped_count,
+                result.error_class,
+                result.error_message or None,
+                result.run_id,
+            ),
+        )
+        conn.executemany(
+            """
+            INSERT INTO crawl_run_failures (run_id, reason, title, source_url, message)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            [
+                (result.run_id, item.error_class, item.title, item.source_url, item.message)
+                for item in result.failures
+            ],
+        )
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+
     logger.info(
-        "run %s %s: matched=%s success=%s new=%s fail=%s error_class=%s",
+        "run %s %s: matched=%s success=%s new=%s fail=%s skipped=%s error_class=%s",
         result.run_id,
         result.status,
         result.matched,
         result.success_count,
         result.new_count,
         result.fail_count,
+        result.skipped_count,
         result.error_class,
     )

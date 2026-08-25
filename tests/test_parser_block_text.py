@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from bs4 import BeautifulSoup
 
-from app.crawler.parser import _text
+from app.crawler.parser import field_text
 
 SECTIONS = """
 <div class="body">
@@ -29,7 +29,7 @@ BULLETS = '<div class="req"><ul><li>학사 이상</li><li>3년 이상 경력</li
 
 def _lines(html: str, selector: str) -> list[str]:
     soup = BeautifulSoup(html, "html.parser")
-    text = _text(soup, selector, "detail.body")
+    text = field_text(soup, selector, "detail.body")
     return [line.strip() for line in text.split("\n") if line.strip()]
 
 
@@ -57,6 +57,6 @@ def test_extraction_does_not_mutate_the_tree() -> None:
     soup = BeautifulSoup(SECTIONS, "html.parser")
     before = str(soup)
 
-    _text(soup, ".body", "detail.body")
+    field_text(soup, ".body", "detail.body")
 
     assert str(soup) == before

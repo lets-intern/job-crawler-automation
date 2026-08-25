@@ -1,13 +1,44 @@
 {# 결과 영역. 생성 결과·편집기·거절 사유가 모두 이 조각 하나로 들어간다.
    AI 수정의 결과 표와 힌트 입력칸은 테스트 실행 화면과 같은 매크로를 쓴다 #}
 {% from "fragments/selector_repair_macro.html" import hint_field, repair_report %}
-{% from "macros.html" import failure, notice_box, state, wait %}
+{% from "macros.html" import blank, failure, notice_box, state, wait %}
 {% if error %}
 {{ failure(error.reason, error.message, title="셀렉터를 만들지 못했다") }}
 {% endif %}
 
 {% if notice %}
 {{ notice_box(notice) }}
+{% endif %}
+
+{% if path %}
+<h3>정해진 경로</h3>
+<p>
+  등록할 때 목록 URL 하나로 상세까지 가는 길을 스스로 찾아 저장한 값이다.
+  <span class="font-semibold">여기서 정해진 것은 제안이고</span>, 아래 등록된 크롤러 표에서
+  운영자가 바꿀 수 있다. 바꾼 값을 이 판정이 다시 덮어쓰지 않는다.
+</p>
+<div class="table-scroll">
+<table class="data-table">
+  <caption>이 크롤러가 도는 방식</caption>
+  <tbody>
+    <tr><th scope="row">목록을 얻는 법</th>
+        <td class="cell-text"><span class="font-medium">{{ path.list_word }}</span>
+          <span class="text-xs text-slate-500">({{ path.list_mode }})</span>
+          <br><span class="break-all text-sm text-slate-600">{{ path.list_note }}</span></td></tr>
+    <tr><th scope="row">상세로 가는 법</th>
+        <td class="cell-text"><span class="font-medium">{{ path.detail_word }}</span>
+          <span class="text-xs text-slate-500">({{ path.detail_mode }})</span>
+          <br><span class="break-all text-sm text-slate-600">{{ path.detail_note }}</span></td></tr>
+    {# 판정만 남기면 다음 사람이 왜 그렇게 정해졌는지 알 수 없어 처음부터 다시 재게 된다
+       (`app/selector/discovery.py`) #}
+    <tr><th scope="row">근거</th>
+        <td class="cell-text">{% if path.evidence %}{{ path.evidence }}{% else %}{{ blank("근거를 남기지 못했다") }}{% endif %}</td></tr>
+  </tbody>
+</table>
+</div>
+{% if path.reason %}
+{{ failure(path.failure, path.reason, title="상세로 가는 길을 정하지 못했다") }}
+{% endif %}
 {% endif %}
 
 {% if generation %}

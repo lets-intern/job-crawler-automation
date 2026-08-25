@@ -24,8 +24,10 @@ from app import db
 from app.api import crawlers as crawlers_api
 from app.crawler.fetcher import FetchResult
 from app.main import app
+from app.selector.detail_path import document_path
+from app.selector.discovery import Discovery
 from app.selector.generator import GenerationResult, Usage
-from app.selector.schema import validate_selectors
+from app.selector.schema import SelectorSet, validate_selectors
 
 LIST_URL = "https://www.samsungcareers.com/hr/"
 DETAIL_URL = "https://www.samsungcareers.com/hr/1"
@@ -124,6 +126,7 @@ def called_with() -> list[tuple[str, str]]:
         )
 
     app.dependency_overrides[crawlers_api.get_generator] = lambda: generate
+    stub_discoverer()
     return calls
 
 
@@ -234,3 +237,23 @@ async def test_상세_URL_이_없으면_목록만_가져온다(monkeypatch: pyte
     assert fetched == [LIST_URL]
     # 상세 HTML 은 빈 문자열로 들어간다. 없는 페이지를 대신할 것을 지어내지 않는다
     assert generated == [("<ul class='list'></ul>", "")]
+
+
+def stub_discoverer() -> None:
+    """경로 판정도 갈아끼운다. 기본 경로는 실사이트를 다시 가져오고 브라우저까지 연다.
+
+    등록은 셀렉터 생성 다음에 상세로 가는 길을 알아본다 (`app/api/crawlers.py` 의
+    `create_crawler`). 여기서 갈아끼우지 않으면 이 테스트가 네트워크에 매달린다
+    (`.claude/rules/core.md`).
+    """
+
+    async def discover(list_url: str, selectors: SelectorSet) -> Discovery:
+        return Discovery(
+            list_mode="static",
+            detail_mode="static",
+            detail=document_path(f"{list_url}1/", "목록 항목의 링크를 그대로 따라간다"),
+            evidence="정적 목록에서 항목과 상세 주소를 찾았다. 브라우저를 띄우지 않았다",
+            list_count=1,
+        )
+
+    app.dependency_overrides[crawlers_api.get_discoverer] = lambda: discover

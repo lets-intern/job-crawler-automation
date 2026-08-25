@@ -95,7 +95,7 @@ or `httpx.get` directly — that is how rate limits, the User-Agent and retries 
 |---|---|
 | `.claude/rules/writing.md` | Writing any document, report or HTML deliverable |
 | `.claude/rules/crawling.md` | Fetching any external page, or changing the fetch client, scheduler or retry logic |
-| `.claude/rules/llm.md` | Calling the Gemini API, building a prompt, or parsing a model response |
+| `.claude/rules/llm.md` | Calling any model provider, building a prompt, or parsing a model response |
 | `.claude/rules/data-safety.md` | Touching the schema, a migration, the SQLite file, or delivery state |
 | `.claude/rules/git-safety.md` | Committing, pushing, or writing a commit message |
 

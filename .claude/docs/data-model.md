@@ -63,21 +63,51 @@ SQLite 파일 하나. 경로는 `DATABASE_PATH` 가 정하고 Docker named volum
 | status | `success` / `failed` / `timeout` |
 | success_count | 정상 파싱된 항목 수 |
 | new_count | 신규로 적재된 수 |
-| fail_count | |
-| error_class | `transport` / `selector_miss` / `parse` |
+| fail_count | 실패한 항목 수 |
+| skipped_count | 상세를 열지 않고 넘긴 수. 마감이 지났거나 이미 저장한 공고다. 0010 이전 행은 0 |
+| error_class | `transport` / `selector_miss` / `parse` / `list_empty` / `detail_unreachable` / `detail_empty` |
 | error_message | |
 | trigger | 무엇이 실행을 시작했는지. `schedule` / `manual` / `test`. 0007 이전 행은 NULL |
 
 `workflow_id` 와 `crawler_id` 가 둘 다 NULL 인 행은 CHECK 가 막는다. 어느 쪽에도 걸리지 않은
 실행은 나중에 누구도 추적하지 못한다.
 
+`skipped_count` 는 `fail_count` 와 따로 센다. 건너뜀은 실패가 아니라 상세를 열 이유가 없어
+넘긴 것이고, 둘을 한 숫자로 합치면 마감 날짜 형식이 바뀌어 전부 걸러진 사이트가 "새 공고 0건" 인
+정상 실행과 같은 모습이 된다.
+
 `trigger` 는 스케줄러가 깨운 실행(`schedule`), 워크플로우 카드의 지금 1회 실행(`manual`),
 승격 전 크롤러의 테스트 실행(`test`)을 가른다. 이것이 없으면 최근 실행이 있어도 주기가 실제로
 도는 것인지 사람이 눌러 온 것인지 알 수 없다. NULL 은 기록되기 전의 실행이고 화면에
 `알 수 없음` 으로 나온다.
 
-`error_class` 가 세 가지로 나뉘어 있는 이유는 조치가 각각 다르기 때문이다.
-`transport` 만 재시도 대상이다. `.claude/rules/crawling.md` 참조.
+`error_class` 가 여러 값으로 나뉘어 있는 이유는 조치가 각각 다르기 때문이다.
+`transport` 만 재시도 대상이다. 뒤의 셋은 공고가 상세에 도달하지 못한 경우를 가른다 — 목록을
+못 읽은 것(`list_empty`), 상세로 가지 못한 것(`detail_unreachable`), 갔는데 본문이 빈 것
+(`detail_empty`)은 고치는 자리가 다르다. 값의 목록은 `app/crawler/failures.py` 의
+`ERROR_CLASSES` 가 갖고 있고 두 CHECK 제약이 그것과 같아야 한다.
+`.claude/rules/crawling.md` 참조.
+
+### crawl_run_failures
+
+실행 하나가 놓친 공고를 한 줄씩 남긴다. **수집 데이터가 아니라 실행 기록이다** — `raw_jobs` 와
+성격이 다르다.
+
+| 컬럼 | 설명 |
+|---|---|
+| id | |
+| run_id | 어느 실행이 놓쳤는지. `crawl_runs(id)`, `ON DELETE CASCADE` |
+| reason | `crawl_runs.error_class` 와 같은 값. 분류하지 못한 실패는 NULL |
+| title | 목록에서 읽은 제목 |
+| source_url | 목록에서 읽은 주소 |
+| message | 실패 내용 |
+| created_at | |
+
+건수만으로는 고칠 수 없어서 제목과 목록에서 읽은 주소까지 남긴다. 조회는 실행 하나의 실패를
+모아 보는 것 하나뿐이라 `run_id` 에만 인덱스(`idx_crawl_run_failures_run_id`)를 건다.
+
+보관 기한을 따로 두지 않는다. 실행 기록이 지워지면 같이 지워진다. 실패 목록은 그 실행을
+설명하는 것이지 혼자 남아 뜻이 있는 기록이 아니다.
 
 ### raw_jobs
 

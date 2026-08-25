@@ -87,6 +87,38 @@
     </div>
   </dl>
 
+  {# 마지막으로 끝난 실행이 공고를 몇 건씩 어떻게 처리했는가. 위의 누적 성공·실패는 실행이
+     몇 번 성공했는지(회)이고, 이 줄은 그중 마지막 실행이 공고를 몇 건 다뤘는지(건)다.
+
+     건너뜀은 실패와 붙여 놓지 않는다. 마감이 지났거나 이미 아는 공고라 정상이고, 실패에
+     합치면 날짜 형식이 바뀌어 전부 걸러진 사이트가 정상 실행으로 보인다
+     (`migrations/0010_run_failures.sql`) #}
+  <p class="mt-3 break-keep text-sm text-slate-700">
+    {% if card.last_counts %}
+    <span class="font-medium">실행 {{ card.last_counts.run_id }} 의 공고 건수</span> —
+    정상 <span class="font-semibold tabular-nums">{{ card.last_counts.success }}</span>건,
+    신규 <span class="font-semibold tabular-nums">{{ card.last_counts.new }}</span>건,
+    건너뜀 <span class="font-semibold tabular-nums">{{ card.last_counts.skipped }}</span>건(마감이 지났거나 이미 아는 공고다),
+    실패 <span class="font-semibold tabular-nums {% if card.last_counts.failed %}text-red-700{% endif %}">{{ card.last_counts.failed }}</span>건
+    {# 건수만으로는 고칠 수 없다. 어느 공고가 어떤 사유로 빠졌는지는 실행 기록에 남아 있고,
+       여는 자리를 카드 안에 둬서 화면을 옮겨 다니지 않게 한다.
+       실패가 0건이면 열 표가 없다. 누를 것이 없는 버튼은 안내가 아니다 #}
+    {% if card.last_counts.failed %}
+    <button type="button" class="btn-quiet"
+            hx-get="/ui/runs/{{ card.last_counts.run_id }}/failures"
+            hx-target="#run-failures-{{ card.item.id }}"
+            hx-swap="innerHTML"
+            hx-disabled-elt="this"
+            hx-indicator="closest p">실패한 공고 보기</button>
+    {{ wait("실패 목록을 불러오는 중") }}
+    {% endif %}
+    {% else %}
+    <span class="text-slate-600">끝난 실행이 없다. 한 번 돌면 여기에 공고 건수가 들어온다</span>
+    {% endif %}
+  </p>
+  {# 실패 목록이 들어오는 자리. 카드가 다시 그려지면 비워진다 — 그때는 건수도 함께 갈렸다 #}
+  <div id="run-failures-{{ card.item.id }}" class="mt-2"></div>
+
   {# 최근 실행이 실패로 끝났으면 사유를 카드 안에 그대로 둔다. 어느 단계에서 무엇이 안 됐는지를
      보려고 다른 화면으로 옮겨 다니지 않게 한다 #}
   {% if card.reason %}

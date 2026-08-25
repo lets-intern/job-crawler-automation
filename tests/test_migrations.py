@@ -46,6 +46,7 @@ EXPECTED_COLUMNS = {
         "success_count",
         "new_count",
         "fail_count",
+        "skipped_count",
         "error_class",
         "error_message",
         "trigger",
@@ -94,15 +95,39 @@ EXPECTED_COLUMNS = {
         "created_at",
         "updated_at",
     },
+    "crawl_run_failures": {
+        "id",
+        "run_id",
+        "reason",
+        "title",
+        "source_url",
+        "message",
+        "created_at",
+    },
 }
 
 # 사람이 고칠 수 있는 필드. `source_url` 과 `delivered_at` 은 여기에 없다
 OVERRIDABLE = ["company", "title", "department", "deadline", "body", "requirements"]
 
-EXPECTED_INDEXES = {"idx_raw_jobs_content_hash", "idx_normalized_jobs_normalized_at"}
+EXPECTED_INDEXES = {
+    "idx_raw_jobs_content_hash",
+    "idx_normalized_jobs_normalized_at",
+    "idx_crawl_run_failures_run_id",
+}
 
 # 지금까지의 마이그레이션. 전부 역적용해야 테이블이 사라진다
-ALL_VERSIONS = ["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009"]
+ALL_VERSIONS = [
+    "0001",
+    "0002",
+    "0003",
+    "0004",
+    "0005",
+    "0006",
+    "0007",
+    "0008",
+    "0009",
+    "0010",
+]
 
 
 @pytest.fixture
@@ -498,3 +523,192 @@ def test_html_text_down_drops_only_its_own_rules(conn: sqlite3.Connection) -> No
 
     rows = conn.execute("SELECT rule_type FROM normalization_rules").fetchall()
     assert [row["rule_type"] for row in rows] == ["trim"]
+
+
+def _at_0009(connection: sqlite3.Connection) -> None:
+    """0010 직전 상태로 만든다. `crawl_runs` 에 `skipped_count` 가 아직 없는 스키마다."""
+    db.migrate_up(connection)
+    db.migrate_down(connection, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0010"))
+    assert "skipped_count" not in _columns(connection, "crawl_runs")
+
+
+def _seed_run(connection: sqlite3.Connection) -> None:
+    """실행 기록 한 행. 크롤러와 워크플로우까지 있어야 외래키가 선다."""
+    connection.execute(
+        "INSERT INTO crawlers (name, list_url) VALUES (?, ?)", ("테스트", "https://example.test")
+    )
+    connection.execute("INSERT INTO workflows (crawler_id, name) VALUES (1, '워크플로우')")
+    connection.execute(
+        """
+        INSERT INTO crawl_runs (workflow_id, status, success_count, new_count, fail_count)
+        VALUES (1, 'success', 5, 2, 1)
+        """
+    )
+
+
+def test_skipped_count_keeps_existing_runs_and_starts_at_zero(conn: sqlite3.Connection) -> None:
+    """0010 은 컬럼을 더하기만 한다. 적용 전 실행 기록이 그대로 남고 새 열은 0 이다."""
+    _at_0009(conn)
+    _seed_run(conn)
+    before = conn.execute(
+        "SELECT id, status, success_count, new_count, fail_count FROM crawl_runs"
+    ).fetchall()
+
+    db.migrate_up(conn)
+
+    after = conn.execute(
+        """
+        SELECT id, status, success_count, new_count, fail_count, skipped_count
+        FROM crawl_runs
+        """
+    ).fetchall()
+    assert [tuple(row)[:5] for row in after] == [tuple(row) for row in before]
+    assert [row["skipped_count"] for row in after] == [0]
+
+
+def test_skipped_count_is_counted_apart_from_fail_count(conn: sqlite3.Connection) -> None:
+    """건너뜀과 실패는 다른 열이다. 합치면 전부 걸러진 사이트가 정상 실행으로 보인다."""
+    db.migrate_up(conn)
+    _seed_run(conn)
+
+    conn.execute("UPDATE crawl_runs SET skipped_count = 83 WHERE id = 1")
+
+    row = conn.execute("SELECT fail_count, skipped_count FROM crawl_runs WHERE id = 1").fetchone()
+    assert (row["fail_count"], row["skipped_count"]) == (1, 83)
+
+
+def test_skipped_count_down_removes_only_its_own_column(conn: sqlite3.Connection) -> None:
+    """역적용은 0010 이 더한 열만 지운다. 실행 기록 자체는 그대로 남는다."""
+    db.migrate_up(conn)
+    _seed_run(conn)
+    conn.execute("UPDATE crawl_runs SET skipped_count = 7 WHERE id = 1")
+
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0010"))
+
+    assert "skipped_count" not in _columns(conn, "crawl_runs")
+    row = conn.execute("SELECT fail_count, success_count FROM crawl_runs WHERE id = 1").fetchone()
+    assert (row["fail_count"], row["success_count"]) == (1, 5)
+
+
+def _seed_failure(connection: sqlite3.Connection, reason: str = "detail_empty") -> None:
+    connection.execute(
+        """
+        INSERT INTO crawl_run_failures (run_id, reason, title, source_url, message)
+        VALUES (1, ?, '2026 상반기 신입 채용', 'https://example.test/list', '본문이 비었다')
+        """,
+        (reason,),
+    )
+
+
+def test_run_failures_are_deleted_with_the_run_they_explain(conn: sqlite3.Connection) -> None:
+    """실패 목록은 그 실행을 설명하는 기록이다. 실행이 지워지면 같이 지워진다."""
+    db.migrate_up(conn)
+    _seed_run(conn)
+    _seed_failure(conn)
+    _seed_failure(conn, reason="detail_unreachable")
+
+    assert conn.execute("SELECT count(*) AS n FROM crawl_run_failures").fetchone()["n"] == 2
+
+    conn.execute("DELETE FROM crawl_runs WHERE id = 1")
+
+    assert conn.execute("SELECT count(*) AS n FROM crawl_run_failures").fetchone()["n"] == 0
+
+
+def test_run_failure_needs_an_existing_run(conn: sqlite3.Connection) -> None:
+    """어느 실행에도 걸리지 않은 실패 기록은 아무도 추적하지 못한다."""
+    db.migrate_up(conn)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("INSERT INTO crawl_run_failures (run_id, reason) VALUES (99, 'detail_empty')")
+
+
+def test_run_failure_keeps_the_posting_it_missed(conn: sqlite3.Connection) -> None:
+    """건수만으로는 고칠 수 없다. 제목과 목록에서 읽은 주소가 같이 남는다."""
+    db.migrate_up(conn)
+    _seed_run(conn)
+    _seed_failure(conn)
+
+    row = conn.execute(
+        "SELECT run_id, reason, title, source_url, message, created_at FROM crawl_run_failures"
+    ).fetchone()
+    assert (row["run_id"], row["reason"]) == (1, "detail_empty")
+    assert (row["title"], row["source_url"]) == (
+        "2026 상반기 신입 채용",
+        "https://example.test/list",
+    )
+    assert row["message"] == "본문이 비었다"
+    assert row["created_at"]
+
+
+def test_run_failure_down_drops_only_its_own_table(conn: sqlite3.Connection) -> None:
+    """역적용은 0010 이 만든 표만 지운다. 실행 기록과 수집 데이터는 그대로다."""
+    db.migrate_up(conn)
+    _seed_run(conn)
+    _seed_failure(conn)
+
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0010"))
+
+    assert "crawl_run_failures" not in _names(conn, "table")
+    assert "idx_crawl_run_failures_run_id" not in _names(conn, "index")
+    assert conn.execute("SELECT count(*) AS n FROM crawl_runs").fetchone()["n"] == 1
+
+
+@pytest.mark.parametrize(
+    "error_class",
+    ["transport", "selector_miss", "parse", "list_empty", "detail_unreachable", "detail_empty"],
+)
+def test_run_error_class_holds_every_failure_reason(
+    conn: sqlite3.Connection, error_class: str
+) -> None:
+    """`crawl_runs.error_class` 는 `app/crawler/failures.py` 의 `ERROR_CLASSES` 와 같은 값이다."""
+    db.migrate_up(conn)
+    _seed_run(conn)
+
+    conn.execute("UPDATE crawl_runs SET error_class = ? WHERE id = 1", (error_class,))
+
+    row = conn.execute("SELECT error_class FROM crawl_runs WHERE id = 1").fetchone()
+    assert row["error_class"] == error_class
+
+
+def test_run_error_class_rejects_a_reason_outside_the_six(conn: sqlite3.Connection) -> None:
+    db.migrate_up(conn)
+    _seed_run(conn)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("UPDATE crawl_runs SET error_class = 'detail_missing' WHERE id = 1")
+
+
+def test_error_class_migration_keeps_the_runs_it_did_not_add(conn: sqlite3.Connection) -> None:
+    """컬럼을 갈아 끼우는 동안 기존 실행의 id 와 카운트, 옛 분류가 그대로 남는다."""
+    _at_0009(conn)
+    _seed_run(conn)
+    conn.execute("UPDATE crawl_runs SET error_class = 'selector_miss' WHERE id = 1")
+    before = conn.execute(
+        "SELECT id, status, success_count, fail_count, error_class FROM crawl_runs"
+    ).fetchall()
+
+    db.migrate_up(conn)
+
+    after = conn.execute(
+        "SELECT id, status, success_count, fail_count, error_class FROM crawl_runs"
+    ).fetchall()
+    assert [tuple(row) for row in after] == [tuple(row) for row in before]
+
+
+def test_error_class_down_keeps_the_run_and_clears_only_the_new_reason(
+    conn: sqlite3.Connection,
+) -> None:
+    """역적용은 옛 CHECK 에 담을 수 없는 분류만 비운다. 실행 기록과 사유 문구는 남는다."""
+    db.migrate_up(conn)
+    _seed_run(conn)
+    conn.execute(
+        "UPDATE crawl_runs SET error_class = 'detail_empty', error_message = '본문이 비었다'"
+    )
+
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0010"))
+
+    row = conn.execute(
+        "SELECT id, error_class, error_message, fail_count FROM crawl_runs"
+    ).fetchone()
+    assert (row["id"], row["error_class"]) == (1, None)
+    assert (row["error_message"], row["fail_count"]) == ("본문이 비었다", 1)

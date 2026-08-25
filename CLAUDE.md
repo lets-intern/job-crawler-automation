@@ -69,7 +69,8 @@ detail.
 │   ├── architecture.md       Structure, pipeline stages, folder layout
 │   ├── data-model.md         Tables, content hash, state transitions
 │   ├── api-contract.md       The delivery API the job board consumes
-│   └── tech-stack.md         What is used, and what is deliberately not
+│   ├── tech-stack.md         What is used, and what is deliberately not
+│   └── ocr-benchmark.md      Measured cost of the four collection paths
 │
 ├── site-recipes/             One file per site: rendering, pagination, past failures
 ├── troubleshooting/          Open or unexplained issues
@@ -85,7 +86,7 @@ detail.
 | A selector stopped matching | `site-recipes/<domain>.md`, `skills/crawl-test/SKILL.md` |
 | A workflow is failing | `commands/fix-workflow.md`, `skills/workflow-ops/SKILL.md` |
 | Changing the fetch client, retry or scheduler | `rules/crawling.md`, `docs/architecture.md` |
-| Writing or changing a Gemini API call | `rules/llm.md`, then the current Gemini API docs |
+| Writing or changing a model API call | `rules/llm.md`, then that provider's current docs |
 | Changing a table or writing a migration | `rules/data-safety.md`, `docs/data-model.md` |
 | Changing what the job board receives | `docs/api-contract.md` |
 | A data question ("did it actually store it") | `skills/db-inspect/SKILL.md` |
@@ -95,6 +96,7 @@ detail.
 | Format, lint, typecheck, test before commit | `skills/quality-check/SKILL.md` |
 | Committing or pushing | `rules/git-safety.md` |
 | Why a technology was or was not chosen | `docs/tech-stack.md` |
+| Choosing how to collect a site (static/api/render/OCR) | `docs/ocr-benchmark.md` |
 | PRD -> tasks | `skills/task-maker/SKILL.md` |
 | Executing tasks | `skills/task-runner/SKILL.md`, then `agents/push-lead.md` for mode A |
 | Archiving a finished feature | `skills/task-cleaner/SKILL.md` |

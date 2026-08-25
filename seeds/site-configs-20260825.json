@@ -1,0 +1,289 @@
+{
+  "note": "여섯 사이트의 크롤러 설정. 2026-08-25 에 받은 응답으로 확인한 값이고 tests/test_site_configs.py 가 같은 픽스처에 돌려 본다. crawlers 행에 그대로 들어간다.",
+  "recorded_at": "2026-08-25",
+  "crawlers": [
+    {
+      "name": "LG",
+      "list_url": "https://careers.lg.com/apply",
+      "list_mode": "api",
+      "detail_mode": "api",
+      "default_company": "LG",
+      "note": "목록도 상세도 API 다. 본문은 HTML 조각이라 정규화의 html_text 규칙이 편다. 모집 부문(recList)마다 본문이 따로 있어 * 로 전부 모은다.",
+      "api_config": {
+        "list": {
+          "url": "https://api.careers.lg.com/rmk/job/retrieveJobNoticesList",
+          "method": "POST",
+          "body": {
+            "lnbSearch": "",
+            "hashTagText": "",
+            "recDate": "POST_START_DATE",
+            "order": "DESC",
+            "careerList": [],
+            "companyCodeList": [],
+            "desireLocList": [],
+            "jobGroupList": []
+          },
+          "items_path": "data.jobNoticeList",
+          "fields": {
+            "title": "jobNoticeName",
+            "date": "recEndDateTime",
+            "company": "companyName"
+          },
+          "id_field": "jobNoticeId",
+          "link_template": "https://careers.lg.com/apply/detail?id={id}",
+          "date_is_deadline": true
+        },
+        "detail": {
+          "url": "https://api.careers.lg.com/rmk/job/retrieveJobNoticesDetail",
+          "method": "POST",
+          "body": { "jobNoticeId": "{id}" },
+          "fields": {
+            "title": "data.jobNoticesDetail.jobNoticesDetail.jobNoticeName",
+            "body": "data.jobNoticesDetail.recList.*.detailContext",
+            "requirements": "data.jobNoticesDetail.recList.*.requiredItem",
+            "deadline": "data.jobNoticesDetail.jobNoticesDetail.recEndDate",
+            "department": "data.jobNoticesDetail.recList.*.orgName",
+            "company": "data.jobNoticesDetail.jobNoticesDetail.companyName"
+          }
+        }
+      }
+    },
+    {
+      "name": "한화",
+      "list_url": "https://www.hanwhain.com/portal/apply/recruit",
+      "list_mode": "api",
+      "detail_mode": "api",
+      "default_company": null,
+      "note": "계열사 11곳이 sdNm 으로 온다. 20건씩 4쪽이고 마지막 쪽에서 hasNext 가 false 가 된다. 두 호스트 모두 robots.txt 가 없어 딜레이를 그대로 지킨다.",
+      "api_config": {
+        "list": {
+          "url": "https://hwadm.hanwhain.com/new-backend/portal/api/rcRecruit/search-rcrt",
+          "method": "POST",
+          "body": {
+            "langCd": "ko",
+            "searchText": "",
+            "sdSeqList": null,
+            "rtNrcrtYn": "",
+            "rtCarrYn": ""
+          },
+          "headers": { "referer": "https://www.hanwhain.com/" },
+          "items_path": "data.list",
+          "fields": {
+            "title": "rtNm",
+            "date": "rtAcptEndDttm",
+            "company": "sdNm"
+          },
+          "id_field": "rtSeq",
+          "link_template": "https://www.hanwhain.com/portal/apply/recruit/detail?rtSeq={id}",
+          "pagination": {
+            "param": "page",
+            "start": 0,
+            "max_pages": 10,
+            "has_next": "data.hasNext"
+          },
+          "date_is_deadline": true
+        },
+        "detail": {
+          "url": "https://hwadm.hanwhain.com/new-backend/portal/api/rcRecruit/get-rcrt",
+          "method": "POST",
+          "body": { "rtSeq": "{id}" },
+          "headers": { "referer": "https://www.hanwhain.com/" },
+          "fields": {
+            "title": "data.item.rtNm",
+            "body": [
+              "data.item.unitDt.*.ruNm",
+              "data.item.unitDt.*.ruDtlJob",
+              "data.item.rtEct"
+            ],
+            "requirements": "data.item.rtExmQlf",
+            "deadline": "data.item.rtAcptEndDttm",
+            "department": "data.item.unitDt.*.ruWorkpl",
+            "company": "data.item.sdNm"
+          }
+        }
+      }
+    },
+    {
+      "name": "삼성",
+      "list_url": "https://www.samsungcareers.com/hr/",
+      "list_mode": "api",
+      "detail_mode": "api",
+      "default_company": "삼성",
+      "note": "목록은 폼으로 물어보고 HTML 조각으로 온다. 공고 번호는 a[data-value] 에서 천 단위 쉼표를 뺀 값이다 — 숫자 표기에 기대는 자리다. 상세는 사람이 볼 주소가 따로 없어 detail.data 주소가 그대로 source_url 이 된다. 마감일은 목록의 기간(시작 ~ 마감)에서 온다.",
+      "api_config": {
+        "list": {
+          "url": "https://www.samsungcareers.com/hr/list.data",
+          "method": "POST",
+          "body": {
+            "currentPageNo": 1,
+            "intNo": 0,
+            "strVal": "",
+            "strTxt": "",
+            "strKey": "",
+            "strCompany": "",
+            "strType": "",
+            "strOrderBy": "",
+            "strEntity": ""
+          },
+          "body_format": "form",
+          "response": "html",
+          "headers": { "referer": "https://www.samsungcareers.com/hr/" },
+          "items_path": "li",
+          "fields": {
+            "title": "h3.title",
+            "date": "span.period",
+            "company": "p.company"
+          },
+          "id_field": "a[data-value]@data-value|digits",
+          "link_template": "https://www.samsungcareers.com/recruit/detail.data?seqno={id}&strCode=",
+          "pagination": {
+            "param": "currentPageNo",
+            "start": 1,
+            "max_pages": 10,
+            "total_pages_selector": "input.divCnt",
+            "total_pages_attribute": "data-max"
+          },
+          "date_is_deadline": true
+        },
+        "detail": {
+          "url": "https://www.samsungcareers.com/recruit/detail.data?seqno={id}&strCode=",
+          "method": "GET",
+          "headers": { "referer": "https://www.samsungcareers.com/hr/" },
+          "fields": {
+            "title": "data.result.title",
+            "body": ["data.items.*.titleKr", "data.items.*.taskKr"],
+            "requirements": ["data.items.*.qlfctKr", "data.items.*.favorKr"],
+            "company": "data.result.cmpNameKr"
+          }
+        }
+      }
+    },
+    {
+      "name": "SK",
+      "list_url": "https://www.skcareers.com/Recruit",
+      "list_mode": "api",
+      "detail_mode": "static",
+      "default_company": "SK",
+      "note": "목록은 폼으로 물어보고 104건이 한 번에 온다. 상세는 서버가 그린 HTML 이라 셀렉터로 읽는다. 마감일 end 는 영어 월 이름이다.",
+      "selectors": {
+        "list": {
+          "item": "#RecruitList .list-item",
+          "title": ".title-area .title",
+          "link": "a.list-link",
+          "date": ".title-area .date",
+          "company": ".sub-text .company",
+          "link_template": ""
+        },
+        "detail": {
+          "title": ".box-title",
+          "body": ".detail-content-wrapper",
+          "requirements": ".detail-content-item:nth-child(2)",
+          "deadline": ".box-detail-column:nth-child(1) .box-detail-item:nth-child(1) .value",
+          "department": ".box-detail-column:nth-child(2) .box-detail-item:nth-child(2) .value",
+          "company": ".box-detail-column:nth-child(2) .box-detail-item:nth-child(1) .value"
+        }
+      },
+      "api_config": {
+        "list": {
+          "url": "https://www.skcareers.com/Recruit/GetRecruitList",
+          "method": "POST",
+          "body": {
+            "sort": 2,
+            "searchText": "",
+            "corpCode": "",
+            "jobRole": 0,
+            "recruitType": "",
+            "workingType": "",
+            "workingRegion": ""
+          },
+          "body_format": "form",
+          "headers": { "referer": "https://www.skcareers.com/Recruit" },
+          "items_path": "list",
+          "fields": {
+            "title": "title",
+            "date": "end",
+            "company": "corpName"
+          },
+          "id_field": "noticeID",
+          "link_template": "https://www.skcareers.com/Recruit/Detail/{id}",
+          "date_is_deadline": true
+        }
+      }
+    },
+    {
+      "name": "현대자동차",
+      "list_url": "https://talent.hyundai.com/theme/hall.hc",
+      "list_mode": "api",
+      "detail_mode": "api",
+      "default_company": "현대자동차",
+      "note": "헤더 x-hkmc-service 가 없으면 400 이다. 상세 주소는 recuYy·recuType·recuCls 세 값으로 만든다. 마감일이 20260830 형식이라 지금 정규화 규칙(date_parse)이 읽지 못한다 — %Y%m%d 형식을 더해야 한다.",
+      "api_config": {
+        "list": {
+          "url": "https://talent.hyundai.com/api/rec/AP-HM-FO-02730?hgrCd=1&lang=ko&secCode=&jdRecuCate=01&secLoad=Y",
+          "method": "GET",
+          "headers": {
+            "accept": "application/json, text/plain, */*",
+            "referer": "https://talent.hyundai.com/theme/hall.hc",
+            "x-hkmc-service": "HM",
+            "x-hkmc-token": "null"
+          },
+          "items_path": "data.applyList",
+          "fields": {
+            "title": "recuNoticeNm",
+            "date": "appDispEdDt"
+          },
+          "id_field": "recuYy={recuYy}&recuType={recuType}&recuCls={recuCls}",
+          "link_template": "https://talent.hyundai.com/apply/applyView.hc?{id}",
+          "date_is_deadline": true
+        },
+        "detail": {
+          "url": "https://talent.hyundai.com/api/rec/AP-HM-FO-02800?hgrCd=1&lang=ko&{id}",
+          "method": "GET",
+          "headers": {
+            "accept": "application/json, text/plain, */*",
+            "referer": "https://talent.hyundai.com/apply/applyView.hc",
+            "x-hkmc-service": "HM",
+            "x-hkmc-token": "null"
+          },
+          "fields": {
+            "title": "data.applyInfo.recuNoticeNm",
+            "body": [
+              "data.applyInfo.privJdDtl",
+              "data.applyInfo.aboutTeamNtc",
+              "data.applyInfo.etc"
+            ],
+            "requirements": ["data.applyInfo.privMustReq", "data.applyInfo.prefReq"],
+            "deadline": "data.applyInfo.applyEndDt",
+            "department": "data.applyInfo.fldCodeNm"
+          }
+        }
+      }
+    },
+    {
+      "name": "롯데그룹",
+      "list_url": "https://recruit.lotte.co.kr/apply/announcement",
+      "list_mode": "static",
+      "detail_mode": "static",
+      "default_company": null,
+      "note": "정적 HTML 한 장이다. 자격요건은 본문 안 응시자격 절에 있고 제목으로 찾는다.",
+      "selectors": {
+        "list": {
+          "item": "ul.job-card-list > li",
+          "title": ".card-tit a",
+          "link": ".card-tit a",
+          "date": ".card-foot .date",
+          "company": ".cmp-name",
+          "link_template": ""
+        },
+        "detail": {
+          "title": "h4.title",
+          "body": ".board-content",
+          "requirements": ".board-content p.hire-title:-soup-contains(\"자격\") + ul.hire-bul",
+          "deadline": ".date-detail",
+          "department": "",
+          "company": ".board-type"
+        }
+      }
+    }
+  ]
+}

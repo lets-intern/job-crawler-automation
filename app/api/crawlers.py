@@ -34,6 +34,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from collections.abc import Awaitable, Callable, Iterator
 from typing import Annotated, Any, Protocol
@@ -43,12 +44,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app import db
-from app.crawler.collect import API, open_collectors
+from app.crawler.collect import API, COLLECT_MODES, open_collectors
 from app.crawler.failures import SUCCESS
 from app.crawler.fetcher import FetchError, FetchPolicy, RobotsDisallowedError, get_fetcher
-from app.crawler.playwright import RENDER_MODES, STATIC, open_source
+from app.crawler.playwright import PLAYWRIGHT, RENDER_MODES, STATIC, Renderer, open_source
 from app.crawler.runner import TEST, RunTarget, collect_selectors, run_once
 from app.selector.api_schema import ApiConfigError, parse_api_config
+from app.selector.discovery import Discovery, discover_detail_path
 from app.selector.generator import (
     GenerationResult,
     SelectorGenerationError,
@@ -57,6 +59,8 @@ from app.selector.generator import (
 )
 from app.selector.repair import RepairOutcome, SelectorRepairError, repair_for_urls
 from app.selector.schema import SelectorSchemaError, SelectorSet, validate_selectors
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/crawlers", tags=["crawlers"])
 
@@ -68,6 +72,10 @@ DEFAULT_RENDER_MODE = STATIC
 # 인자는 리스트 URL, 상세 URL, render_mode 다. 어느 경로로 가져올지는 크롤러마다 다르므로
 # 생성 함수가 매번 받는다.
 GenerateFn = Callable[[str, str, str], Awaitable[GenerationResult]]
+
+# 등록할 때 상세로 가는 길을 찾는 경로. 인자는 리스트 URL 과 방금 만든 셀렉터다
+# (`app/selector/discovery.py`). 판정은 제안이고 저장 여부는 이 라우트가 정한다.
+DiscoverFn = Callable[[str, SelectorSet], Awaitable[Discovery]]
 
 
 class RepairFn(Protocol):
@@ -106,6 +114,13 @@ class RenderModeUpdate(BaseModel):
     render_mode: str
 
 
+class CollectModesUpdate(BaseModel):
+    """목록과 상세를 각각 무엇으로 가져올지. 셋 중 하나씩이고 섞어 쓰는 것이 정상이다."""
+
+    list_mode: str
+    detail_mode: str
+
+
 class CompanyUpdate(BaseModel):
     """운영자가 적어 둔 회사명만 바꾼다. 빈 문자열은 지운다는 뜻이다."""
 
@@ -141,6 +156,14 @@ class CrawlerOut(BaseModel):
     skipped_fields: list[str]
     notes: list[str]
     usage: UsageOut
+    # 등록할 때 스스로 정한 경로와 그 근거. 저장된 값이 `list_mode`/`detail_mode` 이고,
+    # `evidence` 는 무엇을 보고 그렇게 정했는지 사람이 읽는 한 줄이다. 판정하지 못했으면
+    # `reason` 에 사유가 있고 모드는 운영자가 고른 값 그대로다
+    list_mode: str = STATIC
+    detail_mode: str = STATIC
+    path_evidence: str = ""
+    path_reason: str = ""
+    path_failure: str = ""
 
 
 class RenderModeOut(BaseModel):
@@ -148,6 +171,14 @@ class RenderModeOut(BaseModel):
 
     id: int
     render_mode: str
+
+
+class CollectModesOut(BaseModel):
+    """경로 수정 결과. 저장된 값을 그대로 돌려준다."""
+
+    id: int
+    list_mode: str
+    detail_mode: str
 
 
 class CompanyOut(BaseModel):
@@ -260,6 +291,10 @@ class TestRunOut(BaseModel):
     success_count: int
     new_count: int
     fail_count: int
+    # 적재하지 않고 넘긴 수. 마감이 지났거나 이미 아는 공고다. `fail_count` 와 반드시 따로
+    # 센다 — 합치면 날짜 형식이 바뀌어 전부 걸러진 사이트가 정상 실행으로 보인다
+    # (`migrations/0010_run_failures.sql`)
+    skipped_count: int
     error_class: str | None
     error_message: str
     items: list[PreviewItem]
@@ -317,11 +352,55 @@ def get_repairer() -> RepairFn:
     return repair
 
 
+def get_discoverer() -> DiscoverFn:
+    """기본 경로 판정. 테스트는 이 의존성을 갈아끼운다.
+
+    브라우저는 필요한 순간에만 뜬다. 목록을 정적으로 받아 항목에 상세 주소까지 있으면
+    `discover_detail_path()` 가 `open_probe` 를 한 번도 부르지 않고, 그때 Chromium 은
+    실행되지 않는다 (`.claude/rules/crawling.md`).
+    """
+
+    async def discover(list_url: str, selectors: SelectorSet) -> Discovery:
+        fetcher = get_fetcher()
+        renderer = Renderer(fetcher)
+        try:
+            return await discover_detail_path(
+                list_url, selectors, fetcher=fetcher, open_probe=renderer.open_probe
+            )
+        finally:
+            # 브라우저를 띄운 적이 없으면 아무 일도 하지 않는다
+            await renderer.aclose()
+
+    return discover
+
+
+async def _discover_path(
+    discover: DiscoverFn, list_url: str, selectors: SelectorSet, render_mode: str
+) -> Discovery:
+    """경로를 알아본다. 알아내지 못해도 등록은 계속된다.
+
+    판정은 제안이다 (`app/selector/discovery.py`). 여기서 예외가 나면 방금 만든 셀렉터까지
+    같이 사라지는데, 그것은 운영자가 손으로 고칠 대상마저 없애는 것이다. 못 알아냈다는 사실을
+    화면에 적고 모드는 운영자가 고른 값 그대로 둔다.
+    """
+    try:
+        return await discover(list_url, selectors)
+    except Exception as exc:
+        # 브라우저가 없거나 사이트가 도중에 끊긴 경우다. 사유는 화면에 그대로 나간다
+        logger.warning("crawler registration: 경로를 판정하지 못했다: %s", exc)
+        return Discovery(
+            list_mode=render_mode,
+            evidence="",
+            reason=f"경로를 판정하는 중에 실패했다: {type(exc).__name__}: {exc}",
+        )
+
+
 @router.post("", response_model=CrawlerOut, status_code=201)
 async def create_crawler(
     payload: CrawlerCreate,
     conn: Annotated[sqlite3.Connection, Depends(get_connection)],
     generate: Annotated[GenerateFn, Depends(get_generator)],
+    discover: Annotated[DiscoverFn, Depends(get_discoverer)],
 ) -> CrawlerOut:
     render_mode = _validated_render_mode(payload.render_mode)
     try:
@@ -377,6 +456,20 @@ async def create_crawler(
             },
         )
 
+    # 셀렉터가 있어야 목록 항목을 잡을 수 있으므로 생성 다음이다. 정적으로 상세 주소까지
+    # 나오면 브라우저는 뜨지 않는다 (`app/selector/discovery.py`)
+    discovery = await _discover_path(discover, payload.list_url, result.selectors, render_mode)
+    # 판정에 성공했을 때만 그 경로를 저장한다. 실패하면 운영자가 고른 모드 그대로 두고,
+    # 무엇이 안 됐는지는 화면에 적힌다.
+    #
+    # 운영자가 렌더를 고른 등록은 렌더로 남는다. 정적으로도 목록이 잡히더라도 판정이 그 선택을
+    # 내려앉히지 않는다 — 고른 값을 자동 판정이 덮어쓰지 않는다는 규칙이 등록 순간에도 같다
+    # (`.claude/tasks/todo/prd-fill-body.md` 5절).
+    discovered_list = discovery.list_mode if discovery.ok else render_mode
+    list_mode = PLAYWRIGHT if render_mode == PLAYWRIGHT else discovered_list
+    detail_mode = (discovery.detail_mode or discovered_list) if discovery.ok else render_mode
+    api_config_json = _discovered_api_config(discovery)
+
     name = payload.name.strip() or urlsplit(payload.list_url).netloc
     # 안 적었으면 NULL 이다. 빈 문자열로 넣으면 "회사명이 있다" 와 구분되지 않는다
     default_company = payload.default_company.strip() or None
@@ -385,8 +478,8 @@ async def create_crawler(
         """
         INSERT INTO crawlers
                (name, list_url, detail_url, selectors_json, status, default_company,
-                list_mode, detail_mode)
-        VALUES (?, ?, ?, ?, 'draft', ?, ?, ?)
+                list_mode, detail_mode, api_config_json)
+        VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, ?)
         """,
         (
             name,
@@ -394,8 +487,9 @@ async def create_crawler(
             detail_url,
             result.selectors.to_json(),
             default_company,
-            render_mode,
-            render_mode,
+            list_mode,
+            detail_mode,
+            api_config_json,
         ),
     )
     crawler_id = int(cursor.lastrowid or 0)
@@ -433,7 +527,23 @@ async def create_crawler(
         skipped_fields=skipped,
         notes=notes,
         usage=UsageOut(**vars(result.usage)),
+        list_mode=list_mode,
+        detail_mode=detail_mode,
+        path_evidence=discovery.evidence,
+        path_reason=discovery.reason,
+        path_failure=discovery.failure,
     )
+
+
+def _discovered_api_config(discovery: Discovery) -> str | None:
+    """알아낸 상세 API 설정. 문서를 그대로 여는 경로면 저장할 설정이 없다.
+
+    설정 없이 `detail_mode = api` 만 저장하면 등록만 성공하고 이후 실행이 전부 실패한다.
+    둘은 같이 저장되거나 같이 저장되지 않는다.
+    """
+    if not discovery.ok or discovery.detail is None or discovery.detail.api is None:
+        return None
+    return discovery.detail.api.to_json()
 
 
 def _skipped_detail_fields(matches: dict[str, int], detail_url: str | None) -> list[str]:
@@ -485,6 +595,49 @@ def update_render_mode(
         (mode, mode, crawler_id),
     )
     return RenderModeOut(id=crawler_id, render_mode=mode)
+
+
+@router.put("/{crawler_id}/collect-modes", response_model=CollectModesOut)
+def update_collect_modes(
+    crawler_id: int,
+    payload: CollectModesUpdate,
+    conn: Annotated[sqlite3.Connection, Depends(get_connection)],
+) -> CollectModesOut:
+    """목록과 상세의 경로를 각각 정한다. 운영자가 정한 값이고 자동으로 되돌아가지 않는다.
+
+    `PUT /{id}/render-mode` 와 나눠 둔 이유는 담을 수 있는 값이 다르기 때문이다. 그쪽은 정적과
+    렌더 사이만 오가고 목록·상세를 같은 값으로 함께 옮긴다 — `api` 로 도는 크롤러에 그것을
+    쓰면 알아낸 API 경로가 조용히 정적으로 내려앉는다. 이 경로는 세 값을 다 받고 목록과 상세를
+    따로 정한다.
+
+    설정은 건드리지 않는다. `api_config_json` 과 셀렉터는 그대로 있고, 바꾼 경로로 실제로
+    가져와지는지는 테스트 실행이 말해 준다.
+    """
+    row = conn.execute("SELECT id FROM crawlers WHERE id = ?", (crawler_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail={"message": f"크롤러 {crawler_id} 가 없다"})
+
+    list_mode = _validated_collect_mode(payload.list_mode, "list_mode")
+    detail_mode = _validated_collect_mode(payload.detail_mode, "detail_mode")
+    conn.execute(
+        "UPDATE crawlers SET list_mode = ?, detail_mode = ? WHERE id = ?",
+        (list_mode, detail_mode, crawler_id),
+    )
+    return CollectModesOut(id=crawler_id, list_mode=list_mode, detail_mode=detail_mode)
+
+
+def _validated_collect_mode(value: str, field: str) -> str:
+    """모르는 값은 거절한다. 저장하고 나서 실행이 실패하는 것보다 지금 거절하는 편이 낫다."""
+    mode = value.strip()
+    if mode not in COLLECT_MODES:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "reason": "unknown_collect_mode",
+                "message": f"{field} 는 {', '.join(COLLECT_MODES)} 중 하나다: {value}",
+            },
+        )
+    return mode
 
 
 @router.put("/{crawler_id}/company", response_model=CompanyOut)
@@ -787,6 +940,7 @@ async def test_run(
         success_count=result.success_count,
         new_count=result.new_count,
         fail_count=result.fail_count,
+        skipped_count=result.skipped_count,
         error_class=result.error_class,
         error_message=result.error_message,
         items=[

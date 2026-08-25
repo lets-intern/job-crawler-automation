@@ -24,6 +24,22 @@ PRD 비목표다 — 여기서 하는 것은 렌더링뿐이다.
 한 실행 안에서는 브라우저 하나를 목록·상세에 재사용하고, 실행이 끝나면 닫는다. 브라우저
 인스턴스 하나가 150~300MB 를 쓰기 때문에 실행 사이에 띄워 두지 않는다. `open_source()` 가
 그 수명을 들고 있다.
+
+## 페이지가 낸 요청을 관찰한다
+
+`RequestLog` 는 렌더 중에 **페이지가 스스로 내는** 요청을 받아 적는다. 상세가 어느 endpoint
+에서 오는지는 등록할 때 이것으로 알아낸다 — 삼성은 클릭해도 주소가 바뀌지 않고
+`recruit/detail.data?seqno=...` 가 나갈 뿐이라, 요청을 보지 않으면 상세 경로를 찾을 길이 없다
+(`.claude/site-recipes/www-samsungcareers-com.md`).
+
+**이것은 관찰이지 두 번째 요청 경로가 아니다.** 여기서 새로 무엇을 보내지 않는다. 브라우저가
+이미 낸 요청의 응답을 읽을 뿐이고, 그 브라우저는 `Fetcher.guard()` 안에서 돈다. 관찰로 알아낸
+경로를 실제로 부르는 것은 공용 fetch 클라이언트다 (`.claude/rules/crawling.md`).
+
+거르는 것과 상한이 있다. 정적 자산(`.js`, `.css`, 이미지, 폰트)과 분석 도구는 상세 경로가 될
+수 없으므로 기록하지 않고, 응답 본문은 `OBSERVED_BODY_LIMIT` 까지만 들고 있는다. 페이지 하나가
+수백 개의 요청을 내고 그중 하나가 수 MB 인 것이 보통이라, 상한이 없으면 관찰 자체가 메모리를
+먹는다.
 """
 
 from __future__ import annotations
@@ -32,7 +48,9 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager, suppress
+from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 from app.config import Settings, get_settings
 from app.crawler.fetcher import (
@@ -57,6 +75,203 @@ _SETTLE_SECONDS = 5.0
 # 반복 항목이 실제로 생길 때까지 한 번 더 기다린다.
 _ITEMS_SECONDS = 10.0
 _ITEM_HINTS = ("li[data-recucls]", "ul li", "ol li", "tbody tr", "article")
+
+# 응답 본문을 여기까지만 들고 있는다. 상세 경로를 알아보는 데는 앞부분이면 충분하고, 큰 응답을
+# 통째로 쥐고 있으면 관찰이 렌더보다 비싸진다
+OBSERVED_BODY_LIMIT = 200_000
+# 한 페이지에서 기록할 요청 수의 상한. 폴링하는 페이지가 무한히 쌓는 것을 막는다
+OBSERVED_LIMIT = 200
+
+# 상세 경로가 될 수 없는 파일들. 확장자로 먼저 거른다
+_ASSET_SUFFIXES: tuple[str, ...] = (
+    ".js",
+    ".mjs",
+    ".css",
+    ".map",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".svg",
+    ".ico",
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".otf",
+    ".eot",
+    ".mp4",
+    ".webm",
+)
+# 분석·광고 도구. 공고와 무관한 요청이고 페이지마다 수십 개씩 나간다
+_ANALYTICS_HOST_MARKS: tuple[str, ...] = (
+    "google",
+    "gtm",
+    "analytics",
+    "doubleclick",
+    "facebook",
+    "hotjar",
+    "clarity.ms",
+    "criteo",
+    "adservice",
+    "amplitude",
+    "mixpanel",
+)
+_ANALYTICS_PATH_MARKS: tuple[str, ...] = ("/gtm", "/gtag", "/analytics", "/ga.js")
+# 확장자가 없는 자산을 content-type 으로 한 번 더 거른다
+_ASSET_TYPE_MARKS: tuple[str, ...] = (
+    "image/",
+    "font/",
+    "video/",
+    "audio/",
+    "text/css",
+    "javascript",
+)
+
+
+@dataclass(frozen=True)
+class ObservedRequest:
+    """페이지가 스스로 낸 요청 하나와 그 응답.
+
+    `body` 는 `OBSERVED_BODY_LIMIT` 까지 자른 것이고, 잘렸으면 `truncated` 가 참이다.
+    """
+
+    method: str
+    url: str
+    status: int
+    content_type: str = ""
+    request_body: str = ""
+    body: str = ""
+    truncated: bool = False
+
+    @property
+    def is_json(self) -> bool:
+        """JSON 응답인가. content-type 이 비어 오는 API 가 있어 본문 첫 글자도 본다."""
+        if "json" in self.content_type:
+            return True
+        return self.body.lstrip()[:1] in ("{", "[")
+
+    def contains(self, text: str) -> bool:
+        """이 요청 어딘가에 그 값이 들어 있는가. 공고 번호를 찾을 때 쓴다."""
+        if not text:
+            return False
+        return text in self.url or text in self.request_body
+
+
+class RequestLog:
+    """렌더 중 페이지가 낸 요청을 받아 적는다. 새로 보내는 것은 없다.
+
+    `attach()` 로 페이지의 응답 이벤트에 붙고, 응답 본문은 백그라운드로 읽는다. 읽기가 끝나기를
+    기다리는 것은 `drain()` 이고, **페이지가 닫히기 전에** 불러야 한다 — 닫힌 뒤에는 본문을
+    읽을 수 없다.
+
+    기록 순서는 응답이 온 순서다. 본문을 읽는 시간이 제각각이라 완료 순서로 담으면 클릭 전후가
+    뒤섞이는데, 무엇이 클릭 때문에 나간 요청인지가 이 순서로 갈린다. 그래서 자리를 먼저 잡아
+    두고 나중에 채운다.
+    """
+
+    def __init__(
+        self, *, body_limit: int = OBSERVED_BODY_LIMIT, limit: int = OBSERVED_LIMIT
+    ) -> None:
+        self._body_limit = body_limit
+        self._limit = limit
+        self._slots: list[ObservedRequest | None] = []
+        self._pending: list[asyncio.Future[None]] = []
+
+    def attach(self, page: Any) -> None:
+        """페이지의 응답 이벤트에 붙는다. 같은 로그를 여러 페이지에 붙일 수 있다 —
+        새 탭에서 나가는 요청도 같은 자리에 모인다."""
+        page.on("response", self._on_response)
+
+    @property
+    def requests(self) -> list[ObservedRequest]:
+        """지금까지 기록된 요청. 아직 안 읽혔거나 걸러진 자리는 빠진다."""
+        return [entry for entry in self._slots if entry is not None]
+
+    def mark(self) -> int:
+        """지금 자리를 표시한다. 클릭 전에 찍어 두고 `since()` 로 그 뒤만 본다."""
+        return len(self._slots)
+
+    def since(self, mark: int) -> list[ObservedRequest]:
+        """표시한 자리 뒤에 기록된 요청."""
+        return [entry for entry in self._slots[mark:] if entry is not None]
+
+    async def drain(self) -> None:
+        """본문 읽기가 끝나기를 기다린다. 페이지를 닫기 전에 부른다."""
+        while self._pending:
+            pending, self._pending = self._pending, []
+            await asyncio.gather(*pending, return_exceptions=True)
+
+    def _on_response(self, response: Any) -> None:
+        """이벤트 콜백. 여기서는 자리만 잡고 본문 읽기는 뒤로 넘긴다."""
+        url = str(getattr(response, "url", "") or "")
+        if not is_data_request(url) or len(self._slots) >= self._limit:
+            return
+        slot = len(self._slots)
+        self._slots.append(None)
+        self._pending.append(asyncio.ensure_future(self._capture(slot, response)))
+
+    async def _capture(self, slot: int, response: Any) -> None:
+        """응답 하나를 기록한다. 못 읽으면 그 자리는 빈 채로 둔다."""
+        content_type = _content_type(response)
+        if any(mark in content_type for mark in _ASSET_TYPE_MARKS):
+            return
+
+        body = ""
+        with suppress(Exception):
+            body = await response.text()
+        request = getattr(response, "request", None)
+        self._slots[slot] = ObservedRequest(
+            method=str(getattr(request, "method", "") or "GET").upper(),
+            url=str(getattr(response, "url", "") or ""),
+            status=int(getattr(response, "status", 0) or 0),
+            content_type=content_type,
+            request_body=str(getattr(request, "post_data", "") or ""),
+            body=body[: self._body_limit],
+            truncated=len(body) > self._body_limit,
+        )
+
+
+def is_data_request(url: str) -> bool:
+    """이 URL 을 기록할 것인가. 자산과 분석 도구는 상세 경로가 될 수 없다."""
+    value = url.strip()
+    if not value.lower().startswith(("http://", "https://")):
+        # data:, blob:, about:blank. 다시 부를 수 있는 주소가 아니다
+        return False
+    parts = urlsplit(value.lower())
+    if any(mark in parts.netloc for mark in _ANALYTICS_HOST_MARKS):
+        return False
+    if any(mark in parts.path for mark in _ANALYTICS_PATH_MARKS):
+        return False
+    return not parts.path.endswith(_ASSET_SUFFIXES)
+
+
+def _content_type(response: Any) -> str:
+    """응답의 content-type. 버전에 따라 속성이거나 메서드라 둘 다 받는다."""
+    headers = getattr(response, "headers", None)
+    if callable(headers):
+        with suppress(Exception):
+            headers = headers()
+    if not isinstance(headers, dict):
+        return ""
+    for name, value in headers.items():
+        if str(name).lower() == "content-type":
+            return str(value).lower()
+    return ""
+
+
+@dataclass(frozen=True)
+class ProbeSession:
+    """렌더해 놓고 아직 닫지 않은 페이지 하나. 등록할 때 눌러 보는 자리가 쓴다.
+
+    `html` 과 `url` 은 클릭 전의 것이다. 클릭 뒤의 값은 누른 쪽이 다시 읽는다.
+    """
+
+    page: Any
+    context: Any
+    log: RequestLog
+    html: str
+    url: str
 
 
 class RenderError(FetchError):
@@ -104,6 +319,50 @@ class Renderer:
         async with self._fetcher.guard(url):
             return await self._render(url)
 
+    async def fetch_observed(self, url: str) -> tuple[FetchResult, list[ObservedRequest]]:
+        """렌더하면서 페이지가 낸 요청까지 함께 돌려준다.
+
+        등록할 때 상세 경로를 찾는 자리만 쓴다. 주기 실행은 `fetch()` 를 쓴다 — 매 실행마다
+        응답 본문을 다 들고 있을 이유가 없다.
+        """
+        log = RequestLog()
+        async with self._fetcher.guard(url):
+            result = await self._render(url, log=log)
+        return result, log.requests
+
+    @asynccontextmanager
+    async def open_probe(self, url: str) -> AsyncIterator[ProbeSession]:
+        """목록을 렌더한 채로 열어 둔다. 등록할 때 항목을 눌러 보는 자리만 쓴다.
+
+        `fetch()` 는 HTML 한 장을 받고 페이지를 닫는다. 눌러 보려면 페이지가 살아 있어야 하고,
+        누른 뒤에 나가는 요청까지 같은 로그에 모여야 한다. 새 탭도 같은 로그에 붙인다 — SK 는
+        상세가 새 탭에서 열린다.
+
+        호스트 잠금은 이 블록이 끝날 때까지 잡고 있다. 브라우저가 페이지 하나를 그리며 같은
+        호스트로 여러 요청을 내는 동안 정적 요청이 끼어들면 딜레이가 사실이 아니게 된다
+        (`app/crawler/fetcher.py` 의 `guard()`).
+        """
+        browser = await self._browser_instance()
+        timeout_ms = int(self._timeout * 1000)
+        async with self._fetcher.guard(url):
+            context = await browser.new_context(user_agent=self._fetcher.user_agent)
+            log = RequestLog()
+            try:
+                page = await context.new_page()
+                log.attach(page)
+                context.on("page", log.attach)
+                await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+                await _settle(page)
+                await log.drain()
+                yield ProbeSession(
+                    page=page, context=context, log=log, html=await page.content(), url=page.url
+                )
+            finally:
+                with suppress(Exception):
+                    await log.drain()
+                with suppress(Exception):
+                    await context.close()
+
     async def aclose(self) -> None:
         """브라우저를 닫는다. 두 번 불러도 안전하다."""
         browser, self._browser = self._browser, None
@@ -115,7 +374,7 @@ class Renderer:
             with suppress(Exception):
                 await playwright.stop()
 
-    async def _render(self, url: str) -> FetchResult:
+    async def _render(self, url: str, *, log: RequestLog | None = None) -> FetchResult:
         browser = await self._browser_instance()
         timeout_ms = int(self._timeout * 1000)
         try:
@@ -123,12 +382,17 @@ class Renderer:
                 context = await browser.new_context(user_agent=self._fetcher.user_agent)
                 try:
                     page = await context.new_page()
+                    if log is not None:
+                        log.attach(page)
                     response = await page.goto(
                         url, wait_until="domcontentloaded", timeout=timeout_ms
                     )
                     await _settle(page)
                     html = await page.content()
                     final_url = page.url
+                    if log is not None:
+                        # 페이지가 닫히면 응답 본문을 읽을 수 없다. 닫기 전에 기다린다
+                        await log.drain()
                 finally:
                     with suppress(Exception):
                         await context.close()

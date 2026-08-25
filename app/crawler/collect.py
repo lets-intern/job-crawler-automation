@@ -70,6 +70,9 @@ class Collectors:
     detail_mode: str
     list: ListCollector
     detail: DetailCollector
+    # 목록에서 읽은 날짜가 그 공고의 마감일인가. 참이면 러너가 마감이 지난 공고의 상세를
+    # 열지 않는다 (`app/crawler/runner.py`)
+    list_date_is_deadline: bool = False
 
 
 class HtmlListCollector:
@@ -188,10 +191,29 @@ async def open_collectors(
             detail_mode=detail_mode,
             list=list_collector,
             detail=detail_collector,
+            list_date_is_deadline=list_date_is_deadline(list_mode, config, selectors),
         )
     finally:
         if instance is not None:
             await instance.aclose()
+
+
+def list_date_is_deadline(list_mode: str, config: ApiConfig, selectors: SelectorSet) -> bool:
+    """목록에서 읽은 날짜가 그대로 마감일이 되는 크롤러인가.
+
+    `list.date` 는 사이트가 목록에 적어 둔 날짜일 뿐이고, 그것이 마감일인지 게시일인지는
+    사이트마다 다르다. 게시일을 마감일로 읽으면 어제 올라온 새 공고를 지난 공고로 버린다.
+
+    목록이 API 면 설정이 말해 준다 (`list.date_is_deadline`). 응답 필드를 보고 사람이 적은
+    값이고, 적지 않았으면 건너뛰지 않는다 — 모르는 쪽은 열어 본다.
+
+    목록이 HTML 이면 상세에 마감일 셀렉터가 없을 때만 목록 날짜를 마감일로 쓴다. `_record()`
+    가 그때만 목록 날짜를 마감일 자리에 넣기 때문이고, 두 자리의 판정이 갈리면 화면에 보이는
+    마감일과 건너뛴 이유가 어긋난다.
+    """
+    if list_mode == API:
+        return config.list is not None and config.list.date_is_deadline
+    return not selectors.detail.deadline.strip()
 
 
 def html_collectors(
@@ -207,6 +229,7 @@ def html_collectors(
         detail_mode=mode,
         list=HtmlListCollector(source, list_url, selectors.list, mode),
         detail=HtmlDetailCollector(source, selectors.detail),
+        list_date_is_deadline=list_date_is_deadline(mode, ApiConfig(), selectors),
     )
 
 
