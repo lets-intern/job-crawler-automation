@@ -70,10 +70,22 @@ Push 의 목적이다.
             - 사본을 포트 8140 에 띄워 `/`, `/workflows`, `/jobs`, `/rules`, `/tests`,
               `/settings` 여섯 화면이 전부 200 으로 떴다
             - 제공 API 로 전체를 훑어 원본 314건, 사본 314건으로 같다. 확인 뒤 8140 은 내렸다
-    - [ ] 6.2 수집 데이터를 비운다
+    - [x] 6.2 수집 데이터를 비운다
         - 위 배경의 다섯 표를 비운다. 외래키 순서를 지키고 한 트랜잭션으로 한다
         - `normalization_rules` 와 `app_settings` 가 그대로인지 비운 직후에 센다
-        - [ ] 6.2.V 검증: 비운 뒤 다섯 표가 0행이고 규칙이 27개, `app_settings` 가 그대로인지
+        - [x] 6.2.V 검증: 비운 뒤 다섯 표가 0행이고 규칙이 27개, `app_settings` 가 그대로인지
+            - 공고는 검수 화면의 `워크플로우 N 의 수집분 전부 지우기` 로 워크플로우마다 지웠다.
+              확인 창이 센 건수와 지워진 건수가 여섯 번 모두 같다 —
+              wf2 8, wf3 16, wf4 113, wf5 89, wf6 20, wf7 68 로 `raw_jobs` 314,
+              `normalized_jobs` 314, `job_field_overrides` 2
+            - `crawl_runs` 와 `crawl_run_failures` 는 화면 경로가 없어 `app.db.connect` 로
+              열어 `crawl_run_failures` -> `crawl_runs` 순으로 한 트랜잭션에 지웠다.
+              실패 0행, 실행 215행
+            - 비운 뒤: 다섯 표 전부 0행. `normalization_rules` 27개(`html_text` 2개 포함),
+              `app_settings` 1행(`max_concurrent_runs=3`), `schema_migrations` 10,
+              `crawlers` 6, `workflows` 6 그대로
+            - 6.3 을 하나씩 돌리려고 여섯 워크플로우를 화면에서 중지시켰다. 주기 실행이
+              중간에 끼면 어느 사이트의 결과인지 갈리지 않는다. 6.5 에서 되돌린다
     - [ ] 6.3 여섯 사이트를 1회씩 돌린다
         - 워크플로우를 하나씩 수동 실행한다. 한꺼번에 돌리지 않는다 — 실패하면 어느 사이트인지
           바로 알아야 한다
