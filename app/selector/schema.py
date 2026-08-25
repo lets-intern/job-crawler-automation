@@ -34,7 +34,12 @@ from pydantic import BaseModel
 # `link` 가 여기 있는 것은 링크가 없어도 된다는 뜻이 아니다. 상세로 가는 a 태그가 없는
 # 사이트에서 모델이 아무 요소나 대신 고르지 않고 비워 두게 하려는 것이고, 비어 있으면
 # 자체 검증이 `list.link` 를 실패로 적는다 (`app/selector/verify.py`).
-OPTIONAL_LIST_FIELDS: frozenset[str] = frozenset({"company", "link", "link_template"})
+#
+# `date` 는 목록에 날짜를 안 적는 사이트가 있어서다. 네이버 목록은 모집 기간이 `dd.info_text`
+# 다섯 개 중 하나로만 있어 모델이 두 번 다 비워 냈고, 그 빈 값 하나 때문에 테스트 실행이
+# `invalid_selectors` 로 거절돼 크롤러를 아예 돌릴 수 없었다. 없는 것을 지어내는 것보다
+# 비워 두는 편이 낫고, 마감일은 상세에서 온다
+OPTIONAL_LIST_FIELDS: frozenset[str] = frozenset({"company", "link", "link_template", "date"})
 OPTIONAL_DETAIL_FIELDS: frozenset[str] = frozenset(
     {"requirements", "deadline", "department", "company"}
 )

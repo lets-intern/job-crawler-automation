@@ -60,6 +60,8 @@ script, style, 주석은 이미 걷어냈고 반복되는 목록 항목은 앞�
 - detail.title 과 detail.body 는 반드시 채운다.
 - detail.requirements, detail.deadline, detail.department 는 페이지에 해당 항목이 없으면
   빈 문자열로 둔다. 아무 요소나 억지로 고르지 않는다.
+- list.date 도 마찬가지다. 항목 안에 게시일이나 모집 기간이 보이지 않으면 빈 문자열로 둔다.
+  날짜가 아닌 값을 날짜 자리에 넣지 않는다.
 - list.company 와 detail.company 는 그 공고를 낸 회사 이름이 적힌 요소다. 사이트 하나에
   여러 계열사 공고가 섞이는 경우가 있어서 공고마다 다른 값이 나올 수 있다.
 - 회사 이름이 페이지에 없으면 list.company 와 detail.company 를 빈 문자열로 둔다.
