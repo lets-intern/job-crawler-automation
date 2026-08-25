@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     # 잠기지 않은 것과 같다
     admin_password: str = "1234"
 
+    # 빌드가 심는 커밋 SHA. 이미지 태그를 고정하지 않으므로 떠 있는 코드를 아는 길이
+    # 이 값뿐이다. 로컬에서 띄우면 비어 있다
+    build_sha: str = "unknown"
+
     # 실행
     # 동시 실행 상한의 초기값. 한 번 app_settings 에 들어간 뒤로는 DB 값이 이긴다
     # (`app/settings.py`). 초기값으로 들어갈 값이라 여기서 범위를 지킨다

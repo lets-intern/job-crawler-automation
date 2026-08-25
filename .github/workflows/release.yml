@@ -41,11 +41,43 @@ jobs:
             type=sha,format=short
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - uses: docker/build-push-action@v6
+      - id: build
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true
+          # 떠 있는 코드가 무엇인지 이미지가 스스로 알게 한다. compose 가 태그를 고정하지
+          # 않으므로 `/health` 의 이 값이 배포된 커밋을 아는 유일한 길이다
+          build-args: |
+            BUILD_SHA=${{ github.sha }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # 이미지가 올라간 뒤에 Coolify 에 받아 가라고 알린다. 이것이 없으면 compose 가
+      # `:latest` 를 가리켜도 Coolify 는 새 이미지가 생긴 것을 모른다.
+      #
+      # `force=true` 다. compose 파일이 그대로면 Coolify 가 "바뀐 것 없음" 으로 건너뛰는데,
+      # 우리는 파일이 아니라 태그 뒤의 이미지가 바뀌는 구조라 건너뛰면 안 된다.
+      #
+      # 실패해도 이미지는 이미 올라가 있다. 배포만 손으로 다시 걸면 된다.
+      - name: Coolify 재배포 요청
+        if: github.ref == 'refs/heads/main' && success()
+        env:
+          URL: ${{ secrets.COOLIFY_DEPLOY_URL }}
+          TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+        run: |
+          if [ -z "$URL" ] || [ -z "$TOKEN" ]; then
+            echo "COOLIFY_DEPLOY_URL 이나 COOLIFY_TOKEN 이 없다. 배포 요청을 건너뛴다"
+            exit 0
+          fi
+          code=$(curl -sS -o /tmp/coolify.out -w '%{http_code}' \
+            -H "Authorization: Bearer $TOKEN" "$URL")
+          echo "Coolify 응답 $code"
+          # 본문에 토큰이 실릴 일은 없지만, 실패했을 때만 앞부분을 남긴다
+          if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+            head -c 300 /tmp/coolify.out
+            echo
+            exit 1
+          fi

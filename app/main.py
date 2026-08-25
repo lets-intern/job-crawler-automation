@@ -26,6 +26,7 @@ from app.api import (
     ui_workflows,
     workflows,
 )
+from app.config import get_settings
 from app.crawler.fetcher import close_fetcher
 from app.crawler.runner import close_orphan_runs
 from app.scheduler import get_scheduler, shutdown_scheduler
@@ -91,4 +92,9 @@ auth.install_auth(app)
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok"}
+    """Coolify 가 배포 성공을 판정하는 자리. 어떤 코드가 떠 있는지도 같이 돌려준다.
+
+    이미지 태그를 커밋 SHA 로 고정하지 않으므로, 배포된 것이 무엇인지 아는 길이
+    이 값뿐이다. 빌드가 심고(`Dockerfile` 의 `BUILD_SHA`) 사람이 손대지 않는다.
+    """
+    return {"status": "ok", "build": get_settings().build_sha}

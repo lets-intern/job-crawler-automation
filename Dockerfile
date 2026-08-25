@@ -36,6 +36,11 @@ RUN useradd --create-home --uid 1000 appuser \
     && chown appuser:appuser /data
 USER appuser
 
+# 어떤 코드가 떠 있는지 이미지 스스로 알게 한다. 태그를 고정하지 않으므로 배포된 것이
+# 무엇인지 알 길이 이 값뿐이다 (`/health` 가 돌려준다)
+ARG BUILD_SHA=unknown
+ENV BUILD_SHA=${BUILD_SHA}
+
 EXPOSE 8000
 
 # 마이그레이션을 적용한 뒤 서버를 띄운다. 볼륨의 DB 파일은 여기서 생성만 되고, 지우는 경로는 없다.
