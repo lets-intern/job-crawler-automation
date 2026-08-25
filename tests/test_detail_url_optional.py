@@ -1,11 +1,12 @@
 """상세 URL 없이 등록하기.
 
-상세를 JS 로 그려서 공고마다 주소가 따로 없는 사이트가 있다. 그런 사이트에 없는 주소를
-지어내 가져오지 않는다 — 목록 페이지만 보고 만들고, 상세 셀렉터는 어느 HTML 에도 돌려보지
-않은 채로 남는다.
+운영자는 목록 URL 하나만 넣는다. 상세로 가는 길은 판정이 찾고, **찾았으면 그 페이지를 보고
+상세 셀렉터까지 만든다** — 그래야 목록 URL 하나로 등록이 끝난다.
 
-그 상태는 실패가 아니라 건너뜀이다. 0개 매칭을 실패로 적으면 운영자는 고칠 곳으로 읽는데,
-여기서는 볼 페이지가 없었을 뿐이다.
+찾지 못하는 사이트도 있다. 상세를 JS 로 그려 공고마다 주소가 따로 없으면 없는 주소를
+지어내지 않고, 상세 셀렉터는 어느 HTML 에도 돌려보지 않은 채로 남는다. 그 상태는 실패가
+아니라 건너뜀이다 — 0개 매칭을 실패로 적으면 운영자는 고칠 곳으로 읽는데, 여기서는 볼
+페이지가 없었을 뿐이다.
 
 Gemini 도 실사이트도 부르지 않는다. 생성 의존성과 fetch 클라이언트를 갈아끼운다.
 """
@@ -28,6 +29,7 @@ from app.selector.detail_path import document_path
 from app.selector.discovery import Discovery
 from app.selector.generator import GenerationResult, Usage
 from app.selector.schema import SelectorSet, validate_selectors
+from app.selector.verify import FAILED, OK, SKIPPED, FieldMatch, VerificationReport
 
 LIST_URL = "https://www.samsungcareers.com/hr/"
 DETAIL_URL = "https://www.samsungcareers.com/hr/1"
@@ -48,6 +50,17 @@ SELECTORS: dict[str, Any] = {
     },
 }
 
+# 모델이 "사이트에 없다" 고 답해 셀렉터가 비어 있는 필드. 매칭 0개지만 실패가 아니다
+ABSENT = frozenset(
+    {
+        "list.company",
+        "detail.requirements",
+        "detail.deadline",
+        "detail.department",
+        "detail.company",
+    }
+)
+
 # 상세 필드는 판정되지 않는다. 목록 필드만 실제 HTML 에 돌아간 결과다
 MATCHES = {
     "list.item": 12,
@@ -64,19 +77,24 @@ MATCHES = {
 }
 
 
-class Verified:
-    """검증 결과 대역. 상세 HTML 이 비어 있어 상세 필드가 0개로 온 모양이다."""
+def Verified() -> VerificationReport:  # noqa: N802
+    """검증 결과. 상세 HTML 이 비어 있어 상세 필드가 0개로 온 모양이다.
 
-    list_missing = False
-    failed_list_fields: list[str] = []
-    failed = ["detail.title", "detail.body"]
-    # 셀렉터가 비어 판정을 건너뛴 필드는 없다. 상세가 0개인 것은 볼 HTML 이 없어서다
-    skipped: list[str] = []
-    # 목록 항목 안의 필드는 잡혔다. 12.5 의 거절 대상이 아니다
-    list_fields_missing = False
-
-    def summary(self) -> dict[str, int]:
-        return dict(MATCHES)
+    진짜 `VerificationReport` 를 만든다. 등록이 목록 판정과 상세 판정을 갈라 합치므로
+    (`app/api/crawlers.py` 의 `_fill_detail`) 대역이 필드 목록을 들고 있어야 한다.
+    """
+    return VerificationReport(
+        fields=[
+            FieldMatch(
+                name=name,
+                selector="" if name in ABSENT else "x",
+                matches=count,
+                # 셀렉터가 비어 있는 선택 필드는 건너뜀이다. 매칭 0개지만 고칠 것이 없다
+                status=SKIPPED if name in ABSENT else (OK if count else FAILED),
+            )
+            for name, count in MATCHES.items()
+        ]
+    )
 
 
 @pytest.fixture
@@ -122,7 +140,7 @@ def called_with() -> list[tuple[str, str]]:
                 latency_ms=5000,
             ),
             attempts=1,
-            verification=Verified(),  # type: ignore[arg-type]
+            verification=Verified(),
         )
 
     app.dependency_overrides[crawlers_api.get_generator] = lambda: generate
@@ -136,16 +154,17 @@ def saved(conn: sqlite3.Connection) -> sqlite3.Row:
     return row
 
 
-def test_상세_URL_없이_등록된다(
+def test_상세_URL_없이_등록되고_판정이_찾은_페이지로_상세를_만든다(
     client: TestClient, conn: sqlite3.Connection, called_with: list[tuple[str, str]]
 ) -> None:
-    """빈 값이 거절 사유가 되지 않는다. 컬럼도 NULL 을 받는다."""
+    """빈 값이 거절 사유가 되지 않는다. 판정이 찾은 상세 주소가 그다음 생성의 입력이 된다."""
     response = client.post("/api/crawlers", json={"list_url": LIST_URL})
 
     assert response.status_code == 201
-    assert response.json()["detail_url"] is None
-    assert saved(conn)["detail_url"] is None
-    assert called_with == [(LIST_URL, "")]
+    # 첫 생성은 목록만 보고, 두 번째는 판정이 알아낸 상세 페이지를 본다
+    assert called_with == [(LIST_URL, ""), (LIST_URL, f"{LIST_URL}1/")]
+    assert response.json()["detail_url"] == f"{LIST_URL}1/"
+    assert saved(conn)["detail_url"] == f"{LIST_URL}1/"
 
 
 def test_공백만_적은_상세_URL_은_안_적은_것이다(
@@ -154,19 +173,22 @@ def test_공백만_적은_상세_URL_은_안_적은_것이다(
     response = client.post("/api/crawlers", json={"list_url": LIST_URL, "detail_url": "   "})
 
     assert response.status_code == 201
-    assert saved(conn)["detail_url"] is None
+    # 안 적은 것과 같다. 판정이 찾은 주소가 저장된다
+    assert saved(conn)["detail_url"] == f"{LIST_URL}1/"
 
 
-def test_상세_필드는_실패가_아니라_건너뜀이다(
+def test_상세_페이지를_못_찾으면_실패가_아니라_건너뜀이다(
     client: TestClient, conn: sqlite3.Connection, called_with: list[tuple[str, str]]
 ) -> None:
     """볼 페이지가 없어 판정하지 않은 것이다. 고칠 곳 목록에 섞지 않는다."""
+    stub_discoverer(found=False)
     body = client.post("/api/crawlers", json={"list_url": LIST_URL}).json()
 
     assert body["failed_fields"] == []
     assert "detail.title" in body["skipped_fields"]
     assert "detail.body" in body["skipped_fields"]
-    assert [name for name in body["skipped_fields"] if name.startswith("list.")] == []
+    # 잡힌 목록 필드는 건너뜀이 아니다. 셀렉터가 비어 있는 `list.company` 만 그 자리다
+    assert [name for name in body["skipped_fields"] if name.startswith("list.")] == ["list.company"]
     assert any("상세 URL 이 없어" in note for note in body["notes"])
 
 
@@ -178,7 +200,9 @@ def test_상세_URL_을_주면_건너뛰지_않는다(
         "/api/crawlers", json={"list_url": LIST_URL, "detail_url": DETAIL_URL}
     ).json()
 
-    assert body["skipped_fields"] == []
+    # 볼 페이지가 있었으므로 상세 필드는 판정됐다. 건너뜀으로 남는 것은 셀렉터가 비어 있는
+    # 선택 필드뿐이다
+    assert "detail.title" not in body["skipped_fields"]
     assert body["failed_fields"] == ["detail.title", "detail.body"]
     assert saved(conn)["detail_url"] == DETAIL_URL
 
@@ -187,6 +211,7 @@ def test_화면_결과에_건너뜀_이_단어로_나온다(
     client: TestClient, conn: sqlite3.Connection, called_with: list[tuple[str, str]]
 ) -> None:
     """실패로 적으면 운영자는 고칠 곳으로 읽는다 (`.claude/rules/writing.md`)."""
+    stub_discoverer(found=False)
     html = client.post("/ui/crawlers", data={"list_url": LIST_URL}).text
 
     assert "건너뜀" in html
@@ -220,7 +245,7 @@ async def test_상세_URL_이_없으면_목록만_가져온다(monkeypatch: pyte
                 latency_ms=1,
             ),
             attempts=1,
-            verification=Verified(),  # type: ignore[arg-type]
+            verification=Verified(),
         )
 
     async def unreachable(*args: Any, **kwargs: Any) -> GenerationResult:
@@ -239,15 +264,26 @@ async def test_상세_URL_이_없으면_목록만_가져온다(monkeypatch: pyte
     assert generated == [("<ul class='list'></ul>", "")]
 
 
-def stub_discoverer() -> None:
+def stub_discoverer(found: bool = True) -> None:
     """경로 판정도 갈아끼운다. 기본 경로는 실사이트를 다시 가져오고 브라우저까지 연다.
 
     등록은 셀렉터 생성 다음에 상세로 가는 길을 알아본다 (`app/api/crawlers.py` 의
     `create_crawler`). 여기서 갈아끼우지 않으면 이 테스트가 네트워크에 매달린다
     (`.claude/rules/core.md`).
+
+    `found` 가 거짓이면 상세로 가는 길을 못 찾은 사이트다. 그때는 볼 페이지가 없어 상세
+    셀렉터가 판정되지 않는다.
     """
 
     async def discover(list_url: str, selectors: SelectorSet) -> Discovery:
+        if not found:
+            return Discovery(
+                list_mode="static",
+                evidence="렌더 후 항목은 잡았지만 상세로 가는 길이 없다",
+                failure="detail_unreachable",
+                reason="항목에 상세 주소가 없고 클릭해도 아무 일이 없다",
+                list_count=1,
+            )
         return Discovery(
             list_mode="static",
             detail_mode="static",

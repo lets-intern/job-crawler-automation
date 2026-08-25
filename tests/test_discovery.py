@@ -632,6 +632,11 @@ async def test_클릭이_데려간_주소를_공고마다_다른_형식으로_�
         discovery.link.template == "https://example.test/rcrt/view.do?annoId={onclick|arg1}&lang=ko"
     )
     assert (discovery.link.resolved, discovery.link.count) == (2, 2)
+    # 상세 셀렉터를 만들 때 볼 페이지다. 클릭해도 주소가 그대로인 사이트에서도 이 값은
+    # 공고 하나의 주소다
+    assert discovery.link.sample == "https://example.test/rcrt/view.do?annoId=30005276&lang=ko"
+    assert discovery.detail is not None
+    assert discovery.detail.url == discovery.link.sample
     assert "공고마다 다른 상세 주소 형식을 얻었다" in discovery.evidence
 
 

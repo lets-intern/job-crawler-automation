@@ -264,6 +264,12 @@ def field_text(scope: BeautifulSoup | Tag, selector: str, name: str) -> str:
 
     남는 빈 줄은 여기서 정리하지 않는다. `\n{3,}` 를 줄이는 것은 정규화 규칙의 일이다.
     """
+    if not selector.strip():
+        # 셀렉터가 비어 있다. 모델이 "사이트에 그 항목이 없다" 고 답한 자리이고 문법 오류가
+        # 아니다. 빈 값으로 두지 않고 오류로 만들면 목록 전체를 못 읽게 된다 —
+        # 네이버 등록이 `list.date` 하나가 비었다는 이유로 항목 0건이 됐다
+        return ""
+
     nodes = select_nodes(scope, selector, name)
     if not nodes:
         return ""

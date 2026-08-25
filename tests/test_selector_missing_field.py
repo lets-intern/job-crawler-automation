@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import pytest
 
+from app.crawler.parser import parse_list
 from app.selector.schema import (
+    ListSelectors,
     SelectorSchemaError,
     parse_selectors,
     parse_selectors_allowing_empty,
@@ -62,3 +64,23 @@ def test_lenient_parse_still_rejects_an_unknown_field() -> None:
         )
 
     assert caught.value.reason == "unknown_field"
+
+
+def test_빈_셀렉터는_문법_오류가_아니라_빈_값이다() -> None:
+    """모델이 채우지 못한 필드 하나가 목록 전체를 못 읽게 만들면 안 된다.
+
+    2026-08-25 네이버 등록에서 `list.date` 가 빈 채로 저장됐고, 그것을 `select("")` 로
+    돌린 파서가 문법 오류를 냈다. 항목 10건이 0건으로 읽혀 등록이 통째로 실패했다.
+    """
+    html = """
+    <html><body><ul>
+      <li class="card"><h4>첫 공고</h4><a href="/jobs/1">보기</a></li>
+      <li class="card"><h4>둘째 공고</h4><a href="/jobs/2">보기</a></li>
+    </ul></body></html>
+    """
+    selectors = ListSelectors(item="li.card", title="h4", link="a", date="")
+
+    result = parse_list(html, selectors, "https://example.test/jobs")
+
+    assert [item.title for item in result.items] == ["첫 공고", "둘째 공고"]
+    assert [item.date for item in result.items] == ["", ""]

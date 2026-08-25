@@ -51,15 +51,18 @@ from app.crawler.fetcher import FetchError, FetchPolicy, RobotsDisallowedError, 
 from app.crawler.playwright import PLAYWRIGHT, RENDER_MODES, STATIC, Renderer, open_source
 from app.crawler.runner import TEST, RunTarget, collect_selectors, run_once
 from app.selector.api_schema import ApiConfig, ApiConfigError, parse_api_config
+from app.selector.detail_path import DOCUMENT
 from app.selector.discovery import Discovery, discover_detail_path
 from app.selector.generator import (
     GenerationResult,
     SelectorGenerationError,
+    Usage,
     generate_for_urls,
     generate_from_html,
 )
 from app.selector.repair import RepairOutcome, SelectorRepairError, repair_for_urls
 from app.selector.schema import SelectorSchemaError, SelectorSet, validate_selectors
+from app.selector.verify import VerificationReport
 
 logger = logging.getLogger(__name__)
 
@@ -530,6 +533,20 @@ async def create_crawler(
     list_mode = PLAYWRIGHT if requested == PLAYWRIGHT else discovered_list
     detail_mode = (discovery.detail_mode or discovered_list) if discovery.ok else generated_mode
     api_config_json = _discovered_api_config(discovery)
+
+    # 상세 URL 없이 등록했는데 판정이 상세 문서 주소를 알아냈으면, 그 페이지를 보고 상세
+    # 셀렉터를 만든다. 여기까지 와야 목록 URL 하나로 등록이 끝난다 — 상세 셀렉터가 비어 있는
+    # 크롤러는 첫 실행에서 본문을 못 읽는다
+    sample_detail_url = payload.detail_url.strip() or _discovered_detail_url(discovery)
+    if not payload.detail_url.strip() and sample_detail_url:
+        result = await _fill_detail(
+            generate,
+            result,
+            list_url=payload.list_url,
+            detail_url=sample_detail_url,
+            render_mode=discovery.detail_mode or generated_mode,
+        )
+
     # 항목이 `href` 를 안 들고 있어 판정이 상세 주소 형식을 알아냈으면 그것을 셀렉터에 얹는다.
     # 확인된 것만 온다 (`app/selector/link_probe.py`)
     selectors = _with_link(result.selectors, discovery)
@@ -537,7 +554,9 @@ async def create_crawler(
     name = payload.name.strip() or urlsplit(payload.list_url).netloc
     # 안 적었으면 NULL 이다. 빈 문자열로 넣으면 "회사명이 있다" 와 구분되지 않는다
     default_company = payload.default_company.strip() or None
-    detail_url = payload.detail_url.strip() or None
+    # 판정이 찾아낸 상세 주소도 저장한다. 나중에 AI 수정이 상세 셀렉터를 고치려면 볼 페이지가
+    # 있어야 하고, 그 주소는 이미 열어서 확인한 것이다
+    detail_url = sample_detail_url or None
     cursor = conn.execute(
         """
         INSERT INTO crawlers
@@ -610,6 +629,68 @@ async def create_crawler(
         path_evidence=discovery.evidence,
         path_reason=discovery.reason,
         path_failure=discovery.failure,
+    )
+
+
+def _discovered_detail_url(discovery: Discovery) -> str:
+    """판정이 알아낸 상세 문서 주소. 없으면 빈 문자열이다.
+
+    API 로 가져오는 상세는 사람이 볼 페이지가 아니라 셀렉터를 만들 대상이 아니다.
+    """
+    if not discovery.ok or discovery.detail is None or discovery.detail.kind != DOCUMENT:
+        return ""
+    return discovery.detail.url
+
+
+async def _fill_detail(
+    generate: GenerateFn,
+    result: GenerationResult,
+    *,
+    list_url: str,
+    detail_url: str,
+    render_mode: str,
+) -> GenerationResult:
+    """알아낸 상세 페이지로 상세 셀렉터만 다시 만든다. 목록 쪽은 이미 만든 것을 쓴다.
+
+    실패해도 등록은 계속된다. 상세 셀렉터가 비어 있는 크롤러는 쓸모가 적지만, 목록까지
+    버리면 운영자가 손으로 고칠 대상마저 없어진다 (`.claude/rules/llm.md`).
+    """
+    try:
+        second = await generate(list_url, detail_url, render_mode)
+    except (FetchError, SelectorGenerationError) as exc:
+        logger.warning("상세 셀렉터를 만들지 못했다 url=%s: %s", detail_url, exc)
+        return replace(
+            result,
+            notes=[
+                *result.notes,
+                f"알아낸 상세 주소 {detail_url} 로 상세 셀렉터를 만들지 못했다: {exc}",
+            ],
+        )
+
+    fields = [one for one in result.verification.fields if one.name.startswith("list.")]
+    fields += [one for one in second.verification.fields if one.name.startswith("detail.")]
+    extra = [note for note in second.notes if note not in result.notes]
+    return replace(
+        result,
+        selectors=result.selectors.model_copy(update={"detail": second.selectors.detail}),
+        verification=VerificationReport(fields=fields),
+        usage=_added(result.usage, second.usage),
+        notes=[
+            *result.notes,
+            *extra,
+            f"상세 URL 을 판정이 찾아 그 페이지로 상세 셀렉터를 만들었다: {detail_url}",
+        ],
+    )
+
+
+def _added(first: Usage, second: Usage) -> Usage:
+    """두 번 부른 생성의 비용을 합친다. 비용 질문에 답하려면 둘 다 세야 한다."""
+    return Usage(
+        model=first.model,
+        input_tokens=first.input_tokens + second.input_tokens,
+        output_tokens=first.output_tokens + second.output_tokens,
+        total_tokens=first.total_tokens + second.total_tokens,
+        latency_ms=first.latency_ms + second.latency_ms,
     )
 
 

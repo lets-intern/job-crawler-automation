@@ -95,6 +95,8 @@ class LinkProposal:
     resolved: int = 0
     count: int = 0
     source: str = ""
+    # 확인하면서 실제로 열어 본 첫 공고의 주소. 상세 셀렉터를 만들 때 이 페이지를 본다
+    sample: str = ""
     notes: tuple[str, ...] = ()
     reason: str = ""
 

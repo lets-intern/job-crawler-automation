@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
@@ -287,7 +287,9 @@ async def _judge(
         return Discovery(
             list_mode=list_mode,
             detail_mode=STATIC,
-            detail=document_path(outcome.url or probed.url, link_note),
+            # 확인하면서 실제로 연 공고 주소다. 두산처럼 클릭해도 주소가 그대로인 사이트에서
+            # `outcome.url` 을 쓰면 목록 주소가 상세로 적힌다
+            detail=document_path(link.sample or outcome.url or probed.url, link_note),
             list=list_path,
             link=link,
             evidence=f"{clicked} — {link_note}. {list_note}",
@@ -433,6 +435,7 @@ async def _adopt_link_template(
             f"{confirmation.reason}"
         )
 
+    proposal = replace(proposal, sample=confirmation.urls[0] if confirmation.urls else "")
     return proposal, (
         f"{proposal.source}에서 공고마다 다른 상세 주소 형식을 얻었다: {proposal.template} "
         f"(항목 {proposal.resolved}/{proposal.count}건에서 주소가 나왔고, "
@@ -486,14 +489,14 @@ def _needs_more(items: list[ListItem], selectors: SelectorSet) -> bool:
     return items[0].detail_absent or not items[0].link.strip()
 
 
-def _item_nodes(html: str, selectors: SelectorSet, limit: int = 2) -> list[Tag]:
-    """공고 번호를 찾을 항목 노드들. 첫 항목은 클릭한 것과 같은 것이다.
+def _item_nodes(html: str, selectors: SelectorSet) -> list[Tag]:
+    """항목 노드 전부. 첫 항목은 클릭한 것과 같은 것이다.
 
-    두 개를 보는 이유는 주소 형식을 확인할 때다. 한 항목만으로는 만들어 낸 주소가 그 항목
-    전용인지 공고마다 달라지는지 알 수 없다 (`app/selector/link_probe.py`).
+    전부 넘기는 이유는 알아낸 주소 형식이 **몇 건에서 실제로 주소를 내는지** 세기 위해서다.
+    실제로 열어 확인하는 것은 그중 두 건뿐이다 (`app/selector/link_probe.py`).
     """
     soup = BeautifulSoup(html, "html.parser")
-    return select_nodes(soup, selectors.list.item, "list.item")[:limit]
+    return select_nodes(soup, selectors.list.item, "list.item")
 
 
 def _title(items: list[ListItem]) -> str:
