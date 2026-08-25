@@ -227,3 +227,24 @@ async def test_열리지_않는_주소는_채택하지_않는다() -> None:
 
     assert confirmation.adopted is False
     assert "열지 못했다" in confirmation.reason
+
+
+def test_항목_자체가_a_인_사이트는_그_href_를_형식으로_쓴다() -> None:
+    """카카오 목록은 `<a><li>...</li></a>` 라 항목 안에서 링크를 찾을 수 없다."""
+    items = nodes("kakao-list-20260825.html", "ul.list_jobs > a")
+    assert len(items) == 11
+
+    proposal = propose_link_template(
+        items,
+        reached_url=(
+            "https://careers.kakao.com/jobs/P-14503"
+            "?skillSet=&part=BUSINESS_SERVICES&company=KAKAO&employeeType=&page=1"
+        ),
+        list_url="https://careers.kakao.com/jobs?part=BUSINESS_SERVICES&company=KAKAO&page=1",
+    )
+
+    assert proposal.ok is True
+    # 항목 노드 자신의 속성을 읽는다는 뜻이다 (`app/selector/link.py`)
+    assert proposal.selector == ""
+    assert proposal.template == "https://careers.kakao.com{href}"
+    assert (proposal.resolved, proposal.count) == (11, 11)

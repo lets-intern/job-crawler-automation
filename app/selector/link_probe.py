@@ -245,6 +245,11 @@ def value_sources(node: Tag) -> list[ValueSource]:
             value = value.strip()
             if key.startswith("data-") and _usable(value):
                 _add(found, seen, ValueSource(selector, f"{{{key}}}", value))
+            if key == "href" and _usable(value) and not value.lower().startswith("javascript:"):
+                # 항목 자체가 `a` 인 사이트가 있다. 카카오 목록이 `<a><li>...</li></a>` 라
+                # 항목 안에서 링크를 찾는 셀렉터로는 주소가 나오지 않고, 그때는 그 `href`
+                # 통째가 상세 주소다
+                _add(found, seen, ValueSource(selector, f"{{{key}}}", value))
             if key not in JS_ATTRIBUTES:
                 continue
             for index in range(1, 6):
