@@ -24,6 +24,7 @@ from google.genai import errors as genai_errors
 from app.config import Settings, get_settings
 from app.crawler.fetcher import PageSource, get_fetcher
 from app.selector.cleaner import CleanedHtml, clean_html
+from app.selector.narrow import Narrowing, narrow_item_selector
 from app.selector.schema import (
     SelectorSchemaError,
     SelectorSet,
@@ -187,6 +188,10 @@ async def generate_from_html(
             last_error = exc
             continue
 
+        # 항목 셀렉터가 공고가 아닌 반복까지 잡았으면 제목이 있는 쪽으로 좁힌다. 넓히지는
+        # 않는다 (`app/selector/narrow.py`)
+        narrowing = narrow_item_selector(selectors, list_html)
+        selectors = narrowing.selectors
         # 방금 가져온 그 HTML 에 즉시 적용한다. 정제 전 원본이라 샘플링으로 덜어낸 항목도 본다.
         report = verify_selectors(selectors, list_html, detail_html)
         logger.info(
@@ -200,7 +205,7 @@ async def generate_from_html(
             usage=usage,
             attempts=attempt,
             verification=report,
-            notes=_notes(cleaned_list, cleaned_detail),
+            notes=_notes(cleaned_list, cleaned_detail, narrowing),
         )
 
     assert last_error is not None  # 루프는 최소 한 번 돈다
@@ -209,6 +214,8 @@ async def generate_from_html(
         # 모양은 맞는데 필드가 비어 있다. 통째로 버리면 운영자가 손으로 고칠 대상조차 없다.
         # 빈 채로 draft 에 저장하고 어느 자리가 비었는지 알린다 (`.claude/rules/llm.md`).
         selectors, empty_fields = parse_selectors_allowing_empty(last_text)
+        narrowing = narrow_item_selector(selectors, list_html)
+        selectors = narrowing.selectors
         report = verify_selectors(selectors, list_html, detail_html)
         logger.warning(
             "셀렉터 생성 필드 누락 model=%s attempts=%d 빈 필드=%s",
@@ -222,7 +229,7 @@ async def generate_from_html(
             attempts=MAX_ATTEMPTS,
             verification=report,
             notes=[
-                *_notes(cleaned_list, cleaned_detail),
+                *_notes(cleaned_list, cleaned_detail, narrowing),
                 f"모델이 채우지 못한 필드: {', '.join(empty_fields)}. 손으로 채운다",
             ],
         )
@@ -327,8 +334,17 @@ def _text(response: Any) -> str:
     return getattr(response, "text", None) or ""
 
 
-def _notes(cleaned_list: CleanedHtml, cleaned_detail: CleanedHtml) -> list[str]:
-    """입력을 좁혔거나 잘랐으면 응답에 남긴다 (`.claude/rules/llm.md`)."""
-    return [f"목록: {note}" for note in cleaned_list.notes()] + [
+def _notes(
+    cleaned_list: CleanedHtml, cleaned_detail: CleanedHtml, narrowing: Narrowing | None = None
+) -> list[str]:
+    """입력을 좁혔거나 잘랐으면 응답에 남긴다 (`.claude/rules/llm.md`).
+
+    항목 셀렉터를 좁힌 것도 같이 적는다. 모델이 낸 것과 저장되는 것이 다르면 그 사실이
+    운영자에게 보여야 한다.
+    """
+    notes = [f"목록: {note}" for note in cleaned_list.notes()] + [
         f"상세: {note}" for note in cleaned_detail.notes()
     ]
+    if narrowing is not None and narrowing.note:
+        notes.append(narrowing.note)
+    return notes
