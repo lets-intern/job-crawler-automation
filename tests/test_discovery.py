@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import pathlib
 from contextlib import asynccontextmanager
@@ -663,3 +664,52 @@ async def test_확인되지_않는_주소_형식은_채택하지_않는다() -> 
 
     assert discovery.link is None
     assert "채택하지 않았다" in discovery.evidence
+
+
+def guarded_opener(client: Fetcher, session: ProbeSession, opened: list[str]) -> Any:
+    """실제 렌더러처럼 호스트 잠금을 잡은 채로 페이지를 내주는 opener.
+
+    `Renderer.open_probe` 가 `Fetcher.guard()` 안에서 페이지를 연다. 그 안에서 같은 호스트로
+    정적 요청을 내면 자기 잠금을 기다리게 되므로, 확인은 브라우저를 닫은 뒤에 해야 한다.
+    """
+
+    @asynccontextmanager
+    async def open_probe(url: str) -> Any:
+        opened.append(url)
+        async with client.guard(url):
+            yield session
+
+    return open_probe
+
+
+@pytest.mark.asyncio
+async def test_확인은_브라우저를_닫은_뒤에_한다() -> None:
+    """렌더가 호스트 잠금을 잡은 채로 같은 호스트를 다시 부르면 영영 멈춘다."""
+    opened: list[str] = []
+    client = fetcher_for(
+        handler_for(
+            {
+                LIST_URL: SHELL,
+                "https://example.test/jobs/1002099": (
+                    "<html><body><h1>보건관리자 채용</h1></body></html>"
+                ),
+            }
+        )
+    )
+    try:
+        async with asyncio.timeout(5):
+            discovery = await discover_detail_path(
+                LIST_URL,
+                LINKED_SELECTORS,
+                fetcher=client,
+                sleep=nosleep,
+                open_probe=guarded_opener(
+                    client, session_for(RENDERED_WITH_LINKS, [StubElement()]), opened
+                ),
+            )
+    finally:
+        await client.aclose()
+
+    assert discovery.ok is True
+    assert discovery.detail_mode == STATIC
+    assert opened == [LIST_URL]

@@ -36,7 +36,7 @@ from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 
-from app.crawler.click_probe import DETAIL_UNREACHABLE, probe_click
+from app.crawler.click_probe import DETAIL_UNREACHABLE, ClickOutcome, probe_click
 from app.crawler.collect import API
 from app.crawler.failures import LIST_EMPTY
 from app.crawler.fetcher import FetchError, FetchPolicy
@@ -142,27 +142,65 @@ async def discover_detail_path(
             list_count=static_count,
         )
 
+    # 브라우저 안에서는 **모으기만 한다.** 알아낸 것을 `httpx` 로 다시 불러 확인하는 것은
+    # 브라우저를 닫은 뒤다 — 렌더는 호스트 잠금을 잡고 있고, 그 안에서 같은 호스트로 정적
+    # 요청을 내면 자기 잠금을 기다리며 영영 멈춘다 (`app/crawler/fetcher.py` 의 `guard`)
     async with open_probe(list_url) as session:
-        return await _discover_with_browser(
-            session,
-            fetcher=fetcher,
-            selectors=selectors,
-            static_count=static_count,
+        probed = await _probe(session, selectors=selectors, sleep=sleep)
+
+    return await _judge(probed, fetcher=fetcher, selectors=selectors, static_count=static_count)
+
+
+@dataclass(frozen=True)
+class _Probed:
+    """브라우저에서 모아 온 것. 여기부터는 브라우저가 닫혀 있다."""
+
+    html: str
+    url: str
+    items: list[ListItem]
+    note: str
+    requests: list[ObservedRequest]
+    outcome: ClickOutcome | None = None
+
+
+async def _probe(
+    session: ProbeSession,
+    *,
+    selectors: SelectorSet,
+    sleep: Callable[[float], Awaitable[None]] | None,
+) -> _Probed:
+    """렌더된 목록을 읽고, 필요하면 항목을 눌러 본다. 여기서 `httpx` 를 부르지 않는다."""
+    rendered, rendered_note = _items_from_html(session.html, session.url, selectors)
+    outcome: ClickOutcome | None = None
+    if rendered and _needs_more(rendered, selectors):
+        outcome = await probe_click(
+            session.page,
+            context=session.context,
+            log=session.log,
+            item_selector=selectors.list.item,
             sleep=sleep,
         )
+    return _Probed(
+        html=session.html,
+        url=session.url,
+        items=rendered,
+        note=rendered_note,
+        # 클릭 전까지 관찰한 요청. 목록을 그린 요청은 이 안에 있다
+        requests=list(session.log.requests),
+        outcome=outcome,
+    )
 
 
-async def _discover_with_browser(
-    session: ProbeSession,
+async def _judge(
+    probed: _Probed,
     *,
     fetcher: FetchPolicy,
     selectors: SelectorSet,
     static_count: int,
-    sleep: Callable[[float], Awaitable[None]] | None,
 ) -> Discovery:
-    """렌더한 목록으로 2~4번을 돈다. 브라우저는 부르는 쪽이 닫는다."""
+    """모아 온 것으로 판정한다. 알아낸 경로를 `httpx` 로 다시 불러 확인하는 것도 여기서다."""
     prefix = f"정적 목록에 항목 {static_count}건"
-    rendered, rendered_note = _items_from_html(session.html, session.url, selectors)
+    rendered, rendered_note = probed.items, probed.note
     count = len(rendered)
 
     if not rendered:
@@ -176,7 +214,7 @@ async def _discover_with_browser(
 
     # 목록이 JSON 으로 오는 사이트인지 먼저 본다. 목록을 그린 요청은 클릭 전에 이미 나갔고,
     # 여기서 채택되면 이 크롤러는 실행마다 브라우저를 띄우지 않는다
-    list_path, list_note = await _adopt_list_api(fetcher, session, rendered)
+    list_path, list_note = await _adopt_list_api(fetcher, probed, rendered)
     list_mode = API if list_path is not None else PLAYWRIGHT
 
     if not _needs_more(rendered, selectors):
@@ -200,13 +238,17 @@ async def _discover_with_browser(
             list_count=count,
         )
 
-    outcome = await probe_click(
-        session.page,
-        context=session.context,
-        log=session.log,
-        item_selector=selectors.list.item,
-        sleep=sleep,
-    )
+    outcome = probed.outcome
+    if outcome is None:
+        # 항목에 상세 주소가 있는데 여기까지 왔다. 클릭할 이유가 없었다는 뜻이다
+        return Discovery(
+            list_mode=list_mode,
+            list=list_path,
+            evidence=f"{prefix}, 렌더 후 {count}건. {list_note}",
+            failure=DETAIL_UNREACHABLE,
+            reason="상세로 갈 길을 찾지 못했다",
+            list_count=count,
+        )
     if not outcome.reached:
         return Discovery(
             list_mode=list_mode,
@@ -222,7 +264,7 @@ async def _discover_with_browser(
         f"{prefix}, 렌더 후 {count}건, 항목에 상세 주소가 없어 클릭했다. "
         f"{outcome.target} 를 눌러 {signals}"
     )
-    nodes = _item_nodes(session.html, selectors)
+    nodes = _item_nodes(probed.html, selectors)
     candidates = id_candidates(nodes[0]) if nodes else []
     picked = pick_detail_request(outcome.requests, candidates) if candidates else None
 
@@ -238,21 +280,21 @@ async def _discover_with_browser(
         nodes=nodes,
         titles=[item.title for item in rendered],
         reached_url=outcome.url,
-        list_url=session.url,
+        list_url=probed.url,
         requests=outcome.requests,
     )
     if link is not None:
         return Discovery(
             list_mode=list_mode,
             detail_mode=STATIC,
-            detail=document_path(outcome.url or session.url, link_note),
+            detail=document_path(outcome.url or probed.url, link_note),
             list=list_path,
             link=link,
             evidence=f"{clicked} — {link_note}. {list_note}",
             list_count=count,
         )
 
-    if outcome.url and outcome.url != session.url:
+    if outcome.url and outcome.url != probed.url:
         # 클릭이 상세 문서로 데려갔다. 주소가 있으니 API 를 찾을 필요가 없다
         confirmation = await confirm_document_path(fetcher, outcome.url, _title(rendered))
         detail_mode = STATIC if confirmation.adopted else PLAYWRIGHT
@@ -332,7 +374,7 @@ async def _from_api_request(
 
 
 async def _adopt_list_api(
-    fetcher: FetchPolicy, session: ProbeSession, items: list[ListItem]
+    fetcher: FetchPolicy, probed: _Probed, items: list[ListItem]
 ) -> tuple[ListPath | None, str]:
     """렌더 중 나간 요청에서 목록 API 를 찾고, 확인된 것만 돌려준다.
 
@@ -343,14 +385,14 @@ async def _adopt_list_api(
     사이트가 요구하는 기능성 헤더뿐이고, 이름은 공용 클라이언트가 정한다
     (`.claude/rules/crawling.md`).
     """
-    proposed = propose_list_config(session.log.requests, items, _links(session.html, session.url))
+    proposed = propose_list_config(probed.requests, items, _links(probed.html, probed.url))
     if not proposed.ok:
         return None, f"목록 API 는 찾지 못했다: {proposed.reason}"
 
     confirmation = await confirm_list_path(fetcher, proposed, items)
     path = proposed
     if not confirmation.adopted:
-        path = proposed.with_referer(session.url)
+        path = proposed.with_referer(probed.url)
         confirmation = await confirm_list_path(fetcher, path, items)
     if not confirmation.adopted:
         return None, (
