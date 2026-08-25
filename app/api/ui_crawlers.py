@@ -188,25 +188,26 @@ async def create_crawler_fragment(
     detail_url: Annotated[str, Form()] = "",
     name: Annotated[str, Form()] = "",
     default_company: Annotated[str, Form()] = "",
-    render_mode: Annotated[str, Form()] = crawlers.DEFAULT_RENDER_MODE,
 ) -> HTMLResponse:
     """생성 요청. 성공하면 결과 요약과 편집기가, 실패하면 사유가 결과 영역에 들어간다.
+
+    **화면은 가져오는 방식을 묻지 않는다.** 정적으로 목록이 나오면 정적으로, 안 나오면 렌더로
+    등록이 스스로 정하고, 무엇을 보고 그렇게 정했는지는 결과의 근거 문장에 적힌다
+    (`app/api/crawlers.py` 의 `get_generator`, `app/selector/discovery.py`).
+
+    정해진 경로는 제안이라 표에서 운영자가 바꿀 수 있고, 바꾼 값을 판정이 다시 덮어쓰지
+    않는다 (`switch_collect_modes_fragment`).
 
     `detail_url` 은 선택이다. 상세를 JS 로 그려 주소가 따로 없는 사이트가 있고, 비우면 목록
     페이지만 보고 만든다. 그때 상세 셀렉터는 실패가 아니라 건너뜀으로 표시된다.
 
     `default_company` 는 선택이다. 비워 두면 회사명은 공고에서 뽑은 값만 쓰인다.
-
-    `render_mode` 는 기본이 정적이다. 셀렉터도 고른 모드로 가져온 HTML 에서 뽑는다 — JS 로
-    그려지는 사이트는 정적 HTML 에 목록 자체가 없어서, 정적으로 생성한 셀렉터는 처음부터
-    맞을 수가 없다. 어느 쪽이 필요한지는 테스트 실행 화면에서 두 모드를 비교해 정한다.
     """
     payload = crawlers.CrawlerCreate(
         list_url=list_url,
         detail_url=detail_url,
         name=name,
         default_company=default_company,
-        render_mode=render_mode,
     )
     try:
         created = await crawlers.create_crawler(payload, conn, generate, discover)

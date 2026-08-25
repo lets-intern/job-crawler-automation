@@ -37,6 +37,7 @@ import json
 import logging
 import sqlite3
 from collections.abc import Awaitable, Callable, Iterator
+from dataclasses import replace
 from typing import Annotated, Any, Protocol
 from urllib.parse import urlsplit
 
@@ -104,8 +105,10 @@ class CrawlerCreate(BaseModel):
     name: str = ""
     # 회사명이 페이지에 없는 사이트를 위한 운영자 입력. 없으면 비운다
     default_company: str = ""
-    # 기본값은 정적이다. 렌더가 필요한 사이트는 테스트 실행 화면에서 확인하고 올린다
-    render_mode: str = DEFAULT_RENDER_MODE
+    # 비우는 것이 기본이고, 그때는 등록이 스스로 정한다 — 정적으로 목록이 나오면 정적,
+    # 안 나오면 렌더다. 값을 주면 그 모드로만 만들고 판정이 그것을 덮어쓰지 않는다.
+    # 등록 화면은 이 값을 보내지 않는다 (`app/api/ui_crawlers.py`)
+    render_mode: str = ""
 
 
 class RenderModeUpdate(BaseModel):
@@ -315,19 +318,62 @@ def get_crawl_fetcher() -> FetchPolicy:
 
 
 def get_generator() -> GenerateFn:
-    """기본 생성 경로. 테스트는 이 의존성을 갈아끼운다."""
+    """기본 생성 경로. 테스트는 이 의존성을 갈아끼운다.
+
+    `render_mode` 가 비어 있으면 등록이 스스로 정한다. 정적으로 먼저 만들어 보고, 정적
+    HTML 에 목록이 아예 없으면 렌더한 HTML 로 한 번 더 만든다. **운영자에게 모드를 묻지
+    않는다** — 목록 URL 하나로 등록이 끝나야 하고, 정적으로 되는 사이트에 브라우저 값을
+    붙이지도 않는다 (`.claude/rules/crawling.md` 의 "정적이 먼저").
+
+    값을 주면 그 모드로만 만든다. 운영자가 고른 것을 판정이 덮어쓰지 않는다.
+    """
 
     async def generate(list_url: str, detail_url: str, render_mode: str) -> GenerationResult:
-        # 렌더 모드면 브라우저가 이 블록 안에서만 산다. 생성이 끝나면 닫힌다
-        async with open_source(render_mode, get_fetcher()) as source:
-            if not detail_url.strip():
-                # 상세 페이지 주소가 없는 사이트다. 없는 주소를 지어내 가져오지 않는다.
-                # 목록만 보고 만들고, 상세 셀렉터는 볼 HTML 이 없어 판정되지 않는다
-                list_html = (await source.fetch(list_url)).text
-                return await generate_from_html(list_html, "", list_url=list_url)
-            return await generate_for_urls(list_url, detail_url, source=source)
+        if render_mode:
+            return replace(
+                await _generate(list_url, detail_url, render_mode), render_mode=render_mode
+            )
+
+        static_result = await _generate(list_url, detail_url, STATIC)
+        if not static_result.verification.list_missing:
+            return replace(static_result, render_mode=STATIC)
+
+        logger.info("정적 HTML 에 목록이 없어 렌더로 다시 만든다 url=%s", list_url)
+        try:
+            rendered = await _generate(list_url, detail_url, PLAYWRIGHT)
+        except FetchError as exc:
+            # 브라우저가 없거나 렌더가 실패했다. 정적 결과를 그대로 올려 무엇이 안 됐는지
+            # 운영자가 보게 한다 — 여기서 예외를 던지면 사유가 렌더 실패로 바뀐다
+            logger.warning("렌더 생성도 실패했다 url=%s: %s", list_url, exc)
+            return replace(
+                static_result,
+                render_mode=STATIC,
+                notes=[*static_result.notes, f"렌더로 다시 만들지도 못했다: {exc}"],
+            )
+
+        if rendered.verification.list_missing:
+            return replace(rendered, render_mode=PLAYWRIGHT)
+        return replace(
+            rendered,
+            render_mode=PLAYWRIGHT,
+            notes=[
+                *rendered.notes,
+                "정적 HTML 에는 목록이 없어 렌더한 HTML 로 셀렉터를 만들었다",
+            ],
+        )
 
     return generate
+
+
+async def _generate(list_url: str, detail_url: str, render_mode: str) -> GenerationResult:
+    """한 경로로 한 번 만든다. 렌더 모드면 브라우저가 이 블록 안에서만 산다."""
+    async with open_source(render_mode, get_fetcher()) as source:
+        if not detail_url.strip():
+            # 상세 페이지 주소가 없는 사이트다. 없는 주소를 지어내 가져오지 않는다.
+            # 목록만 보고 만들고, 상세 셀렉터는 볼 HTML 이 없어 판정되지 않는다
+            list_html = (await source.fetch(list_url)).text
+            return await generate_from_html(list_html, "", list_url=list_url)
+        return await generate_for_urls(list_url, detail_url, source=source)
 
 
 def get_repairer() -> RepairFn:
@@ -402,9 +448,10 @@ async def create_crawler(
     generate: Annotated[GenerateFn, Depends(get_generator)],
     discover: Annotated[DiscoverFn, Depends(get_discoverer)],
 ) -> CrawlerOut:
-    render_mode = _validated_render_mode(payload.render_mode)
+    # 비우면 등록이 스스로 정한다. 값을 주면 그 모드로만 만들고 판정이 덮어쓰지 않는다
+    requested = _requested_render_mode(payload.render_mode)
     try:
-        result = await generate(payload.list_url, payload.detail_url, render_mode)
+        result = await generate(payload.list_url, payload.detail_url, requested)
     except RobotsDisallowedError as exc:
         # robots 가 막은 URL 은 등록 자체를 거절한다 (`.claude/rules/crawling.md`).
         raise HTTPException(
@@ -421,19 +468,24 @@ async def create_crawler(
         ) from exc
 
     if result.verification.list_missing:
-        # 정적 HTML 에 목록이 없다. 셀렉터를 손으로 고쳐도 잡을 노드가 없으므로 행을 남기지
-        # 않는다. 다음 수단은 렌더 모드 승격이지 셀렉터 재생성이 아니다.
+        # 목록이 없다. 셀렉터를 손으로 고쳐도 잡을 노드가 없으므로 행을 남기지 않는다.
+        # 렌더까지 해 보고도 없었는지는 `result.render_mode` 가 말해 준다 — 다음 수단이
+        # 다르기 때문에 사유 문장에서 갈라 적는다
         failed = ", ".join(result.verification.failed_list_fields)
+        tried = (
+            "정적으로도 렌더로도 목록을 찾지 못했다. 주소가 목록 페이지가 맞는지, 로그인이나 "
+            "검색 조건이 있어야 목록이 나오는 사이트인지 확인한다"
+            if result.render_mode == PLAYWRIGHT
+            else "목록을 찾지 못했다"
+        )
         raise HTTPException(
             status_code=422,
             detail={
                 "reason": "list_not_found",
-                "message": (
-                    f"정적 HTML 에서 목록을 찾지 못했다. 목록 필드 {failed} 가 모두 0개 매칭이다. "
-                    "JS 로 목록을 그리는 사이트일 수 있으니 렌더 모드 승격을 검토한다"
-                ),
+                "message": f"{tried}. 목록 필드 {failed} 가 모두 0개 매칭이다",
                 "failed_fields": result.verification.failed,
                 "matches": result.verification.summary(),
+                "notes": result.notes,
             },
         )
 
@@ -458,8 +510,10 @@ async def create_crawler(
 
     # 셀렉터가 있어야 목록 항목을 잡을 수 있으므로 생성 다음이다. 정적으로 상세 주소까지
     # 나오면 브라우저는 뜨지 않는다 (`app/selector/discovery.py`)
-    discovery = await _discover_path(discover, payload.list_url, result.selectors, render_mode)
-    # 판정에 성공했을 때만 그 경로를 저장한다. 실패하면 운영자가 고른 모드 그대로 두고,
+    discovery = await _discover_path(
+        discover, payload.list_url, result.selectors, result.render_mode
+    )
+    # 판정에 성공했을 때만 그 경로를 저장한다. 실패하면 셀렉터를 만든 경로 그대로 두고,
     # 무엇이 안 됐는지는 화면에 적힌다.
     #
     # 운영자가 렌더를 고른 등록은 렌더로 남는다. 정적으로도 목록이 잡히더라도 판정이 그 선택을
@@ -468,11 +522,13 @@ async def create_crawler(
     #
     # 목록 API 는 상세 판정이 실패해도 살린다. 그것은 이미 `httpx` 로 다시 불러 확인한
     # 사실이고, 상세로 가는 길을 못 찾았다는 것과 별개다 (`app/selector/list_api.py`).
+    # 셀렉터를 만든 경로. 운영자가 고른 값이 있으면 생성이 그것으로 돌았다
+    generated_mode = requested or result.render_mode
     discovered_list = (
-        discovery.list_mode if (discovery.ok or discovery.list_adopted) else render_mode
+        discovery.list_mode if (discovery.ok or discovery.list_adopted) else generated_mode
     )
-    list_mode = PLAYWRIGHT if render_mode == PLAYWRIGHT else discovered_list
-    detail_mode = (discovery.detail_mode or discovered_list) if discovery.ok else render_mode
+    list_mode = PLAYWRIGHT if requested == PLAYWRIGHT else discovered_list
+    detail_mode = (discovery.detail_mode or discovered_list) if discovery.ok else generated_mode
     api_config_json = _discovered_api_config(discovery)
 
     name = payload.name.strip() or urlsplit(payload.list_url).netloc
@@ -523,7 +579,7 @@ async def create_crawler(
         name=name,
         status="draft",
         default_company=default_company,
-        render_mode=render_mode,
+        render_mode=generated_mode,
         detail_url=detail_url,
         selectors=result.selectors,
         matches=matches,
@@ -571,6 +627,16 @@ def _skipped_detail_fields(matches: dict[str, int], detail_url: str | None) -> l
     if detail_url:
         return []
     return [name for name in matches if name.startswith("detail.")]
+
+
+def _requested_render_mode(value: str) -> str:
+    """운영자가 고른 모드. 비어 있으면 빈 문자열이고, 그때는 등록이 스스로 정한다.
+
+    `_validated_render_mode` 와 갈라 두는 이유는 "안 골랐다" 와 "정적을 골랐다" 가 다른
+    뜻이 됐기 때문이다. 앞은 판정에 맡기는 것이고 뒤는 판정이 덮어쓰지 않는 선택이다.
+    """
+    mode = value.strip()
+    return _validated_render_mode(mode) if mode else ""
 
 
 def _validated_render_mode(value: str) -> str:

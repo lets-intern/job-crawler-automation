@@ -507,8 +507,7 @@ def test_the_whole_list_miss_names_the_failed_fields_and_a_next_step(
     response = client.post("/api/crawlers", json={"list_url": LIST_URL, "detail_url": DETAIL_URL})
 
     detail = response.json()["detail"]
-    assert "정적 HTML 에서 목록을 찾지 못했다" in detail["message"]
-    assert "렌더 모드" in detail["message"]
+    assert "목록을 찾지 못했다" in detail["message"]
     for field in ("list.item", "list.title", "list.link", "list.date"):
         assert field in detail["message"]
         assert detail["matches"][field] == 0
@@ -565,18 +564,20 @@ def test_only_the_item_selector_matching_is_refused(
     assert rows(conn) == []
 
 
-def test_registration_defaults_to_static(client: TestClient, conn: sqlite3.Connection) -> None:
-    """아무것도 고르지 않은 등록은 정적이다. 렌더는 운영자가 명시적으로 고른다.
+def test_registration_leaves_the_mode_to_the_judgement(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """아무것도 고르지 않은 등록은 생성 경로를 판정에 맡긴다.
 
-    모드별로 나눠 보는 것은 `tests/test_render_default.py` 다. 여기서는 이 라우터의 기본값이
-    그쪽과 같은지만 본다.
+    빈 값이 그대로 생성에 넘어가야 등록이 정적으로 먼저 해 보고 안 되면 렌더로 올릴 수 있다.
+    모드별로 나눠 보는 것은 `tests/test_render_default.py` 다.
     """
     called_with = use_generator(result_for(GENERATED))
 
     response = client.post("/api/crawlers", json={"list_url": LIST_URL, "detail_url": DETAIL_URL})
 
     assert response.status_code == 201
-    assert called_with == ["static"]
+    assert called_with == [""]
     assert (rows(conn)[0]["list_mode"], rows(conn)[0]["detail_mode"]) == ("static", "static")
     assert response.json()["render_mode"] == "static"
 

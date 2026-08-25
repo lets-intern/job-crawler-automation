@@ -23,6 +23,7 @@ from google.genai import errors as genai_errors
 
 from app.config import Settings, get_settings
 from app.crawler.fetcher import PageSource, get_fetcher
+from app.crawler.playwright import STATIC
 from app.selector.cleaner import CleanedHtml, clean_html
 from app.selector.narrow import Narrowing, narrow_item_selector
 from app.selector.schema import (
@@ -114,6 +115,10 @@ class GenerationResult:
     attempts: int
     verification: VerificationReport
     notes: list[str] = field(default_factory=list)
+    # 이 셀렉터를 어느 경로로 가져온 HTML 에서 만들었는가. `static` 또는 `playwright` 이고,
+    # 채우는 것은 HTML 을 가져온 쪽이다 (`app/api/crawlers.py` 의 `get_generator`).
+    # 판정이 경로를 알아내지 못했을 때 되돌아갈 값이 이것이다
+    render_mode: str = STATIC
 
     @property
     def ok(self) -> bool:
