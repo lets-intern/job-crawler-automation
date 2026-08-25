@@ -56,6 +56,8 @@ from app.crawler.hashing import content_hash
 from app.crawler.parser import ListItem
 from app.normalize.engine import NormalizeError, insert_normalized, load_rules
 from app.normalize.rules import Rule
+from app.notify.message import NewJob
+from app.notify.new_jobs import notify_new_jobs
 from app.selector.api_schema import ApiConfigError, parse_api_config
 from app.selector.schema import (
     DetailSelectors,
@@ -222,6 +224,18 @@ async def run_workflow(
             timeout_seconds=bound,
         )
     _record_outcome(conn, workflow_id, result)
+    # 새 공고가 들어왔으면 알린다. 보내기가 실패해도 실행 결과는 그대로다 —
+    # 알림이 안 갔다고 수집이 실패한 것은 아니다 (`app/notify/new_jobs.py`)
+    await notify_new_jobs(
+        conn,
+        workflow_id=workflow_id,
+        new_count=result.new_count,
+        jobs=[
+            NewJob(company=item.fields["company"], title=item.fields["title"])
+            for item in result.items
+            if item.state == STORED
+        ],
+    )
     return result
 
 
