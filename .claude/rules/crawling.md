@@ -24,19 +24,27 @@ Identify honestly in the User-Agent — a name and a contact. Never impersonate 
 block, and never work around a login wall, a CAPTCHA or a rate limit that a site put up on purpose.
 The PRD lists those sites as out of scope. When one turns up, report it and stop.
 
-## Static first, Playwright as a proven per-site escalation
+## The browser opens while registering, not while running
 
-A new crawler is registered with `render_mode = static`. Playwright costs a browser process
-(150~300MB) and several seconds per page against effectively nothing for httpx and BeautifulSoup,
-and it is the main reason a workflow times out.
+A crawler stores two paths, `crawlers.list_mode` and `crawlers.detail_mode`, each `static`, `api`
+or `playwright`. Mixing them is a normal choice, not a workaround.
 
-Expect to escalate often. Of the six measured target sites four return a shell without the postings
-under a static fetch, so a site needing render is normal rather than exceptional. What stays fixed
-is that it is a per-site decision, never the default path.
+Registration finds the path itself (`app/selector/discovery.py`). It fetches the list statically
+first and only opens a browser when that cannot reach a detail page — then it clicks one item,
+watches what the page requests, and calls that request again through the shared client before
+adopting it. What gets stored is the request, so the run that follows needs no browser.
 
-Prove it before moving a site either way. The test-run screen runs one crawler under both modes
-without changing what is stored, and the field match counts are what decides. Record the finding in
-the site recipe.
+As measured on 2026-08-25 all six target sites serve both list and detail over httpx, four of them
+through a JSON or HTML-fragment API. **No site needs a browser per run.** A browser process costs
+150~300MB and several seconds per page and is the main reason a workflow times out, so `playwright`
+stays a per-site decision backed by a measurement, never a default.
+
+Prove it before moving a site either way. The test-run screen runs one crawler under a different
+mode for one run without changing what is stored, and the field match counts are what decides.
+Record the finding in the site recipe.
+
+The judgement is a proposal. The operator changes the stored path on the crawler screen and nothing
+overwrites that choice afterwards.
 
 ## Failure is data
 
