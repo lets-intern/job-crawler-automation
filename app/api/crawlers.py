@@ -49,7 +49,7 @@ from app.crawler.failures import SUCCESS
 from app.crawler.fetcher import FetchError, FetchPolicy, RobotsDisallowedError, get_fetcher
 from app.crawler.playwright import PLAYWRIGHT, RENDER_MODES, STATIC, Renderer, open_source
 from app.crawler.runner import TEST, RunTarget, collect_selectors, run_once
-from app.selector.api_schema import ApiConfigError, parse_api_config
+from app.selector.api_schema import ApiConfig, ApiConfigError, parse_api_config
 from app.selector.discovery import Discovery, discover_detail_path
 from app.selector.generator import (
     GenerationResult,
@@ -465,7 +465,12 @@ async def create_crawler(
     # 운영자가 렌더를 고른 등록은 렌더로 남는다. 정적으로도 목록이 잡히더라도 판정이 그 선택을
     # 내려앉히지 않는다 — 고른 값을 자동 판정이 덮어쓰지 않는다는 규칙이 등록 순간에도 같다
     # (`.claude/tasks/todo/prd-fill-body.md` 5절).
-    discovered_list = discovery.list_mode if discovery.ok else render_mode
+    #
+    # 목록 API 는 상세 판정이 실패해도 살린다. 그것은 이미 `httpx` 로 다시 불러 확인한
+    # 사실이고, 상세로 가는 길을 못 찾았다는 것과 별개다 (`app/selector/list_api.py`).
+    discovered_list = (
+        discovery.list_mode if (discovery.ok or discovery.list_adopted) else render_mode
+    )
     list_mode = PLAYWRIGHT if render_mode == PLAYWRIGHT else discovered_list
     detail_mode = (discovery.detail_mode or discovered_list) if discovery.ok else render_mode
     api_config_json = _discovered_api_config(discovery)
@@ -536,14 +541,25 @@ async def create_crawler(
 
 
 def _discovered_api_config(discovery: Discovery) -> str | None:
-    """알아낸 상세 API 설정. 문서를 그대로 여는 경로면 저장할 설정이 없다.
+    """알아낸 목록·상세 API 설정. 문서를 그대로 여는 경로면 저장할 설정이 없다.
 
-    설정 없이 `detail_mode = api` 만 저장하면 등록만 성공하고 이후 실행이 전부 실패한다.
-    둘은 같이 저장되거나 같이 저장되지 않는다.
+    설정 없이 모드만 `api` 로 저장하면 등록만 성공하고 이후 실행이 전부 실패한다. 모드와
+    설정은 같이 저장되거나 같이 저장되지 않는다.
+
+    목록과 상세는 따로 정해진다. 목록만 API 인 크롤러(카카오·우아한형제들)와 상세만 API 인
+    크롤러(삼성)가 둘 다 정상적인 조합이다 (`app/crawler/collect.py`).
     """
-    if not discovery.ok or discovery.detail is None or discovery.detail.api is None:
+    list_config = (
+        discovery.list.config() if discovery.list is not None and discovery.list.ok else None
+    )
+    detail_config = (
+        discovery.detail.api.detail
+        if discovery.ok and discovery.detail is not None and discovery.detail.api is not None
+        else None
+    )
+    if list_config is None and detail_config is None:
         return None
-    return discovery.detail.api.to_json()
+    return ApiConfig(list=list_config, detail=detail_config).to_json()
 
 
 def _skipped_detail_fields(matches: dict[str, int], detail_url: str | None) -> list[str]:

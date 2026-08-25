@@ -439,3 +439,141 @@ async def test_브라우저를_열_수_없으면_사유를_남긴다() -> None:
     assert discovery.ok is False
     assert discovery.failure == LIST_EMPTY
     assert "브라우저를 열 수 없다" in discovery.reason
+
+
+# 렌더 중 페이지가 목록을 JSON 으로 받아 그린 경우. 카카오·우아한형제들이 이 모양이다
+LIST_API_URL = "https://example.test/api/job-list?page=1"
+LIST_API_BODY = json.dumps(
+    {
+        "data": {
+            "list": [
+                {"jobId": "1002099", "name": "보건관리자 채용"},
+                {"jobId": "1002100", "name": "네트워크 엔지니어"},
+            ]
+        }
+    },
+    ensure_ascii=False,
+)
+
+
+@pytest.mark.asyncio
+async def test_렌더_중_관찰한_목록_API_를_다시_불러_확인하고_채택한다() -> None:
+    """목록이 API 로 오면 실행마다 브라우저를 띄우지 않는다."""
+    opened: list[str] = []
+    emitter = StubEmitter()
+    log = RequestLog()
+    log.attach(emitter)
+    emitter.emit(LIST_API_URL, LIST_API_BODY)
+    # 실제 경로에서는 `open_probe` 가 페이지를 넘기기 전에 본문 읽기를 기다린다
+    await log.drain()
+
+    client = fetcher_for(
+        handler_for(
+            {
+                LIST_URL: SHELL,
+                LIST_API_URL: LIST_API_BODY,
+                "https://example.test/jobs/1002099": (
+                    "<html><body><h1>보건관리자 채용</h1></body></html>"
+                ),
+            }
+        )
+    )
+    try:
+        discovery = await discover_detail_path(
+            LIST_URL,
+            LINKED_SELECTORS,
+            fetcher=client,
+            sleep=nosleep,
+            open_probe=opener(session_for(RENDERED_WITH_LINKS, [StubElement()], log), opened),
+        )
+    finally:
+        await client.aclose()
+
+    assert discovery.ok is True
+    assert discovery.list_mode == API
+    assert discovery.detail_mode == STATIC
+    assert discovery.list_adopted is True
+    assert discovery.list is not None
+    config = discovery.list.config()
+    assert config.items_path == "data.list"
+    assert config.fields["title"] == "name"
+    assert config.id_field == "jobId"
+    assert config.link_template == "https://example.test/jobs/{id}"
+    assert "목록은 https://example.test/api/job-list?page=1 의 `data.list` 로 온다" in (
+        discovery.evidence
+    )
+
+
+@pytest.mark.asyncio
+async def test_목록_API_가_없으면_렌더_그대로_남는다() -> None:
+    """토스. 공고는 초기 HTML 에 있고 렌더 중 나간 JSON 에는 목록이 없다."""
+    opened: list[str] = []
+    emitter = StubEmitter()
+    log = RequestLog()
+    log.attach(emitter)
+    emitter.emit("https://example.test/api/banner", json.dumps({"items": [{"title": "배너"}]}))
+    await log.drain()
+
+    client = fetcher_for(
+        handler_for(
+            {
+                LIST_URL: SHELL,
+                "https://example.test/jobs/1002099": (
+                    "<html><body><h1>보건관리자 채용</h1></body></html>"
+                ),
+            }
+        )
+    )
+    try:
+        discovery = await discover_detail_path(
+            LIST_URL,
+            LINKED_SELECTORS,
+            fetcher=client,
+            sleep=nosleep,
+            open_probe=opener(session_for(RENDERED_WITH_LINKS, [StubElement()], log), opened),
+        )
+    finally:
+        await client.aclose()
+
+    assert discovery.ok is True
+    assert discovery.list_mode == PLAYWRIGHT
+    assert discovery.list_adopted is False
+    assert "목록 API 는 찾지 못했다" in discovery.evidence
+
+
+@pytest.mark.asyncio
+async def test_브라우저에서만_되는_목록_API_는_채택하지_않는다() -> None:
+    """다시 불러 확인되지 않으면 렌더 경로로 남는다. 저장하면 이후 실행이 전부 실패한다."""
+    opened: list[str] = []
+    emitter = StubEmitter()
+    log = RequestLog()
+    log.attach(emitter)
+    emitter.emit(LIST_API_URL, LIST_API_BODY)
+    # 실제 경로에서는 `open_probe` 가 페이지를 넘기기 전에 본문 읽기를 기다린다
+    await log.drain()
+
+    client = fetcher_for(
+        handler_for(
+            {
+                LIST_URL: SHELL,
+                # 목록 API 주소는 응답하지 않는다. 브라우저에서만 되는 요청과 같은 모양이다
+                "https://example.test/jobs/1002099": (
+                    "<html><body><h1>보건관리자 채용</h1></body></html>"
+                ),
+            }
+        )
+    )
+    try:
+        discovery = await discover_detail_path(
+            LIST_URL,
+            LINKED_SELECTORS,
+            fetcher=client,
+            sleep=nosleep,
+            open_probe=opener(session_for(RENDERED_WITH_LINKS, [StubElement()], log), opened),
+        )
+    finally:
+        await client.aclose()
+
+    assert discovery.list_mode == PLAYWRIGHT
+    assert discovery.list_adopted is False
+    assert "채택하지 않았다" in discovery.evidence

@@ -31,6 +31,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
+from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 from bs4.element import Tag
@@ -57,6 +58,7 @@ from app.selector.detail_path import (
     pick_detail_request,
     propose_detail_config,
 )
+from app.selector.list_api import ListPath, confirm_list_path, propose_list_config
 from app.selector.schema import SelectorSet
 
 # 브라우저를 여는 쪽. 필요할 때만 불린다 (`Renderer.open_probe`)
@@ -74,6 +76,9 @@ class Discovery:
     list_mode: str = STATIC
     detail_mode: str = ""
     detail: DetailPath | None = None
+    # 목록을 JSON 으로 받을 수 있다는 것을 확인했으면 그 설정. 상세 판정이 실패해도 이것은
+    # 이미 `httpx` 로 확인된 사실이라 따로 들고 있는다
+    list: ListPath | None = None
     evidence: str = ""
     reason: str = ""
     failure: str = ""
@@ -82,6 +87,11 @@ class Discovery:
     @property
     def ok(self) -> bool:
         return not self.reason and not self.failure
+
+    @property
+    def list_adopted(self) -> bool:
+        """목록 API 를 다시 불러 확인까지 마쳤는가."""
+        return self.list is not None and self.list.ok
 
 
 async def discover_detail_path(
@@ -156,6 +166,11 @@ async def _discover_with_browser(
             list_count=0,
         )
 
+    # 목록이 JSON 으로 오는 사이트인지 먼저 본다. 목록을 그린 요청은 클릭 전에 이미 나갔고,
+    # 여기서 채택되면 이 크롤러는 실행마다 브라우저를 띄우지 않는다
+    list_path, list_note = await _adopt_list_api(fetcher, session, rendered)
+    list_mode = API if list_path is not None else PLAYWRIGHT
+
     if not _needs_more(rendered, selectors):
         item = rendered[0]
         confirmation = await confirm_document_path(fetcher, item.link, item.title)
@@ -166,11 +181,13 @@ async def _discover_with_browser(
             else f"상세 문서는 정적으로 열리지 않았다 — {confirmation.reason}"
         )
         return Discovery(
-            list_mode=PLAYWRIGHT,
+            list_mode=list_mode,
             detail_mode=detail_mode,
             detail=document_path(item.link, tail),
+            list=list_path,
             evidence=(
-                f"{prefix}, 렌더 후 {count}건. 항목에서 상세 주소를 얻어 클릭하지 않았다. {tail}"
+                f"{prefix}, 렌더 후 {count}건. 항목에서 상세 주소를 얻어 클릭하지 않았다. "
+                f"{tail}. {list_note}"
             ),
             list_count=count,
         )
@@ -184,8 +201,9 @@ async def _discover_with_browser(
     )
     if not outcome.reached:
         return Discovery(
-            list_mode=PLAYWRIGHT,
-            evidence=f"{prefix}, 렌더 후 {count}건, 항목에 상세 주소가 없어 클릭했다",
+            list_mode=list_mode,
+            list=list_path,
+            evidence=f"{prefix}, 렌더 후 {count}건, 항목에 상세 주소가 없어 클릭했다. {list_note}",
             failure=outcome.failure or DETAIL_UNREACHABLE,
             reason=outcome.reason,
             list_count=count,
@@ -201,7 +219,9 @@ async def _discover_with_browser(
     picked = pick_detail_request(outcome.requests, candidates) if candidates else None
 
     if picked is not None:
-        return await _from_api_request(fetcher, picked, clicked=clicked, count=count)
+        return await _from_api_request(
+            fetcher, picked, clicked=clicked, count=count, list_path=list_path, list_note=list_note
+        )
 
     if outcome.url and outcome.url != session.url:
         # 클릭이 상세 문서로 데려갔다. 주소가 있으니 API 를 찾을 필요가 없다
@@ -213,16 +233,18 @@ async def _discover_with_browser(
             else f"그 주소는 정적으로 열리지 않았다 — {confirmation.reason}"
         )
         return Discovery(
-            list_mode=PLAYWRIGHT,
+            list_mode=list_mode,
             detail_mode=detail_mode,
             detail=document_path(outcome.url, tail),
-            evidence=f"{clicked} — 상세 문서 주소를 알아냈다. {tail}",
+            list=list_path,
+            evidence=f"{clicked} — 상세 문서 주소를 알아냈다. {tail}. {list_note}",
             list_count=count,
         )
 
     return Discovery(
-        list_mode=PLAYWRIGHT,
-        evidence=clicked,
+        list_mode=list_mode,
+        list=list_path,
+        evidence=f"{clicked}. {list_note}",
         failure=DETAIL_UNREACHABLE,
         reason=(
             f"클릭 뒤 나간 요청 {len(outcome.requests)}건 중 이 공고를 지목한 것이 없고 "
@@ -238,14 +260,18 @@ async def _from_api_request(
     *,
     clicked: str,
     count: int,
+    list_path: ListPath | None,
+    list_note: str,
 ) -> Discovery:
     """클릭이 알려 준 요청을 설정으로 만들고 `httpx` 로 다시 불러 확인한다."""
     request, source = picked
+    list_mode = API if list_path is not None else PLAYWRIGHT
     path = propose_detail_config(request, source)
     if not path.ok:
         return Discovery(
-            list_mode=PLAYWRIGHT,
-            evidence=f"{clicked} — 요청 {request.url} 을 찾았다",
+            list_mode=list_mode,
+            list=list_path,
+            evidence=f"{clicked} — 요청 {request.url} 을 찾았다. {list_note}",
             failure=DETAIL_UNREACHABLE,
             reason=path.reason,
             list_count=count,
@@ -255,23 +281,76 @@ async def _from_api_request(
     if not confirmation.adopted:
         # 브라우저에서만 되는 요청은 채택하지 않는다. 저장하면 이후 실행이 전부 실패한다
         return Discovery(
-            list_mode=PLAYWRIGHT,
-            evidence=f"{clicked} — 상세 요청 {request.url} 을 알아냈다",
+            list_mode=list_mode,
+            list=list_path,
+            evidence=f"{clicked} — 상세 요청 {request.url} 을 알아냈다. {list_note}",
             failure=DETAIL_UNREACHABLE,
             reason=f"알아낸 요청을 다시 불러 확인하지 못했다: {confirmation.reason}",
             list_count=count,
         )
 
     return Discovery(
-        list_mode=PLAYWRIGHT,
+        list_mode=list_mode,
         detail_mode=API,
         detail=path,
+        list=list_path,
         evidence=(
             f"{clicked} — 상세 API 를 알려 줬고, 같은 요청을 httpx 로 다시 불러 "
-            f"제목과 본문 {confirmation.body_length}자가 같았다"
+            f"제목과 본문 {confirmation.body_length}자가 같았다. {list_note}"
         ),
         list_count=count,
     )
+
+
+async def _adopt_list_api(
+    fetcher: FetchPolicy, session: ProbeSession, items: list[ListItem]
+) -> tuple[ListPath | None, str]:
+    """렌더 중 나간 요청에서 목록 API 를 찾고, 확인된 것만 돌려준다.
+
+    확인은 공용 fetch 클라이언트로 한 번 다시 부르는 것이다. 브라우저에서만 되는 요청을
+    저장하면 등록만 성공하고 이후 실행이 전부 실패한다 (`app/selector/list_api.py`).
+
+    `referer` 하나로 갈리는 API 가 있어 한 번은 그것을 넣고 다시 확인한다. 담는 헤더는
+    사이트가 요구하는 기능성 헤더뿐이고, 이름은 공용 클라이언트가 정한다
+    (`.claude/rules/crawling.md`).
+    """
+    proposed = propose_list_config(session.log.requests, items, _links(session.html, session.url))
+    if not proposed.ok:
+        return None, f"목록 API 는 찾지 못했다: {proposed.reason}"
+
+    confirmation = await confirm_list_path(fetcher, proposed, items)
+    path = proposed
+    if not confirmation.adopted:
+        path = proposed.with_referer(session.url)
+        confirmation = await confirm_list_path(fetcher, path, items)
+    if not confirmation.adopted:
+        return None, (
+            f"목록 API 후보 {proposed.url} 는 다시 불러 확인되지 않아 채택하지 않았다: "
+            f"{confirmation.reason}"
+        )
+
+    return path, (
+        f"목록은 {path.url} 의 `{path.items_path}` 로 온다. httpx 로 다시 불러 "
+        f"{confirmation.count}건 중 제목 {confirmation.matched}건이 같아 채택했다"
+    )
+
+
+def _links(html: str, base_url: str) -> list[str]:
+    """렌더된 페이지에 걸려 있던 주소. 목록 API 항목의 id 를 이 안에서 찾는다.
+
+    항목 노드 안에서만 찾지 않는 이유는 항목 자체가 `a` 인 사이트가 있기 때문이다 —
+    카카오 목록이 `<a><li>...</li></a>` 다 (`app/selector/list_api.py`).
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    found: list[str] = []
+    for anchor in soup.select("a[href]"):
+        href = str(anchor.get("href") or "").strip()
+        if not href or href.startswith(("#", "javascript:")):
+            continue
+        url = urljoin(base_url, href)
+        if url.startswith(("http://", "https://")):
+            found.append(url)
+    return found
 
 
 async def _items_from_static(
