@@ -180,3 +180,13 @@ async def test_워크플로우_이름이_없어도_보낸다(
 
     assert len(sent) == 1
     assert "이름 없는 워크플로우" in sent[0].headers["X-Title"]
+
+
+def test_알림을_누르면_그_사이트의_목록_페이지가_열린다(conn: sqlite3.Connection) -> None:
+    """공고 하나가 아니라 목록이다. 한 알림에 여러 건이 들어오므로 하나만 열면 나머지를 놓친다."""
+    assert run_notify._list_url(conn, 1) == "https://sk.example.com"
+
+
+def test_목록_주소가_없으면_빈_값이다(conn: sqlite3.Connection) -> None:
+    """없는 워크플로우다. 부르는 쪽이 설정에 적어 둔 주소로 떨어뜨린다."""
+    assert run_notify._list_url(conn, 999) == ""

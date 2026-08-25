@@ -56,15 +56,18 @@ def build_new_jobs_message(
     건수는 `jobs` 의 길이에서 나온다. 건수를 따로 받으면 목록과 숫자가 어긋난 알림이
     나갈 수 있고, 그때 어느 쪽이 맞는지 알 방법이 없다.
 
-    `click` 이 비어 있으면 누를 곳 없는 알림이 된다. 운영 화면 주소를 아직 적지 않은
-    상태이고, 알림 자체는 그대로 나간다.
+    `click` 은 알림을 그냥 눌렀을 때 열 곳이고 **그 사이트의 목록 페이지**다. 공고 하나로
+    보내지 않는 것은 한 알림에 여러 건이 들어오기 때문이다 — 그중 하나만 열면 나머지를
+    놓친다. 개별 공고는 본문의 제목 링크로 연다.
+
+    비어 있으면 누를 곳 없는 알림이 된다. 알림 자체는 그대로 나간다.
     """
     total = len(jobs)
     return NtfyMessage(
         title=f"{site_name} 새 공고 {total}건",
         body=_body(jobs),
         tags=NEW_JOBS_TAGS,
-        click=_click(jobs, click),
+        click=click,
     )
 
 
@@ -104,19 +107,6 @@ def _body(jobs: Sequence[NewJob]) -> str:
         lines.append("")
         lines.append(f"외 {remaining}건")
     return "\n".join(lines)
-
-
-def _click(jobs: Sequence[NewJob], fallback: str) -> str:
-    """알림을 그냥 눌렀을 때 열 곳. 첫 공고의 원본 주소다.
-
-    여러 건이 한 알림에 들어오므로 하나만 고를 수밖에 없다. 나머지는 본문의 링크로 연다.
-    주소가 없는 공고뿐이면 설정에 적어 둔 주소로 떨어진다.
-    """
-    for job in jobs:
-        url = job.url.strip()
-        if url:
-            return url
-    return fallback
 
 
 def _line(job: NewJob) -> str:

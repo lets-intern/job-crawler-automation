@@ -68,7 +68,7 @@ async def notify_new_jobs(
         message = build_new_jobs_message(
             site_name=_site_name(conn, workflow_id),
             jobs=jobs,
-            click=config.click_url,
+            click=_list_url(conn, workflow_id) or config.click_url,
         )
         result = await send(config.target, message)
     except Exception as exc:
@@ -81,6 +81,26 @@ async def notify_new_jobs(
     if not result.ok:
         logger.warning("workflow %s: 알림을 보내지 못했다: %s", workflow_id, result.detail)
     return result
+
+
+def _list_url(conn: sqlite3.Connection, workflow_id: int) -> str:
+    """알림을 눌렀을 때 열 곳. 그 사이트의 공고 목록 페이지다.
+
+    개별 공고가 아니라 목록인 것은 한 알림에 여러 건이 들어오기 때문이다. 하나만 열면
+    나머지를 놓치고, 목록을 열면 방금 들어온 것들이 거기 다 있다.
+    """
+    row = conn.execute(
+        """
+        SELECT c.list_url AS list_url
+          FROM workflows w
+          JOIN crawlers c ON c.id = w.crawler_id
+         WHERE w.id = ?
+        """,
+        (workflow_id,),
+    ).fetchone()
+    if row is None:
+        return ""
+    return str(row["list_url"] or "").strip()
 
 
 def _site_name(conn: sqlite3.Connection, workflow_id: int) -> str:

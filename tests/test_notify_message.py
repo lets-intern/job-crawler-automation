@@ -107,14 +107,28 @@ def _pictograms(text: str) -> list[str]:
 
 
 def test_제목이_공고_원본_주소로_걸린다() -> None:
-    """알림에서 바로 그 공고를 열 수 있어야 한다. 검수 화면이 아니라 원본이다."""
+    """본문의 제목을 누르면 그 공고가 열린다."""
     message = build_new_jobs_message(
         site_name="LG",
         jobs=[NewJob(company="LG전자", title="백엔드 개발자", url="https://x.test/jobs/1")],
+        click="https://x.test/list",
     )
 
     assert "[백엔드 개발자](https://x.test/jobs/1)" in message.body
-    assert message.click == "https://x.test/jobs/1"
+
+
+def test_알림을_누르면_목록_페이지가_열린다() -> None:
+    """한 알림에 여러 건이 들어오므로 공고 하나로 보내지 않는다. 목록에 다 있다."""
+    message = build_new_jobs_message(
+        site_name="LG",
+        jobs=[
+            NewJob(company="LG전자", title="가", url="https://x.test/jobs/1"),
+            NewJob(company="LG화학", title="나", url="https://x.test/jobs/2"),
+        ],
+        click="https://x.test/list",
+    )
+
+    assert message.click == "https://x.test/list"
 
 
 def test_주소가_없으면_링크_없이_글자만_적는다() -> None:
@@ -122,25 +136,11 @@ def test_주소가_없으면_링크_없이_글자만_적는다() -> None:
     message = build_new_jobs_message(
         site_name="LG",
         jobs=[NewJob(company="LG전자", title="백엔드 개발자")],
-        click="https://x.test/review",
+        click="https://x.test/list",
     )
 
     assert "](" not in message.body
     assert "백엔드 개발자" in message.body
-    assert message.click == "https://x.test/review"
-
-
-def test_주소_있는_첫_공고로_연다() -> None:
-    """앞쪽에 주소 없는 공고가 섞여 있어도 누를 곳이 사라지지 않는다."""
-    message = build_new_jobs_message(
-        site_name="LG",
-        jobs=[
-            NewJob(company="LG", title="주소 없음"),
-            NewJob(company="LG", title="주소 있음", url="https://x.test/jobs/2"),
-        ],
-    )
-
-    assert message.click == "https://x.test/jobs/2"
 
 
 def test_제목의_대괄호가_링크를_깨뜨리지_않는다() -> None:
