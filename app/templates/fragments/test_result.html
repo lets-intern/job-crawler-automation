@@ -32,6 +32,12 @@
     <tr><th scope="row">크롤러 상태</th><td>{{ result.crawler_status }}</td></tr>
     <tr><th scope="row">목록 매칭</th><td>{{ result.matched }}건</td></tr>
     <tr><th scope="row">정상 처리</th><td>{{ result.success_count }}건</td></tr>
+    {# 건너뜀은 실패와 따로 센다. 합치면 마감 날짜 형식이 바뀌어 전부 걸러진 사이트가
+       "새 공고 0건" 인 정상 실행으로 보인다 (`migrations/0010_run_failures.sql`) #}
+    <tr><th scope="row">건너뜀</th>
+        <td>{{ result.skipped_count }}건
+          <span class="text-sm text-slate-600">마감이 지났거나 이미 아는 공고라 상세를 열지 않았다. 실패가 아니다</span>
+        </td></tr>
     <tr><th scope="row">실패</th>
         <td class="{% if result.fail_count %}state-bad{% else %}state-idle{% endif %}">{{ result.fail_count }}건</td></tr>
     <tr><th scope="row">실패 분류</th><td>{{ result.error_class or "없음" }}</td></tr>

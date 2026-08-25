@@ -135,6 +135,19 @@ def get_run_gate() -> RunGate:
 
 
 @dataclass(frozen=True)
+class RunCounts:
+    """실행 하나가 공고를 몇 건씩 처리했는가. 세 숫자는 각각 다른 뜻이라 합치지 않는다."""
+
+    run_id: int
+    success: int
+    new: int
+    # 마감이 지났거나 이미 아는 공고다. 정상이고 고칠 것이 없다
+    skipped: int
+    # 놓친 공고다. 어느 공고였는지는 `crawl_run_failures` 에 있다
+    failed: int
+
+
+@dataclass(frozen=True)
 class CardView:
     """워크플로우 카드 하나에 들어가는 값. 판정은 전부 여기 오기 전에 끝나 있다."""
 
@@ -152,6 +165,10 @@ class CardView:
     schedule: str
     # 가장 최근에 끝난 실행을 무엇이 시작했는가. 실행 기록이 없으면 빈 문자열이다
     last_trigger: str
+    # 가장 최근에 끝난 실행이 공고를 몇 건씩 어떻게 처리했는가. 실행 기록이 없으면 None 이다.
+    # 건너뜀은 실패와 반드시 따로 센다 — 합치면 마감 날짜 형식이 바뀌어 전부 걸러진 사이트가
+    # "새 공고 0건" 인 정상 실행으로 보인다 (`migrations/0010_run_failures.sql`)
+    last_counts: RunCounts | None
     # 운영자가 방금 누른 조작의 결과
     message: str
     # 지금 이 워크플로우의 실행이 돌고 있는가. 카드가 스스로 폴링할지가 여기서 갈린다
@@ -244,12 +261,25 @@ def _trigger_word(value: str | None) -> str:
     return TRIGGER_WORDS.get(value or "", UNKNOWN_TRIGGER)
 
 
+def _counts(row: sqlite3.Row | None) -> RunCounts | None:
+    """마지막으로 끝난 실행의 건수. 기록이 없으면 None 이고 카드가 그렇게 적는다."""
+    if row is None:
+        return None
+    return RunCounts(
+        run_id=int(row["id"]),
+        success=int(row["success_count"]),
+        new=int(row["new_count"]),
+        skipped=int(row["skipped_count"]),
+        failed=int(row["fail_count"]),
+    )
+
+
 def _last_run(conn: sqlite3.Connection, workflow_id: int) -> sqlite3.Row | None:
     """가장 최근에 끝난 실행 한 행. 아직 도는 중인 실행은 끝난 실행이 아니다."""
     row: sqlite3.Row | None = conn.execute(
         """
-        SELECT id, status, success_count, new_count, fail_count, error_class, error_message,
-               trigger
+        SELECT id, status, success_count, new_count, fail_count, skipped_count,
+               error_class, error_message, trigger
           FROM crawl_runs
          WHERE workflow_id = ? AND status IS NOT NULL
          ORDER BY id DESC LIMIT 1
@@ -283,7 +313,8 @@ def _finished_message(conn: sqlite3.Connection, workflow_id: int) -> str:
         return f"실행 {row['id']} 이 {word}로 끝났다. 사유는 아래 최근 실패 사유에 있다"
     return (
         f"실행 {row['id']} 이 {word}으로 끝났다 — 정상 {row['success_count']}건, "
-        f"신규 {row['new_count']}건, 실패 {row['fail_count']}건"
+        f"신규 {row['new_count']}건, 건너뜀 {row['skipped_count']}건, "
+        f"실패 {row['fail_count']}건"
     )
 
 
@@ -305,6 +336,7 @@ def _view(
         tone=tone,
         attention=attention,
         reason=_last_failure(conn, item.id),
+        last_counts=_counts(last),
         auto_stopped=_auto_stopped(item, streak),
         schedule=_schedule(item, next_run_at),
         last_trigger="" if last is None else _trigger_word(last["trigger"]),

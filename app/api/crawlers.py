@@ -291,6 +291,10 @@ class TestRunOut(BaseModel):
     success_count: int
     new_count: int
     fail_count: int
+    # 적재하지 않고 넘긴 수. 마감이 지났거나 이미 아는 공고다. `fail_count` 와 반드시 따로
+    # 센다 — 합치면 날짜 형식이 바뀌어 전부 걸러진 사이트가 정상 실행으로 보인다
+    # (`migrations/0010_run_failures.sql`)
+    skipped_count: int
     error_class: str | None
     error_message: str
     items: list[PreviewItem]
@@ -936,6 +940,7 @@ async def test_run(
         success_count=result.success_count,
         new_count=result.new_count,
         fail_count=result.fail_count,
+        skipped_count=result.skipped_count,
         error_class=result.error_class,
         error_message=result.error_message,
         items=[
