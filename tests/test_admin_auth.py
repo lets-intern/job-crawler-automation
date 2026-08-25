@@ -57,7 +57,11 @@ def test_health_is_open_without_cookie(locked: TestClient) -> None:
     response = locked.get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    body = response.json()
+    assert body["status"] == "ok"
+    # 어떤 코드가 떠 있는지 같이 돌려준다. 이미지 태그를 고정하지 않으므로 배포된 커밋을
+    # 아는 길이 이 값뿐이다 (`docker-compose.coolify.yml`)
+    assert body["build"]
 
 
 @pytest.mark.parametrize("path", LOCKED_PATHS)

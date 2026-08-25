@@ -15,13 +15,18 @@
 # 로컬 개발은 docker-compose.yml 을 쓴다. 이 파일과 섞지 않는다.
 services:
   api:
-    # 커밋 SHA 로 고정한다. :latest 는 Coolify·도커 데몬·레지스트리 어디서든 캐시되어,
-    # 새 이미지를 만들어도 옛것이 계속 뜨는 일이 생긴다. 2026-08-24 에 실제로 겪었다 —
-    # 캐시를 지우고 재배포해도 며칠 전 이미지가 떠 있었다.
+    # `:latest` 를 쓴다. main 에 병합되면 release 워크플로우가 이 태그를 새로 밀고,
+    # Coolify 배포 웹훅이 재배포를 걸어 자동으로 갈린다.
     #
-    # SHA 태그는 캐시가 있어도 이름이 달라 반드시 새로 받는다. 어떤 코드가 떠 있는지도
-    # 이 줄만 보면 안다. 새로 배포할 때 이 값을 main 의 최신 SHA 로 바꾼다.
-    image: ghcr.io/dusvlf111/job-crawler-automation:sha-f366567
+    # 2026-08-24 에는 커밋 SHA 로 고정했다. 배포본이 옛것이어서 `:latest` 캐시로 판단했는데,
+    # 그때 병합이 제대로 되지 않은 문제가 함께 있었고 캐시가 원인이라는 것은 확인되지 않았다.
+    # 고정하면 병합마다 사람이 이 줄을 고쳐야 하고, 고치는 것을 잊으면 옛 이미지가 뜬다.
+    #
+    # 대신 어떤 코드가 떠 있는지는 `/health` 가 돌려주는 `build` 로 안다. 빌드가 심는 값이라
+    # 사람이 고쳐 적는 이 줄보다 정확하다.
+    #
+    # Coolify 에서 "이미지 강제 pull" 을 켜야 한다. 켜지 않으면 서버에 남은 `:latest` 를 쓴다.
+    image: ghcr.io/lets-intern/job-crawler-automation:latest
     restart: unless-stopped
 
     environment:

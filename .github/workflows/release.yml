@@ -45,6 +45,10 @@ jobs:
         with:
           context: .
           push: true
+          # 떠 있는 코드가 무엇인지 이미지가 스스로 알게 한다. compose 가 태그를 고정하지
+          # 않으므로 `/health` 의 이 값이 배포된 커밋을 아는 유일한 길이다
+          build-args: |
+            BUILD_SHA=${{ github.sha }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
