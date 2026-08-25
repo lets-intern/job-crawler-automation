@@ -58,6 +58,11 @@ from app.selector.detail_path import (
     pick_detail_request,
     propose_detail_config,
 )
+from app.selector.link_probe import (
+    LinkProposal,
+    confirm_link_template,
+    propose_link_template,
+)
 from app.selector.list_api import ListPath, confirm_list_path, propose_list_config
 from app.selector.schema import SelectorSet
 
@@ -79,6 +84,9 @@ class Discovery:
     # 목록을 JSON 으로 받을 수 있다는 것을 확인했으면 그 설정. 상세 판정이 실패해도 이것은
     # 이미 `httpx` 로 확인된 사실이라 따로 들고 있는다
     list: ListPath | None = None
+    # 항목이 `href` 를 들고 있지 않아 클릭으로 알아낸 상세 주소 형식. 값이 있으면 그것이
+    # `list.link` 와 `list.link_template` 이 된다 (`app/selector/link_probe.py`)
+    link: LinkProposal | None = None
     evidence: str = ""
     reason: str = ""
     failure: str = ""
@@ -214,13 +222,34 @@ async def _discover_with_browser(
         f"{prefix}, 렌더 후 {count}건, 항목에 상세 주소가 없어 클릭했다. "
         f"{outcome.target} 를 눌러 {signals}"
     )
-    node = _first_node(session.html, selectors)
-    candidates = id_candidates(node) if node is not None else []
+    nodes = _item_nodes(session.html, selectors)
+    candidates = id_candidates(nodes[0]) if nodes else []
     picked = pick_detail_request(outcome.requests, candidates) if candidates else None
 
     if picked is not None:
         return await _from_api_request(
             fetcher, picked, clicked=clicked, count=count, list_path=list_path, list_note=list_note
+        )
+
+    # 클릭으로 알아낸 주소를 공고마다 다른 주소 형식으로 옮길 수 있는가. 주소 하나만 저장하면
+    # 공고가 몇 건이든 같은 상세를 가져온다 (`app/selector/link_probe.py`)
+    link, link_note = await _adopt_link_template(
+        fetcher,
+        nodes=nodes,
+        titles=[item.title for item in rendered],
+        reached_url=outcome.url,
+        list_url=session.url,
+        requests=outcome.requests,
+    )
+    if link is not None:
+        return Discovery(
+            list_mode=list_mode,
+            detail_mode=STATIC,
+            detail=document_path(outcome.url or session.url, link_note),
+            list=list_path,
+            link=link,
+            evidence=f"{clicked} — {link_note}. {list_note}",
+            list_count=count,
         )
 
     if outcome.url and outcome.url != session.url:
@@ -237,18 +266,18 @@ async def _discover_with_browser(
             detail_mode=detail_mode,
             detail=document_path(outcome.url, tail),
             list=list_path,
-            evidence=f"{clicked} — 상세 문서 주소를 알아냈다. {tail}. {list_note}",
+            evidence=f"{clicked} — 상세 문서 주소를 알아냈다. {tail}. {link_note}. {list_note}",
             list_count=count,
         )
 
     return Discovery(
         list_mode=list_mode,
         list=list_path,
-        evidence=f"{clicked}. {list_note}",
+        evidence=f"{clicked}. {link_note}. {list_note}",
         failure=DETAIL_UNREACHABLE,
         reason=(
             f"클릭 뒤 나간 요청 {len(outcome.requests)}건 중 이 공고를 지목한 것이 없고 "
-            "주소도 그대로다. 상세 경로를 손으로 적는다"
+            f"주소로도 형식을 만들지 못했다: {link_note}"
         ),
         list_count=count,
     )
@@ -335,6 +364,40 @@ async def _adopt_list_api(
     )
 
 
+async def _adopt_link_template(
+    fetcher: FetchPolicy,
+    *,
+    nodes: list[Tag],
+    titles: list[str],
+    reached_url: str,
+    list_url: str,
+    requests: tuple[ObservedRequest, ...] | list[ObservedRequest],
+) -> tuple[LinkProposal | None, str]:
+    """클릭으로 알아낸 주소를 항목마다 다른 형식으로 옮기고, 확인된 것만 돌려준다.
+
+    확인은 그 형식으로 만든 주소 두 개를 공용 fetch 클라이언트로 열어 보는 것이다. 확인하지
+    않고 저장하면 공고마다 같은 페이지를 가져오는 크롤러가 남는다.
+    """
+    proposal = propose_link_template(
+        nodes, reached_url=reached_url, list_url=list_url, requests=list(requests)
+    )
+    if not proposal.ok:
+        return None, f"공고마다 다른 상세 주소 형식은 만들지 못했다: {proposal.reason}"
+
+    confirmation = await confirm_link_template(fetcher, proposal, nodes, titles)
+    if not confirmation.adopted:
+        return None, (
+            f"상세 주소 형식 {proposal.template} 은 확인되지 않아 채택하지 않았다: "
+            f"{confirmation.reason}"
+        )
+
+    return proposal, (
+        f"{proposal.source}에서 공고마다 다른 상세 주소 형식을 얻었다: {proposal.template} "
+        f"(항목 {proposal.resolved}/{proposal.count}건에서 주소가 나왔고, "
+        f"{confirmation.checked}건을 열어 제목을 확인했다)"
+    )
+
+
 def _links(html: str, base_url: str) -> list[str]:
     """렌더된 페이지에 걸려 있던 주소. 목록 API 항목의 id 를 이 안에서 찾는다.
 
@@ -381,11 +444,14 @@ def _needs_more(items: list[ListItem], selectors: SelectorSet) -> bool:
     return items[0].detail_absent or not items[0].link.strip()
 
 
-def _first_node(html: str, selectors: SelectorSet) -> Tag | None:
-    """공고 번호를 찾을 항목 노드 하나. 클릭한 것과 같은 첫 항목이다."""
+def _item_nodes(html: str, selectors: SelectorSet, limit: int = 2) -> list[Tag]:
+    """공고 번호를 찾을 항목 노드들. 첫 항목은 클릭한 것과 같은 것이다.
+
+    두 개를 보는 이유는 주소 형식을 확인할 때다. 한 항목만으로는 만들어 낸 주소가 그 항목
+    전용인지 공고마다 달라지는지 알 수 없다 (`app/selector/link_probe.py`).
+    """
     soup = BeautifulSoup(html, "html.parser")
-    nodes = select_nodes(soup, selectors.list.item, "list.item")
-    return nodes[0] if nodes else None
+    return select_nodes(soup, selectors.list.item, "list.item")[:limit]
 
 
 def _title(items: list[ListItem]) -> str:

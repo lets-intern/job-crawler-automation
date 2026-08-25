@@ -577,3 +577,89 @@ async def test_브라우저에서만_되는_목록_API_는_채택하지_않는�
     assert discovery.list_mode == PLAYWRIGHT
     assert discovery.list_adopted is False
     assert "채택하지 않았다" in discovery.evidence
+
+
+# 항목에 `href` 가 없고 공고 번호가 `onclick` 인자에만 있는 목록. 두산·네이버가 이 모양이다
+ONCLICK_LIST = """
+<html><body><ul>
+  <li class="item"><a class="tit" href="javascript:void(0);" onclick="show('30005276')">
+    <p class="tit">온보딩 프로그램 운영 지원</p></a></li>
+  <li class="item"><a class="tit" href="javascript:void(0);" onclick="show('30005281')">
+    <p class="tit">재무회계 담당</p></a></li>
+</ul></body></html>
+"""
+VIEW_URL = "https://example.test/rcrt/view.do?annoId=30005276&lang=ko"
+
+
+@pytest.mark.asyncio
+async def test_클릭이_데려간_주소를_공고마다_다른_형식으로_저장한다() -> None:
+    """주소 하나만 저장하면 공고가 몇 건이든 같은 상세를 가져온다."""
+    opened: list[str] = []
+    page_html = "<html><body><h1>온보딩 프로그램 운영 지원</h1></body></html>"
+    second = "<html><body><h1>재무회계 담당</h1></body></html>"
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(200, text=ROBOTS)
+        if request.url.path == "/jobs":
+            return httpx.Response(200, text=SHELL)
+        anno = request.url.params.get("annoId", "")
+        text = page_html if anno == "30005276" else second
+        return httpx.Response(200, text=text)
+
+    client = fetcher_for(handle)
+    element = StubElement()
+    session = session_for(ONCLICK_LIST, [element])
+    # 클릭이 상세 주소로 데려갔다
+    element.action = lambda: setattr(session.page, "url", VIEW_URL)
+    try:
+        discovery = await discover_detail_path(
+            LIST_URL,
+            LINKLESS_SELECTORS,
+            fetcher=client,
+            sleep=nosleep,
+            open_probe=opener(session, opened),
+        )
+    finally:
+        await client.aclose()
+
+    assert discovery.ok is True
+    assert discovery.detail_mode == STATIC
+    assert discovery.link is not None
+    assert discovery.link.selector == "a.tit"
+    assert (
+        discovery.link.template == "https://example.test/rcrt/view.do?annoId={onclick|arg1}&lang=ko"
+    )
+    assert (discovery.link.resolved, discovery.link.count) == (2, 2)
+    assert "공고마다 다른 상세 주소 형식을 얻었다" in discovery.evidence
+
+
+@pytest.mark.asyncio
+async def test_확인되지_않는_주소_형식은_채택하지_않는다() -> None:
+    """두 번째 항목이 첫 항목과 같은 페이지를 주면 그 형식은 공고를 가르지 못한다."""
+    opened: list[str] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(200, text=ROBOTS)
+        if request.url.path == "/jobs":
+            return httpx.Response(200, text=SHELL)
+        return httpx.Response(200, text="<html><h1>온보딩 프로그램 운영 지원</h1></html>")
+
+    client = fetcher_for(handle)
+    element = StubElement()
+    session = session_for(ONCLICK_LIST, [element])
+    element.action = lambda: setattr(session.page, "url", VIEW_URL)
+    try:
+        discovery = await discover_detail_path(
+            LIST_URL,
+            LINKLESS_SELECTORS,
+            fetcher=client,
+            sleep=nosleep,
+            open_probe=opener(session, opened),
+        )
+    finally:
+        await client.aclose()
+
+    assert discovery.link is None
+    assert "채택하지 않았다" in discovery.evidence

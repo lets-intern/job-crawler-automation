@@ -530,6 +530,9 @@ async def create_crawler(
     list_mode = PLAYWRIGHT if requested == PLAYWRIGHT else discovered_list
     detail_mode = (discovery.detail_mode or discovered_list) if discovery.ok else generated_mode
     api_config_json = _discovered_api_config(discovery)
+    # 항목이 `href` 를 안 들고 있어 판정이 상세 주소 형식을 알아냈으면 그것을 셀렉터에 얹는다.
+    # 확인된 것만 온다 (`app/selector/link_probe.py`)
+    selectors = _with_link(result.selectors, discovery)
 
     name = payload.name.strip() or urlsplit(payload.list_url).netloc
     # 안 적었으면 NULL 이다. 빈 문자열로 넣으면 "회사명이 있다" 와 구분되지 않는다
@@ -546,7 +549,7 @@ async def create_crawler(
             name,
             payload.list_url,
             detail_url,
-            result.selectors.to_json(),
+            selectors.to_json(),
             default_company,
             list_mode,
             detail_mode,
@@ -556,6 +559,11 @@ async def create_crawler(
     crawler_id = int(cursor.lastrowid or 0)
 
     matches = result.verification.summary()
+    resolved_links = _link_matches(discovery)
+    if resolved_links is not None:
+        # 생성 시점 판정은 `list.link` 를 실패로 적었다. 그 뒤 판정이 주소 형식을 알아내
+        # 항목에서 실제로 주소가 나왔으므로 그 수로 바꿔 적는다
+        matches["list.link"] = resolved_links
     unverified = _skipped_detail_fields(matches, detail_url)
     # 모델이 "사이트에 그 항목이 없다"고 답해 셀렉터가 비어 있는 필드. 매칭 0개지만 고칠
     # 셀렉터가 없어 실패가 아니다 (`app/selector/verify.py`)
@@ -573,6 +581,11 @@ async def create_crawler(
             f"모델이 사이트에 없다고 답해 셀렉터가 비어 있는 필드가 있다: {', '.join(absent)}. "
             "매칭 0개지만 고칠 셀렉터가 없으므로 실패가 아니라 건너뜀이다"
         )
+    if discovery.link is not None:
+        notes.append(
+            f"항목에 상세 주소가 없어 판정이 형식을 알아내 `list.link` 와 `link_template` 을 "
+            f"채웠다: {discovery.link.template}"
+        )
 
     return CrawlerOut(
         id=crawler_id,
@@ -581,10 +594,14 @@ async def create_crawler(
         default_company=default_company,
         render_mode=generated_mode,
         detail_url=detail_url,
-        selectors=result.selectors,
+        selectors=selectors,
         matches=matches,
         # 건너뛴 필드는 실패에서 뺀다. 고칠 곳을 알려 주는 목록에 확인 못 한 것을 섞지 않는다
-        failed_fields=[name for name in result.verification.failed if name not in skipped],
+        failed_fields=[
+            name
+            for name in result.verification.failed
+            if name not in skipped and matches.get(name, 0) == 0
+        ],
         skipped_fields=skipped,
         notes=notes,
         usage=UsageOut(**vars(result.usage)),
@@ -594,6 +611,23 @@ async def create_crawler(
         path_reason=discovery.reason,
         path_failure=discovery.failure,
     )
+
+
+def _with_link(selectors: SelectorSet, discovery: Discovery) -> SelectorSet:
+    """판정이 알아낸 상세 주소 형식을 셀렉터에 얹는다. 없으면 그대로 둔다.
+
+    모델은 상세 URL 형식을 이 HTML 만으로 알 수 없어 `link_template` 을 비워 둔다
+    (`app/selector/generator.py`). 그 자리를 채우는 것은 클릭으로 알아내고 두 건을 실제로
+    열어 확인한 형식뿐이다 — 확인되지 않은 형식은 여기까지 오지 않는다.
+    """
+    if discovery.link is None:
+        return selectors
+    return selectors.model_copy(update={"list": discovery.link.selectors(selectors.list)})
+
+
+def _link_matches(discovery: Discovery) -> int | None:
+    """알아낸 주소 형식으로 주소가 나온 항목 수. 형식이 없으면 None 이다."""
+    return discovery.link.resolved if discovery.link is not None else None
 
 
 def _discovered_api_config(discovery: Discovery) -> str | None:

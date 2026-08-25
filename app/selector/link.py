@@ -49,8 +49,15 @@ from app.selector.schema import ListSelectors
 # 크롤러가 따라갈 수 있는 스킴. 이 밖은 링크가 아니라 페이지 안에서 도는 동작이다.
 FOLLOWABLE_SCHEMES: tuple[str, ...] = ("http", "https")
 
-# `{data-recuyy}` 처럼 속성 이름을 그대로 적는다. HTML 속성 이름에 쓰이는 문자만 받는다
-PLACEHOLDER = re.compile(r"\{([A-Za-z_][A-Za-z0-9_:.-]*)\}")
+# `{data-recuyy}` 처럼 속성 이름을 그대로 적는다. HTML 속성 이름에 쓰이는 문자만 받는다.
+# `{onclick|arg1}` 은 그 속성 안의 첫 번째 따옴표 인자다 — 아래 `ARG_MARK` 를 본다
+PLACEHOLDER = re.compile(r"\{([A-Za-z_][A-Za-z0-9_:.-]*)(\|arg\d+)?\}")
+
+# 속성값이 JS 호출인 사이트를 위한 표기. 두산은 `onclick="goDetail(\'1000361539\', ...)"` 이고
+# 네이버는 `onclick="show(\'30005276\')"` 라, 공고 번호가 속성값 전체가 아니라 그 안의 인자다.
+# `{onclick|arg1}` 은 그중 첫 번째를 뜻한다
+ARG_MARK = "|arg"
+_JS_ARG = re.compile(r"'([^']*)'|\"([^\"]*)\"")
 
 # 속성값을 URL 에 끼울 때 그대로 두는 문자. 나머지는 퍼센트 인코딩한다
 _KEEP_IN_URL = "/?:=&%+#"
@@ -100,7 +107,7 @@ def resolve_link(node: Tag, selectors: ListSelectors) -> LinkResult:
 def _from_attributes(node: Tag, selectors: ListSelectors) -> LinkResult:
     """`link_template` 의 `{속성이름}` 자리를 노드의 속성값으로 채운다."""
     template = selectors.link_template
-    names = PLACEHOLDER.findall(template)
+    names = [f"{name}{mark}" for name, mark in PLACEHOLDER.findall(template)]
     if not names:
         return LinkResult(
             reason=f"link_template 에 `{{속성이름}}` 자리가 없다: {template}",
@@ -125,20 +132,38 @@ def _from_attributes(node: Tag, selectors: ListSelectors) -> LinkResult:
             )
         values[name] = quote(value, safe=_KEEP_IN_URL)
 
-    url = PLACEHOLDER.sub(lambda match: values[match.group(1)], template)
+    url = PLACEHOLDER.sub(lambda match: values[f"{match.group(1)}{match.group(2) or ''}"], template)
     if not followable(url):
         return LinkResult(reason=f"조립한 URL 이 http(s) 가 아니다: {url}")
     return LinkResult(url=url)
 
 
-def _attribute(node: Tag, name: str) -> str:
-    """속성값을 문자열로. `class` 처럼 목록으로 오는 속성은 공백으로 잇는다."""
+def _attribute(node: Tag, spec: str) -> str:
+    """속성값을 문자열로. `<이름>|arg<n>` 이면 그 속성 안의 n 번째 인자를 꺼낸다.
+
+    `class` 처럼 목록으로 오는 속성은 공백으로 잇는다.
+    """
+    name, mark, index = spec.partition(ARG_MARK)
     raw = node.get(name)
     if isinstance(raw, list):
-        return " ".join(str(part) for part in raw).strip()
-    if isinstance(raw, str):
-        return raw.strip()
-    return ""
+        value = " ".join(str(part) for part in raw).strip()
+    elif isinstance(raw, str):
+        value = raw.strip()
+    else:
+        return ""
+    if not mark:
+        return value
+    return js_argument(value, int(index)) if index.isdigit() else ""
+
+
+def js_argument(value: str, index: int) -> str:
+    """`goDetail(\'1000361539\', \'C_REC_MGT_04\')` 의 n 번째 따옴표 인자. 없으면 빈 문자열.
+
+    JS 를 실행하지 않는다. 따옴표로 묶인 값만 읽는 것이라 계산식이나 변수는 잡히지 않고,
+    그때는 빈 값이 되어 그 항목이 실패로 남는다 — 틀린 주소를 만들지 않는다.
+    """
+    args = [first or second for first, second in _JS_ARG.findall(value)]
+    return args[index - 1].strip() if 0 < index <= len(args) else ""
 
 
 def followable(url: str) -> bool:
