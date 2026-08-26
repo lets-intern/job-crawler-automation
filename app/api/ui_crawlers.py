@@ -315,6 +315,34 @@ def _repair_notice(result: crawlers.RepairOut) -> str:
     return " ".join(parts)
 
 
+@router.put("/ui/crawlers/{crawler_id}/name", response_class=HTMLResponse)
+def rename_crawler_fragment(
+    request: Request,
+    crawler_id: int,
+    name: Annotated[str, Form()],
+    conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
+) -> HTMLResponse:
+    """표에서 고친 이름을 저장한다.
+
+    등록이 이름을 안 받으면 리스트 URL 의 호스트가 그대로 이름이 된다. 그 행을 다시 등록하면
+    경로 판정이 다시 돌아 브라우저와 모델을 쓰므로, 이름만 고치는 길이 여기다
+    (`app/api/crawlers.py` 의 `update_name`).
+    """
+    try:
+        saved = crawlers.update_name(crawler_id, crawlers.NameUpdate(name=name), conn)
+    except HTTPException as exc:
+        return _result(request, conn=conn, error=error_detail(exc))
+
+    return _result(
+        request,
+        conn=conn,
+        notice=(
+            f"크롤러 {saved.id} 의 이름을 {saved.name} 로 저장했다. "
+            "이미 만들어진 워크플로우의 이름은 그대로다."
+        ),
+    )
+
+
 @router.put("/ui/crawlers/{crawler_id}/collect-modes", response_class=HTMLResponse)
 def switch_collect_modes_fragment(
     request: Request,

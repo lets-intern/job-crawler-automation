@@ -24,7 +24,21 @@
     {% for crawler in crawlers %}
     <tr>
       <td class="num">{{ crawler.id }}</td>
-      <td class="cell-text">{{ crawler.name }}</td>
+      {# 등록이 이름을 안 받으면 리스트 URL 의 호스트가 그대로 이름이 된다. 다시 등록하면
+         경로 판정이 다시 돌아 브라우저와 모델을 쓰므로 여기서 이름만 고친다 #}
+      <td class="cell-text">
+        <form hx-put="/ui/crawlers/{{ crawler.id }}/name"
+              hx-target="#crawler-result"
+              hx-swap="innerHTML"
+              hx-disabled-elt="find button"
+              hx-indicator="closest form, #crawler-result-wait">
+          <label for="crawler-name-{{ crawler.id }}" class="block text-xs text-slate-600">이름</label>
+          <input id="crawler-name-{{ crawler.id }}" name="name" type="text" size="20"
+                 value="{{ crawler.name }}" required>
+          <button type="submit" class="btn-quiet">이름 저장</button>
+          {{ wait("이름을 저장하는 중") }}
+        </form>
+      </td>
       <td>
         {% if crawler.status == "promoted" %}{{ badge("승격됨") }}
         {% elif crawler.status == "tested" %}{{ badge("테스트됨") }}

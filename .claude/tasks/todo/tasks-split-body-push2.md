@@ -53,10 +53,18 @@ Push 1 이 칸을 확정하고 스키마를 만들었다. 이 Push 는 사이트
 ## 작업
 
 - [ ] 2.0 열한 사이트 매핑을 다시 쓴다
-    - [ ] 2.1 크롤러 이름을 바꾸는 길을 만든다
-        - 이름이 상위 기업 칸의 값이 되므로 운영자가 고칠 수 있어야 한다
-        - 화면에서도 고칠 수 있게 한다
-        - [ ] 2.1.V 검증: 로컬에서 이름을 바꿔 저장하고 화면과 DB 에 반영되는지
+    - [x] 2.1 크롤러 이름을 바꾸는 길을 만든다
+        - `PUT /api/crawlers/{id}/name` 을 더했다. `update_company` 와 같은 모양이고, 빈
+          이름은 422(`empty_name`)로 거절한다 — `crawlers.name` 은 NOT NULL 이고 목록에서
+          그 행을 알아보는 유일한 값이라 지울 수 있는 `default_company` 와 다르다
+        - `PUT /ui/crawlers/{id}/name` 과 크롤러 표의 이름 칸에 입력 + 저장 버튼
+        - 이미 만들어진 워크플로우 이름은 따라오지 않는다. 워크플로우는 만들 때 이름을 복사해
+          자기 행에 들고 있다 (`app/api/workflows.py`)
+        - **이름은 `company` 칸의 값이 아니다.** 정규화가 회사명을 못 뽑았을 때 쓰는 것은
+          `crawlers.default_company` 다 (`app/normalize/engine.py` 의 `resolve_company`).
+          이름은 화면과 새 워크플로우의 이름에 쓰인다
+        - [x] 2.1.V 검증: `tests/test_crawler_rename.py` 8개 통과. 포트 8000 인스턴스의
+          `/ui/crawlers` 에 이름 폼이 열한 행 다 있고 `/openapi.json` 에 라우트가 있다
     - [ ] 2.2 새 다섯 사이트의 이름을 고친다
         - 위 표대로. 다시 등록하지 않는다
         - [ ] 2.2.V 검증: 크롤러 목록에서 다섯 이름이 사람이 읽는 이름인지

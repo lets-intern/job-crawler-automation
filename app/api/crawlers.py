@@ -127,6 +127,12 @@ class CollectModesUpdate(BaseModel):
     detail_mode: str
 
 
+class NameUpdate(BaseModel):
+    """크롤러 이름만 바꾼다. 등록할 때 정한 이름이 URL 이면 사람이 읽지 못한다."""
+
+    name: str
+
+
 class CompanyUpdate(BaseModel):
     """운영자가 적어 둔 회사명만 바꾼다. 빈 문자열은 지운다는 뜻이다."""
 
@@ -185,6 +191,13 @@ class CollectModesOut(BaseModel):
     id: int
     list_mode: str
     detail_mode: str
+
+
+class NameOut(BaseModel):
+    """이름 수정 결과. 저장된 값을 그대로 돌려준다."""
+
+    id: int
+    name: str
 
 
 class CompanyOut(BaseModel):
@@ -835,6 +848,42 @@ def _validated_collect_mode(value: str, field: str) -> str:
             },
         )
     return mode
+
+
+@router.put("/{crawler_id}/name", response_model=NameOut)
+def update_name(
+    crawler_id: int,
+    payload: NameUpdate,
+    conn: Annotated[sqlite3.Connection, Depends(get_connection)],
+) -> NameOut:
+    """크롤러 이름을 고친다.
+
+    등록이 이름을 안 받으면 리스트 URL 의 호스트를 그대로 쓴다(`create_crawler`). 그래서
+    `career.doosan.com` 같은 행이 남고, 화면과 워크플로우 이름이 전부 그 값을 읽는다.
+    다시 등록하면 판정이 다시 돌아 브라우저와 모델을 쓰므로, 이름만 바꾸는 길을 둔다.
+
+    빈 이름은 거절한다. `crawlers.name` 은 NOT NULL 이고, 목록에서 그 행을 알아보는 유일한
+    값이다 — 지울 수 있는 `default_company` 와 다르다.
+
+    이미 만들어진 워크플로우의 이름은 따라오지 않는다. 워크플로우는 만들 때 이름을 복사해
+    자기 행에 들고 있고(`app/api/workflows.py`), 그 값을 여기서 덮으면 운영자가 워크플로우에
+    따로 붙여 둔 이름이 사라진다.
+    """
+    row = conn.execute("SELECT id FROM crawlers WHERE id = ?", (crawler_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail={"message": f"크롤러 {crawler_id} 가 없다"})
+
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "reason": "empty_name",
+                "message": "이름은 비울 수 없다. 목록에서 이 크롤러를 알아볼 값이 없어진다",
+            },
+        )
+    conn.execute("UPDATE crawlers SET name = ? WHERE id = ?", (name, crawler_id))
+    return NameOut(id=crawler_id, name=name)
 
 
 @router.put("/{crawler_id}/company", response_model=CompanyOut)
