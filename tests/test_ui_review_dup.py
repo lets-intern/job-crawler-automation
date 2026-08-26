@@ -15,6 +15,8 @@
 | 중복은 좁힌 조건 안에서 다시 센다 | 좁힌 뒤 짝을 잃은 한 건이 중복으로 남는다 |
 | 빈 값끼리는 묶이지 않는다 | 셀렉터가 놓친 40건이 `중복 40건` 으로 읽힌다 |
 | 같은 묶음이 붙어 나온다 | 페이지를 넘기면 짝이 다른 페이지로 갈라진다 |
+| 중복으로 거른 뒤 한 건만 골라 지울 수 있다 | 중복을 찾아도 손댈 방법이 없다 |
+| 고른 것만 지워지고 짝이 남는다 | 계열사가 각각 올린 진짜 공고가 사라진다 |
 """
 
 from __future__ import annotations
@@ -311,3 +313,53 @@ def test_필터_폼에_중복_기준이_모두_있다(client: TestClient) -> Non
     ):
         assert f'value="{value}"' in html
         assert label in html
+
+
+def deleted_ids(client: TestClient, ids: list[str], **params: str) -> dict[str, str]:
+    """확인 창을 지나 실제로 지운다. 화면이 밟는 두 요청을 그대로 밟는다."""
+    form = {"scope": "selected", "raw_job_id": ids, **params}
+    confirm = client.post("/ui/review/delete/confirm", data=form)
+    assert confirm.status_code == 200
+    done = client.post("/ui/review/delete", data=form)
+    assert done.status_code == 200
+    return {"confirm": confirm.text, "done": done.text}
+
+
+def test_중복으로_거른_뒤_한_건만_골라_지운다(client: TestClient, conn: sqlite3.Connection) -> None:
+    """실제 쓰임이다. 묶음을 보고 어느 쪽을 남길지 정한 뒤 그것만 지운다."""
+    before = dup_groups(conn, JobFilter(dup=DUP_TITLE))
+    assert (7, 22, 15) == (len(before), 22, 15)
+
+    pair = conn.execute(
+        "SELECT raw_job_id FROM normalized_jobs WHERE title = ? ORDER BY raw_job_id",
+        (PAIRS[1],),
+    ).fetchall()
+    assert len(pair) == 2
+    goes, stays = int(pair[0]["raw_job_id"]), int(pair[1]["raw_job_id"])
+
+    html = deleted_ids(client, [str(goes)], dup=DUP_TITLE)
+    # 확인 창이 지금 걸린 조건을 그대로 적는다. 무엇을 지웠는지 나중에 묻는 사람은 이 줄을 본다
+    assert "중복 제목" in html["confirm"]
+    assert "지웠다" in html["done"]
+
+    # 고른 한 건만 사라지고 짝은 남는다
+    left = conn.execute(
+        "SELECT raw_job_id FROM normalized_jobs WHERE title = ?", (PAIRS[1],)
+    ).fetchall()
+    assert [int(row["raw_job_id"]) for row in left] == [stays]
+    assert conn.execute("SELECT count(*) FROM raw_jobs WHERE id = ?", (goes,)).fetchone()[0] == 0
+
+    # 짝을 잃은 한 건은 더 이상 중복이 아니다. 그 묶음이 통째로 빠진다
+    assert measured(conn, JobFilter(dup=DUP_TITLE)) == (6, 20, 14)
+
+
+def test_조건_전체_지우기는_묶음_전체를_대상으로_한다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """여분이 아니라 22건 전부다. 화면이 그렇다고 적는 이유이기도 하다."""
+    confirm = client.post("/ui/review/delete/confirm", data={"all_filtered": "1", "dup": DUP_TITLE})
+    assert confirm.status_code == 200
+    assert "22건" in confirm.text
+    assert "중복 제목" in confirm.text
+    # 확인만 하고 지우지 않는다
+    assert count(conn, JobFilter()) == len(ROWS)
