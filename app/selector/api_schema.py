@@ -88,6 +88,20 @@ from app.selector.schema import DETAIL_FIELDS
 # 목록 응답에서 읽는 값. 상세 링크는 `link_template` 이 만들므로 여기 없다
 LIST_FIELDS: tuple[str, ...] = ("title", "date", "company")
 
+# 목록 `fields` 에 적을 수 있는 이름 전부. 위의 셋에 상세 칸 이름이 더해진다.
+#
+# 목록 응답이 상세 칸의 값까지 들고 있는 사이트가 있다. 카카오 목록 API 는 직군·근무지·
+# 모집인원·주요 업무·전형 절차를 항목마다 담아 주는데, 상세 문서에는 그것들이 한 덩어리로만
+# 있어 셀렉터로 갈라낼 수 없다. 여기서 읽지 않으면 그 값들은 수집 단계에서 사라지고,
+# 매핑하지 않은 값은 저장되지 않으므로 다시 얻을 길이 없다
+# (`.claude/tasks/todo/prd-split-body.md`).
+#
+# 상세에서 읽은 값이 있으면 그쪽이 이긴다. 목록에서 읽은 값은 상세가 비었을 때만 쓰인다
+# (`app/crawler/runner.py` 의 `_record`).
+LIST_ALLOWED_FIELDS: tuple[str, ...] = LIST_FIELDS + tuple(
+    name for name in DETAIL_FIELDS if name not in LIST_FIELDS
+)
+
 # 보낼 수 있는 메서드. 목록·상세 API 는 둘 중 하나다. 그 밖의 메서드를 쓰는 곳이 없고,
 # 조회에 PUT·DELETE 를 보내는 설정은 오타일 가능성이 훨씬 크다
 METHODS: tuple[str, ...] = ("GET", "POST")
@@ -266,7 +280,7 @@ def _list_section(value: Any) -> ApiListConfig | None:
         method=_method(section, "list"),
         body=_body(section, "list"),
         items_path=_required_text(section, "list", "items_path"),
-        fields=_fields(section, "list", LIST_FIELDS),
+        fields=_fields(section, "list", LIST_ALLOWED_FIELDS),
         id_field=_required_text(section, "list", "id_field"),
         link_template=_required_text(section, "list", "link_template"),
         headers=_headers(section, "list"),

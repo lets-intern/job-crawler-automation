@@ -50,7 +50,12 @@ from app.crawler.failures import SUCCESS
 from app.crawler.fetcher import FetchError, FetchPolicy, RobotsDisallowedError, get_fetcher
 from app.crawler.playwright import PLAYWRIGHT, RENDER_MODES, STATIC, Renderer, open_source
 from app.crawler.runner import TEST, RunTarget, collect_selectors, run_once
-from app.selector.api_schema import ApiConfig, ApiConfigError, parse_api_config
+from app.selector.api_schema import (
+    ApiConfig,
+    ApiConfigError,
+    parse_api_config,
+    validate_api_config,
+)
 from app.selector.detail_path import DOCUMENT
 from app.selector.discovery import Discovery, discover_detail_path
 from app.selector.generator import (
@@ -221,6 +226,14 @@ class SelectorsOut(BaseModel):
     id: int
     status: str
     selectors: SelectorSet
+
+
+class ApiConfigOut(BaseModel):
+    """API 설정 수동 보정 결과. `status` 는 보정으로 바뀌지 않는다."""
+
+    id: int
+    status: str
+    api_config: ApiConfig
 
 
 class SelectorChangeOut(BaseModel):
@@ -989,6 +1002,38 @@ def update_selectors(
         (selectors.to_json(), crawler_id),
     )
     return SelectorsOut(id=crawler_id, status=row["status"], selectors=selectors)
+
+
+@router.put("/{crawler_id}/api-config", response_model=ApiConfigOut)
+def update_api_config(
+    crawler_id: int,
+    payload: dict[str, Any],
+    conn: Annotated[sqlite3.Connection, Depends(get_connection)],
+) -> ApiConfigOut:
+    """운영자가 손으로 고친 API 설정을 그대로 저장한다. `update_selectors` 의 API 판이다.
+
+    지금까지 `api_config_json` 을 쓰는 경로는 등록 한 곳뿐이었다. 그래서 매핑을 고치려면
+    다시 등록하거나 DB 를 직접 고치는 수밖에 없었고, 둘 다 나쁘다 — 다시 등록하면 경로
+    판정이 다시 돌아 브라우저와 모델을 쓰고, 직접 고치면 스키마 검증을 지나지 않는다.
+
+    저장하기 전에 `validate_api_config` 를 지난다. 읽는 쪽(`app/crawler/api_source.py`)은
+    설정이 이미 검증됐다고 믿고 있어서, 검증을 건너뛴 값이 들어가면 실행 중에야 깨진다.
+    """
+    row = conn.execute("SELECT status FROM crawlers WHERE id = ?", (crawler_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail={"message": f"크롤러 {crawler_id} 가 없다"})
+
+    try:
+        config = validate_api_config(payload)
+    except ApiConfigError as exc:
+        raise HTTPException(
+            status_code=422, detail={"reason": exc.reason, "message": str(exc)}
+        ) from exc
+
+    conn.execute(
+        "UPDATE crawlers SET api_config_json = ? WHERE id = ?", (config.to_json(), crawler_id)
+    )
+    return ApiConfigOut(id=crawler_id, status=str(row["status"]), api_config=config)
 
 
 @router.post("/{crawler_id}/repair", response_model=RepairOut)

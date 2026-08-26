@@ -25,7 +25,7 @@ URL 과 합쳐 절대 URL 로 만들 뿐이고, 따라가도 되는 URL 인지�
 from __future__ import annotations
 
 import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
@@ -84,6 +84,16 @@ class ListItem:
     # 상세 API 에 넘길 공고 id. 목록이 API 면 응답의 `id_field` 값이고, HTML 이면 상세
     # 링크의 마지막 경로 조각이다. 상세가 API 가 아니면 아무도 읽지 않는다
     detail_key: str = ""
+    # 목록 응답이 상세 칸의 값까지 들고 있을 때 그 값들. 키는 상세 필드 이름 그대로다.
+    #
+    # 카카오 목록 API 는 직군·근무지·모집인원·주요 업무·전형 절차를 항목마다 담아 주는데
+    # 상세 문서에는 그것들이 한 덩어리로만 있다. 여기 싣지 않으면 그 값들은 수집 단계에서
+    # 사라지고, 매핑하지 않은 값은 저장되지 않으므로 다시 얻을 길이 없다
+    # (`.claude/tasks/todo/prd-split-body.md`).
+    #
+    # 상세에서 읽은 값이 있으면 그쪽이 이긴다. 이것은 상세가 비었을 때만 쓰는 값이다
+    # (`app/crawler/runner.py` 의 `_record`).
+    extra: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

@@ -564,19 +564,25 @@ def _record(item: ListItem, detail: dict[str, str]) -> dict[str, str]:
     상세가 없는 사이트에서는 `title` 과 `deadline` 이 목록에서 온다. 상세를 따라가지 않으니
     그쪽에서 올 값이 없고, 목록에 있는 것을 두고 빈 칸으로 남기면 공고를 알아볼 수 없다.
 
-    `SPLIT_DETAIL_FIELDS` 의 열 칸은 상세에서 온 값을 그대로 싣는다. 목록에서 대신 채우지
-    않는다 — 사이트가 그 값을 주지 않으면 빈 칸이고, 빈 칸이 틀린 값보다 낫다
+    상세가 비운 칸은 `item.extra` 가 채운다. 목록 응답이 상세 칸의 값까지 들고 있는 사이트가
+    있어서다 — 카카오 목록 API 는 직군·근무지·모집인원·주요 업무·전형 절차를 항목마다 담아
+    주는데 상세 문서에는 그것들이 한 덩어리로만 있다. 읽지 않으면 그 값들은 여기서 사라지고,
+    매핑하지 않은 값은 저장되지 않으므로 다시 얻을 길이 없다
     (`.claude/tasks/todo/prd-split-body.md`).
+
+    **순서가 규칙이다.** 상세에서 읽은 값이 늘 이긴다. 목록 값은 상세가 비었을 때만 쓰이고,
+    목록도 그 값을 안 주면 빈 칸이다. 빈 칸을 채우려고 뜻이 다른 값을 옮겨 오지 않는다.
     """
+    carried = item.extra
     return {
         "source_url": item.link,
         "title": detail["title"] or item.title,
-        "body": detail["body"],
-        "requirements": detail["requirements"],
-        "deadline": detail["deadline"] or item.date,
-        "department": detail["department"],
+        "body": detail["body"] or carried.get("body", ""),
+        "requirements": detail["requirements"] or carried.get("requirements", ""),
+        "deadline": detail["deadline"] or carried.get("deadline", "") or item.date,
+        "department": detail["department"] or carried.get("department", ""),
         "company": detail["company"] or item.company,
-        **{name: detail.get(name, "") for name in SPLIT_DETAIL_FIELDS},
+        **{name: detail.get(name, "") or carried.get(name, "") for name in SPLIT_DETAIL_FIELDS},
         "list_title": item.title,
         "list_date": item.date,
     }
