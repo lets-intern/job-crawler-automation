@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from app import db
 from app.api import (
     auth,
+    classify,
     crawlers,
     jobs,
     review,
@@ -72,6 +73,7 @@ app.include_router(jobs.router)
 app.include_router(workflows.router)
 app.include_router(settings.router)
 app.include_router(rules.router)
+app.include_router(classify.router)
 # 화면. API 라우터 뒤에 붙인다 — `/api/...` 가 먼저 잡힌다
 app.include_router(ui.router)
 app.include_router(ui_crawlers.router)

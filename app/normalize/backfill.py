@@ -158,7 +158,7 @@ def renormalize(conn: sqlite3.Connection, progress: BackfillProgress) -> Backfil
 
     for raw_id in raw_ids:
         try:
-            _rewrite(conn, raw_id, rules)
+            rewrite_one(conn, raw_id, rules)
             progress.processed += 1
         except (NormalizeError, RawJobMissingError) as exc:
             progress.note(f"raw_jobs {raw_id}: {exc}")
@@ -172,7 +172,7 @@ def renormalize(conn: sqlite3.Connection, progress: BackfillProgress) -> Backfil
     return progress
 
 
-def _rewrite(conn: sqlite3.Connection, raw_job_id: int, rules: list[Rule]) -> None:
+def rewrite_one(conn: sqlite3.Connection, raw_job_id: int, rules: list[Rule]) -> None:
     """한 건을 다시 정규화한다. 행이 없으면 새로 넣는다.
 
     UPDATE 가 적는 컬럼은 `NORMALIZED_FIELDS` 와 `company_source`, `normalized_at` 뿐이다.

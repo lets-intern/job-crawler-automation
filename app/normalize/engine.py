@@ -25,6 +25,18 @@
 고른 값에도 다른 필드와 똑같이 규칙이 적용된다. "삼성전기(주)" 를 "삼성전기" 로 맞추는 것은
 `mapping` 규칙의 일이지 이 해결 단계의 일이 아니다.
 
+## 규칙 다음에 분류, 그다음이 사람 보정이다
+
+수집은 어느 사이트나 확실히 주는 여섯 칸만 한다. 나머지 열한 칸은 본문을 읽어 나눈 결과가
+채운다 (`app/classify/`). 그 결과는 `job_classifications` 에 따로 남아 있고, 여기서 규칙이
+비워 둔 칸에만 들어간다.
+
+**규칙이 만든 값이 이긴다.** 사이트가 그 값을 별도 필드로 주는 경우가 남아 있고, 그쪽이
+본문에서 읽어 낸 것보다 구체적이다. 분류는 빈 칸을 채우는 쪽이지 덮는 쪽이 아니다.
+
+분류가 낸 값에는 규칙을 태우지 않는다. 규칙은 사이트가 준 원문의 모양을 맞추려고 쓴 것이고,
+본문에서 그대로 옮겨 온 값에 걸면 뜻이 달라진다.
+
 ## 규칙 다음에 사람 보정이다
 
 규칙을 다 태운 뒤 `job_field_overrides` 에 그 건의 그 필드가 있으면 사람이 정한 값으로 덮는다.
@@ -58,6 +70,9 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime
 
 from bs4 import BeautifulSoup
+
+from app.classify.schema import CLASSIFY_FIELDS
+from app.classify.store import read_classification
 
 # 어디서 줄이 바뀌어야 하는지는 HTML 이 정하고, 그 목록은 저기 하나뿐이다. 여기에 같은
 # 목록을 두 벌 두면 한쪽만 늘어나는 날이 오고 그때 어느 쪽이 진실인지 알 수 없다
@@ -164,6 +179,7 @@ def normalize_fields(
     raw: Mapping[str, object],
     rules: Sequence[Rule],
     default_company: str | None = None,
+    classification: Mapping[str, str] | None = None,
 ) -> dict[str, str | None]:
     """원문 필드에서 `normalized_jobs` 의 값들을 만든다. 값이 없는 필드는 None 이다.
 
@@ -190,7 +206,26 @@ def normalize_fields(
                 break
         result[field_name] = value or None
     result[COMPANY_SOURCE] = source if result["company"] else None
-    return result
+    return apply_classification(result, classification)
+
+
+def apply_classification(
+    fields: dict[str, str | None], classification: Mapping[str, str] | None
+) -> dict[str, str | None]:
+    """규칙이 비워 둔 열한 칸을 분류 결과로 채운다. 채워진 칸은 그대로 둔다.
+
+    분류가 없으면(아직 돌지 않았으면) 아무것도 하지 않는다. 그 공고는 여섯 칸만 가진 채로
+    남고, 나중에 분류를 돌리면 재정규화 없이도 다음 정규화에서 채워진다.
+    """
+    if not classification:
+        return fields
+    for name in CLASSIFY_FIELDS:
+        if fields.get(name):
+            continue
+        value = classification.get(name, "").strip()
+        if value:
+            fields[name] = value
+    return fields
 
 
 def read_default_company(conn: sqlite3.Connection, raw_job_id: int) -> str | None:
@@ -275,7 +310,12 @@ def normalized_values(
     각자 조립하면 한쪽에서만 보정이 빠지고, 그 차이는 재정규화를 돌린 뒤에야 드러난다.
     """
     source_url, data = read_raw(conn, raw_job_id)
-    fields = normalize_fields(data, rules, read_default_company(conn, raw_job_id))
+    fields = normalize_fields(
+        data,
+        rules,
+        read_default_company(conn, raw_job_id),
+        read_classification(conn, raw_job_id),
+    )
     return source_url, apply_overrides(fields, read_overrides(conn, raw_job_id))
 
 

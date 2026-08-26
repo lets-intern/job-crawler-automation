@@ -163,6 +163,10 @@ SQLite 파일 하나. 경로는 `DATABASE_PATH` 가 정하고 Docker named volum
 `department` 는 둘(LG·현대)만 주는 칸이라 새 기준이었다면 만들지 않았을 것이다. **이미 있는
 칸이라 지우지 않는다** — 소비 측이 읽던 것이 사라지면 안 된다.
 
+`job_category` 부터 `etc_info` 까지와 `requirements`·`department` 열한 칸은 이제 대부분
+`job_classifications` 에서 온다. 수집이 그 칸을 별도 필드로 주는 사이트는 그 값이 이기고,
+없으면 본문을 나눈 결과가 들어간다.
+
 `delivered_at` 을 크롤링·재정규화·수동 수정이 건드리면 소비 측에 같은 데이터가 다시 간다.
 
 회사명은 출처가 둘이다. 공고에서 뽑은 값(`raw_jobs.raw_data_json` 의 `company`)과 운영자가
@@ -203,6 +207,43 @@ append-only 인 `raw_jobs` 에 매달아야 몇 번을 다시 정규화해도 �
 
 `company_source` 는 규칙 단계가 고른 출처만 말한다. 사람이 고쳤는지는 이 테이블에 행이
 있는지로 안다.
+
+### job_classifications
+
+본문을 나눈 결과. 공고 하나가 행 하나다.
+
+| 컬럼 | 설명 |
+|---|---|
+| id | |
+| raw_job_id | 어느 수집 건의 분류인지. `normalized_jobs.id` 가 아니다. 유일하다 |
+| job_category, work_location, career_level, employment_type, headcount | |
+| duties, preferred, hiring_process, requirements, department, etc_info | |
+| dropped_fields | 모델이 냈지만 본문에서 찾지 못해 버린 칸 이름. 쉼표로 잇는다 |
+| model | 그때의 모델 ID |
+| classified_at | |
+
+수집은 어느 사이트나 확실히 주는 여섯(제목·본문·모집 시작일·모집 마감일·회사명·원본 주소)만
+하고, 나머지 열한 칸은 본문을 읽어 나눈다. 사이트마다 칸 매핑을 적는 방식은 열한 사이트
+640건에서 절반도 채우지 못했다 (`.claude/tasks/todo/prd-llm-classify.md`).
+
+**`normalized_jobs` 에 바로 쓰지 않는 이유가 있다.** 그 표는 `raw_jobs` 에서 규칙으로 다시
+만들어진다. 재정규화를 한 번 돌리면 분류가 채운 칸이 통째로 NULL 로 돌아가고, 되살리려면
+공고 수만큼 모델을 다시 불러야 한다. 그래서 `job_field_overrides` 와 같이 append-only 인
+`raw_jobs` 에 매단다.
+
+정규화는 **규칙 -> 분류 -> 사람 보정** 순으로 덮는다. 규칙이 만든 값이 이긴다 — 사이트가 그
+값을 별도 필드로 주는 경우가 남아 있고, 그쪽이 본문에서 읽어 낸 것보다 구체적이다. 분류가
+낸 값에는 규칙을 태우지 않는다.
+
+**분류하지 못한 공고는 행이 없다.** 빈 행을 넣으면 "분류했는데 아무것도 안 나왔다" 와 "아직
+분류하지 않았다" 가 같은 모양이 되고, 다음 실행이 어느 쪽을 다시 돌아야 할지 모른다.
+
+`dropped_fields` 는 셈을 위한 것이다. 모델이 무엇을 얼마나 지어내는지는 세어 봐야 알고,
+세지 않으면 프롬프트를 고쳐도 나아졌는지 말할 수 없다. 값이 본문에 있는지 보는 잣대는
+`app/classify/grounding.py` 가 정한다.
+
+다시 분류하면 같은 행을 덮는다. 이력을 쌓지 않는 것은 본문이 `raw_jobs` 에 그대로 있어
+언제든 다시 만들 수 있기 때문이다.
 
 ### normalization_rules
 
@@ -306,7 +347,7 @@ source_url + title + deadline + body
 ```
 crawler:  draft ──테스트 통과──> tested ──워크플로우 등록──> promoted
 workflow: active <──> paused          (수동, 또는 연속 실패 임계치 초과)
-job:      raw ──정규화──> normalized ──제공 API 응답──> delivered
+job:      raw ──분류(본문)──> classified ──정규화──> normalized ──제공 API 응답──> delivered
 ```
 
 되돌아가는 화살표는 workflow 하나뿐이다. 데이터는 앞으로만 간다.

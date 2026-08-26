@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -151,8 +152,14 @@ async def classify_body(
     *,
     settings: Settings | None = None,
     client: Any | None = None,
+    on_call: Callable[[Usage], None] | None = None,
 ) -> ClassificationResult:
-    """본문 하나를 나눈다. 받은 값은 본문에 있는지 확인한 뒤에만 남는다."""
+    """본문 하나를 나눈다. 받은 값은 본문에 있는지 확인한 뒤에만 남는다.
+
+    `on_call` 은 모델을 부를 때마다 그 호출의 비용으로 불린다. 깨진 응답으로 한 번 더 물으면
+    두 번 불린다 — 부르는 쪽이 그것을 `llm_calls` 에 그대로 남겨야 토큰 합이 실제와 맞는다
+    (`app/llm/log.py`).
+    """
     if not body.strip():
         raise ClassifyError("empty_body", "본문이 비어 있어 나눌 것이 없다")
 
@@ -164,6 +171,8 @@ async def classify_body(
     last_error: ClassifySchemaError | None = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
         text, usage = await _call(resolved_client, model, prompt, attempt)
+        if on_call is not None:
+            on_call(usage)
         try:
             fields = parse_classification(text)
         except ClassifySchemaError as exc:
