@@ -1,10 +1,13 @@
-"""여섯 사이트 설정을 2026-08-25 픽스처에 그대로 돌려 본다. 실사이트에 나가지 않는다.
+"""열한 사이트 설정을 저장된 픽스처에 그대로 돌려 본다. 실사이트에 나가지 않는다.
 
-`seeds/site-configs-20260825.json` 이 `crawlers` 행에 들어가는 값이다. 실사이트 요청은 등록
+`seeds/site-configs-20260826.json` 이 `crawlers` 행에 들어가는 값이다. 실사이트 요청은 등록
 직후 한 번뿐이라, 그 전에 설정이 실제 응답에서 무엇을 뽑는지를 여기서 다 본다.
 
 각 사이트에서 확인하는 것은 같다 — 목록에서 측정한 건수가 나오는가, 공고마다 다른 주소가
-만들어지는가, 상세에서 **본문이 비어 있지 않은가**. 마지막 것이 이 Push 의 목적이다.
+만들어지는가, 상세에서 **본문이 비어 있지 않은가**.
+
+칸별로 무엇이 채워지고 무엇이 비는지는 `tests/test_split_body_mapping.py` 가 본다. 여기는
+목록과 본문까지다.
 """
 
 from __future__ import annotations
@@ -21,7 +24,7 @@ from app.selector.api_schema import ApiConfig, validate_api_config
 from app.selector.schema import SelectorSet, validate_selectors
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
-SEEDS = pathlib.Path(__file__).parent.parent / "seeds" / "site-configs-20260825.json"
+SEEDS = pathlib.Path(__file__).parent.parent / "seeds" / "site-configs-20260826.json"
 
 CONFIGS: dict[str, dict[str, Any]] = {
     entry["name"]: entry for entry in json.loads(SEEDS.read_text(encoding="utf-8"))["crawlers"]
@@ -45,8 +48,8 @@ def html(name: str) -> str:
 
 
 def test_every_crawler_config_is_valid() -> None:
-    """저장하기 전에 여섯 개가 다 스키마를 지나는지 본다."""
-    assert len(CONFIGS) == 6
+    """저장하기 전에 열한 개가 다 스키마를 지나는지 본다."""
+    assert len(CONFIGS) == 11
     for name, entry in CONFIGS.items():
         assert entry["list_mode"] in ("static", "api", "playwright"), name
         assert entry["detail_mode"] in ("static", "api", "playwright"), name

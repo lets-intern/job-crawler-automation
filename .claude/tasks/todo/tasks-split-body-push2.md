@@ -81,16 +81,49 @@ Push 1 이 칸을 확정하고 스키마를 만들었다. 이 Push 는 사이트
           않았고 브라우저도 모델도 쓰지 않았다
         - 29 우아한형제들 · 30 카카오 · 31 두산 · 32 네이버 · 33 토스
         - [x] 2.2.V 검증: `/data/jobs.db` 의 `crawlers` 열한 행이 전부 사람이 읽는 이름이다
-    - [ ] 2.3 API 사이트의 매핑을 다시 쓴다
-        - LG·한화·삼성·현대, 그리고 토스·카카오·우아한형제들 중 API 인 곳
-        - Push 1 이 확정한 표를 따른다. **표에 없는 칸은 매핑하지 않는다**
-        - **한화 `department` 에서 `ruWorkpl` 을 뺀다.** 근무지는 근무지 칸으로 간다
-        - [ ] 2.3.V 검증: 픽스처 기반 pytest — 사이트마다 칸별로 값이 채워지는지, 표에서
-              "주지 않음" 인 칸이 실제로 비는지
-    - [ ] 2.4 HTML 사이트의 셀렉터를 다시 쓴다
-        - SK·롯데·두산·네이버. 본문이 한 덩어리라 나눌 수 없는 칸이 많다
-        - **덩어리인 칸은 비운다.** 본문 원문 하나만 채운다. LLM 분류는 이 작업이 아니다
-        - [ ] 2.4.V 검증: 저장한 HTML 픽스처로 칸별 매칭 개수 확인
+    - [x] 2.3 API 사이트의 매핑을 다시 쓴다
+        - LG·한화·삼성·현대(상세도 API), 카카오·우아한형제들(목록만 API)
+        - **한화 `department` 에서 `ruWorkpl` 을 뺐다.** 근무지는 `work_location` 으로 간다.
+          한화에 부서 개념이 없어 `department` 는 비운다
+        - Push 1 의 표를 따르되 넓어진 기준으로 더 담았다 — 현대 전형 절차는 `procStep1Nm`
+          하나가 아니라 일곱 자리를 모으고, 삼성 자격요건은 공고 전체(`result.qlfctKr`)와
+          직무별(`items.*.qlfctKr`) 둘 다 읽는다. 삼성 조직 소개(`introKr`)는 본문에 넣었다
+        - 필수 조건과 우대 조건을 갈랐다. 현대 `prefReq` 와 삼성 `favorKr` 이 `requirements`
+          에 함께 들어가 있었다 — 사이트가 이미 나눠서 주는 것을 도로 합치고 있었다
+        - 갈 칸이 없는 값은 기타로 모았다 — 한화 `rtRctPrd`·`ruInqr`, LG `submitMethodInfo`·
+          `recruitTypeName`, 현대 `posCodeNm1`·`jdRecuCateNm`·`hashTag`, 삼성 `processKr`·
+          `docInfoKr`·`attachmentKr`·`memoKr`·첨부 파일명·연락처
+        - 카카오는 상세 문서의 본문이 한 덩어리라 갈라낼 수 없고 같은 값이 목록 API 에 항목마다
+          별도 필드로 있다. 목록 `fields` 가 상세 칸 이름을 받게 하고 `ListItem.extra` 로
+          나른다. **상세가 이기고 목록은 상세가 비었을 때만 쓴다** (`_record`)
+        - 매핑을 고칠 길이 없어 `PUT /api/crawlers/{id}/api-config` 를 더했다.
+          `update_selectors` 와 같은 모양이고 저장 전에 `validate_api_config` 를 지난다
+        - 설정은 `seeds/site-configs-20260826.json` 에 열한 곳을 다 적었다. 옛
+          `site-configs-20260825.json` 은 이 파일로 대체됐다
+        - [x] 2.3.V 검증: `tests/test_split_body_mapping.py` 55개 통과. 사이트마다 칸별로
+          값이 나오는지와 **주지 않는 칸이 실제로 비는지** 를 둘 다 단언한다.
+          `tests/test_site_configs.py` 15개, `tests/test_list_carries_detail_fields.py` 6개,
+          `tests/test_api_config_update.py` 5개 통과
+    - [x] 2.4 HTML 사이트의 셀렉터를 다시 쓴다
+        - SK·롯데·두산·네이버, 그리고 카카오·우아한형제들·토스의 상세
+        - **덩어리인 칸은 비운다.** 이름표가 붙은 요소만 칸으로 보내고 나머지는 본문에 남는다.
+          본문 안에 남는 값은 사라지지 않으므로 글자를 잘라 채우지 않았다
+        - 자리(nth-child)로 잡던 것을 이름표로 바꾸면서 세 곳의 잘못된 칸이 드러났다
+            - SK `department` 가 직무(`IT - IT 기획`)를 담고 있었다 → `job_category`
+            - 네이버 `department` 가 모집 분야(`Tech`)를, `company` 가 모집 부서(`NAVER`)를
+              담고 있었다 → 분야는 `job_category`, `NAVER` 는 계열사라 `company`
+            - 두산 `deadline` 이 `tbody > tr:nth-child(4) > td` 라 `지원자 개별일정` 을
+              마감일로 읽고 있었다 → `th:-soup-contains("채용공고") + td`
+        - 우아한형제들 `deadline` 이 `.flag-type` 전체를 잡아 `기간제 영입 종료시` 로
+          들어오고 있었다. 고용형태와 마감일을 span 두 개로 갈랐다
+        - 토스 `body` 가 `.p-container__inner` 라 상단 내비게이션을 먼저 잡고 있었다.
+          `:not(.p-navbar__inner-container)` 를 붙였다
+        - 두산 `body` 를 `div.content` 로 넓혔다. `div.view-list-wrap` 은 dt/dd 블록만이라
+          접수방법·문의처·전형 일정이 통째로 사라진다. 끝에 이전글/다음글이 딸려 온다
+        - HTML 상세는 칸 하나에 셀렉터 하나다(`field_text` 가 첫 매칭만 읽는다). API 처럼
+          여러 자리를 모을 수 없어, SK 마감 시간(`23:59`)처럼 본문 밖에 있는 값 몇 개는
+          어느 칸에도 안 들어간다 — 레시피에 적었다
+        - [x] 2.4.V 검증: 2.3.V 와 같은 파일이 HTML 사이트도 함께 본다
     - [ ] 2.6 새 칸도 손보정할 수 있게 한다
         - `job_field_overrides.field_name` 의 CHECK 가 옛 여섯 칸에 묶여 있어 **새 칸 열 개는
           검수 화면에서 고칠 수 없다.** 자동으로 뽑은 값이 틀렸을 때 사람이 고칠 길이 없다

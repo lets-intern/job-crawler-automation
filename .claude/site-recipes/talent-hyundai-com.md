@@ -98,7 +98,7 @@ GET https://talent.hyundai.com/api/rec/AP-HM-FO-02800?hgrCd=1&lang=ko&recuYy=202
 
 상세 주소는 한 값이 아니라 `recuYy`·`recuType`·`recuCls` 세 값으로 만든다. `id_field` 에
 `{키}` 자리를 쓴 템플릿을 넣어 세 값을 이어 붙인 것이 id 가 된다
-(`seeds/site-configs-20260825.json`).
+(`seeds/site-configs-20260826.json`).
 
 본문은 `privJdDtl`(주요 업무)·`aboutTeamNtc`(조직 소개)·`etc`(기타)를 모으고, 자격요건은
 `privMustReq`(필수)와 `prefReq`(우대)를 모은다.

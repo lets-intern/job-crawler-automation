@@ -64,7 +64,7 @@ GET https://www.samsungcareers.com/recruit/detail.data?seqno=<번호>&strCode=
 
 목록은 폼 본문으로 물어보고 HTML 조각을 받는다. 그 조각을 CSS 셀렉터로 읽는 설정이
 `crawlers.api_config_json` 에 들어간다 — `items_path` 가 항목 셀렉터, `fields` 가 항목 안의
-셀렉터, `id_field` 가 `<셀렉터>@<속성>` 이다 (`seeds/site-configs-20260825.json`).
+셀렉터, `id_field` 가 `<셀렉터>@<속성>` 이다 (`seeds/site-configs-20260826.json`).
 
 **공고 번호는 `a[data-value]` 에서 천 단위 쉼표를 뺀 값이다.** `id_field` 끝에 `|digits` 를
 붙여 숫자만 남긴다. 숫자 표기에 기대는 자리이므로 사이트가 표기를 바꾸면 여기가 먼저 깨진다.

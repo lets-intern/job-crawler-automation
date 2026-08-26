@@ -19,7 +19,7 @@ POST https://www.skcareers.com/Recruit/GetRecruitList
   -> totalCount 와 list. 항목마다 noticeID / title / corpName / start / end
 ```
 
-JSON 본문으로 보내면 답하지 않는다. 요청 전문은 `seeds/site-configs-20260825.json` 의 SK
+JSON 본문으로 보내면 답하지 않는다. 요청 전문은 `seeds/site-configs-20260826.json` 의 SK
 항목에 있고 DB 가 진실이다.
 
 ## 상세는 서버가 그린 HTML 이다
