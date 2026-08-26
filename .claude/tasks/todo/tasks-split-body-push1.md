@@ -63,12 +63,28 @@
     - [x] 1.2 열한 사이트를 대조해 칸을 확정한다 — **아래 "확정한 표"**
         - [x] 1.2.V 검증: `tests/test_split_body_columns.py` 4개 통과. 표에 적힌 자리가
           픽스처에서 실제로 값을 내놓는지까지 본다. 넷 미만인 칸 0개
-    - [ ] 1.3 마이그레이션 0011 로 칸을 더한다
-        - 1.2 가 확정한 칸을 `normalized_jobs` 에 더한다
-        - **기존 칸을 지우거나 이름을 바꾸지 않는다.** 소비 측이 읽던 것이 사라지면 안 된다.
-          `deadline` 은 모집 마감일 그대로 두고 모집 시작일을 새로 더한다
-        - 되돌리는 법을 파일 주석에 적는다
-        - [ ] 1.3.V 검증: 마이그레이션 적용·역적용. 적용 후 기존 307건의 값이 그대로인지
+    - [x] 1.3 마이그레이션 0011 로 칸을 더한다 — `migrations/0011_split_body_columns.sql`
+        - `normalized_jobs` 에 `ALTER TABLE ADD COLUMN` 열 개. 전부 TEXT 이고 NULL 을
+          허용한다. 기본값을 두지 않았다 — 사이트가 주지 않는 칸은 빈 칸이다
+        - 기존 여섯 칸은 건드리지 않았다. `deadline` 은 모집 마감일 그대로 두고 모집 시작일을
+          `start_date` 로 새로 더했다. 이 파일에 `normalized_jobs` 를 대상으로 하는 UPDATE 가
+          없다
+        - `job_field_overrides.field_name` 의 CHECK 는 넓히지 않았다. 그 컬럼이
+          `UNIQUE (raw_job_id, field_name)` 인덱스에 걸려 있어 0009·0010 의 방법(새 CHECK 를
+          단 컬럼 추가 -> 값 이동 -> 옛 컬럼 삭제)이 통하지 않는다 — SQLite 는 인덱스가 걸린
+          컬럼을 DROP 하지 못한다. 손보정은 여섯 칸 그대로다
+        - 되돌리기: `migrate down` 이 더한 열 칸을 역순으로 지운다. 지워지는 것은 새 칸의
+          값뿐이고, 출처인 `raw_jobs` 는 append-only 라 재정규화로 되살린다. 주석에 적었다
+        - `.claude/docs/data-model.md` 의 `normalized_jobs` 표를 같은 커밋에서 고쳤다
+        - [x] 1.3.V 검증
+            - `tests/test_migrations.py` 61개 통과. 적용·역적용, 새 칸이 NULL 인지,
+              역적용이 더한 열 칸만 지우는지를 본다
+            - 운영 DB(포트 8000 컨테이너, `/data/jobs.db`)에 적용했다. 컨테이너는 내리지
+              않았고 삭제·수정 문장은 보내지 않았다
+            - 적용 전 `VACUUM INTO /data/jobs-before-0011-20260826.db` (3,624,960바이트)
+            - 적용 전후로 321건의 기존 여섯 칸 + `source_url` + `normalized_at` +
+              `delivered_at` 이 같은 값이다 (sha256 `42a40126...971f1` 동일)
+            - 새 칸 열 개는 321건 전부 NULL 이다
     - [ ] 1.4 새 칸을 파이프라인이 나른다
         - `_record()`, 정규화 엔진, 제공 API 응답 모델이 새 칸을 안다
         - 셀렉터·API 설정 스키마가 새 필드 이름을 받는다

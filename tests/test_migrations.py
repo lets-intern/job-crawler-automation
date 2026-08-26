@@ -72,6 +72,17 @@ EXPECTED_COLUMNS = {
         "source_url",
         "normalized_at",
         "delivered_at",
+        # 0011 이 더한 열 칸. 넷 이상의 사이트가 주는 것만 골랐다
+        "start_date",
+        "job_category",
+        "employment_type",
+        "career_level",
+        "work_location",
+        "headcount",
+        "duties",
+        "preferred",
+        "hiring_process",
+        "etc_info",
     },
     "normalization_rules": {
         "id",
@@ -127,6 +138,7 @@ ALL_VERSIONS = [
     "0008",
     "0009",
     "0010",
+    "0011",
 ]
 
 
@@ -712,3 +724,94 @@ def test_error_class_down_keeps_the_run_and_clears_only_the_new_reason(
     ).fetchone()
     assert (row["id"], row["error_class"]) == (1, None)
     assert (row["error_message"], row["fail_count"]) == ("본문이 비었다", 1)
+
+
+# 0011 이 더한 칸. `migrations/0011_split_body_columns.sql` 의 표와 같은 목록이어야 한다
+SPLIT_BODY_COLUMNS = [
+    "start_date",
+    "job_category",
+    "employment_type",
+    "career_level",
+    "work_location",
+    "headcount",
+    "duties",
+    "preferred",
+    "hiring_process",
+    "etc_info",
+]
+
+# 0011 이 건드리지 않는 칸. 소비 측이 읽던 것이라 이름도 뜻도 그대로다
+KEPT_COLUMNS = "company, title, department, deadline, body, requirements, source_url"
+
+
+def _at_0010(connection: sqlite3.Connection) -> None:
+    """0011 직전 상태로 만든다. `normalized_jobs` 가 아직 여섯 칸인 스키마다."""
+    db.migrate_up(connection)
+    db.migrate_down(connection, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0011"))
+    assert "start_date" not in _columns(connection, "normalized_jobs")
+
+
+def _seed_normalized(connection: sqlite3.Connection) -> None:
+    """정규화된 공고 한 행. 여섯 칸에 값이 다 들어 있다."""
+    _seed_raw_job(connection)
+    connection.execute(
+        """
+        INSERT INTO normalized_jobs
+               (raw_job_id, company, title, department, deadline, body, requirements,
+                source_url)
+        VALUES (1, '한화생명', '마케팅 기획', '', '2026-08-25', '본문', '자격요건',
+                'https://example.test/1')
+        """
+    )
+
+
+def test_split_body_only_adds_columns_and_keeps_the_existing_values(
+    conn: sqlite3.Connection,
+) -> None:
+    """0011 은 더하기만 한다. 적용 전 공고의 여섯 칸이 글자 하나까지 그대로 남는다."""
+    _at_0010(conn)
+    _seed_normalized(conn)
+    before = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
+
+    db.migrate_up(conn)
+
+    after = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
+    assert [tuple(row) for row in after] == [tuple(row) for row in before]
+    assert set(SPLIT_BODY_COLUMNS) <= _columns(conn, "normalized_jobs")
+
+
+def test_split_body_leaves_the_new_columns_empty(conn: sqlite3.Connection) -> None:
+    """사이트가 주지 않는 칸은 빈 칸이다. 기본값으로 채우지 않는다."""
+    _at_0010(conn)
+    _seed_normalized(conn)
+
+    db.migrate_up(conn)
+
+    row = conn.execute(f"SELECT {', '.join(SPLIT_BODY_COLUMNS)} FROM normalized_jobs").fetchone()
+    assert [row[name] for name in SPLIT_BODY_COLUMNS] == [None] * len(SPLIT_BODY_COLUMNS)
+
+
+def test_split_body_down_drops_only_the_ten_it_added(conn: sqlite3.Connection) -> None:
+    """역적용은 더한 열 칸만 지운다. 공고와 여섯 칸의 값은 그대로다."""
+    db.migrate_up(conn)
+    _seed_normalized(conn)
+    conn.execute("UPDATE normalized_jobs SET work_location = '서울', headcount = '0명'")
+    before = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
+
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0011"))
+
+    after = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
+    assert [tuple(row) for row in after] == [tuple(row) for row in before]
+    assert not set(SPLIT_BODY_COLUMNS) & _columns(conn, "normalized_jobs")
+
+
+def test_split_body_does_not_widen_the_override_check(conn: sqlite3.Connection) -> None:
+    """손보정은 여섯 칸 그대로다. 0011 은 `job_field_overrides` 를 건드리지 않았다."""
+    db.migrate_up(conn)
+    _seed_raw_job(conn)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO job_field_overrides (raw_job_id, field_name, value) VALUES (1, ?, ?)",
+            ("work_location", "서울"),
+        )

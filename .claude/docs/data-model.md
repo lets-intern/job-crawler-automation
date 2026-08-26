@@ -134,11 +134,34 @@ SQLite 파일 하나. 경로는 `DATABASE_PATH` 가 정하고 Docker named volum
 | id, raw_job_id | |
 | company, title, department | |
 | company_source | 회사명이 어디서 왔는지. `parsed` / `operator`. 회사명이 없으면 NULL |
-| deadline | 정규화된 날짜 |
+| deadline | 정규화된 모집 마감일 |
+| start_date | 정규화된 모집 시작일. `deadline` 의 짝이다 |
+| job_category | 직군 |
+| employment_type | 고용형태. 정규직 / 인턴 / 기간제 |
+| career_level | 경력 구분. 신입 / 경력 |
+| work_location | 근무지 |
+| headcount | 모집인원 |
+| duties | 주요 업무 |
+| preferred | 우대 조건 |
+| hiring_process | 전형 절차 |
+| etc_info | 기타 |
 | body, requirements | 정제된 텍스트 |
 | source_url | |
 | normalized_at | |
 | delivered_at | 소비 측이 가져간 시각. **제공 API 경로만 쓴다** |
+
+`start_date` 부터 `etc_info` 까지 열 칸은 0011 이 더했다. 여섯 칸에 담느라 사이트가 이미
+나눠서 주는 것을 도로 합치고 있었고, 빈 칸을 채우려다 한화 `department` 에 근무지가 들어갔다.
+
+더할 칸은 **열한 사이트 응답을 대조해 넷 이상이 주는 것만** 골랐다. 한 사이트만 가진 값을 칸으로
+만들면 나머지 열 곳이 비는 칸이 하나 는다. 어느 사이트의 어느 자리가 어느 칸인지는
+`tests/test_split_body_columns.py` 가 픽스처로 들고 있다.
+
+**사이트가 주지 않는 칸은 NULL 이다.** 없는 값을 다른 값으로 채우지 않는다. 빈 칸은 "이
+사이트는 이 값을 주지 않는다" 는 사실이고, 틀린 값은 소비 측이 그대로 노출한다.
+
+`department` 는 둘(LG·현대)만 주는 칸이라 새 기준이었다면 만들지 않았을 것이다. **이미 있는
+칸이라 지우지 않는다** — 소비 측이 읽던 것이 사라지면 안 된다.
 
 `delivered_at` 을 크롤링·재정규화·수동 수정이 건드리면 소비 측에 같은 데이터가 다시 간다.
 
@@ -166,8 +189,13 @@ SQLite 파일 하나. 경로는 `DATABASE_PATH` 가 정하고 Docker named volum
 `normalized_jobs` 행은 재정규화로 다시 만들어지므로 거기에 매달면 보정이 떨어져 나간다.
 append-only 인 `raw_jobs` 에 매달아야 몇 번을 다시 정규화해도 보정이 따라붙는다.
 
-고칠 수 있는 필드는 규칙이 만드는 여섯 개뿐이고 CHECK 가 나머지를 막는다. `source_url` 은
-공고의 신원이라 고치지 않고, `normalized_at` 과 `delivered_at` 은 아예 받지 않는다.
+고칠 수 있는 필드는 위 여섯 개뿐이고 CHECK 가 나머지를 막는다. `source_url` 은 공고의
+신원이라 고치지 않고, `normalized_at` 과 `delivered_at` 은 아예 받지 않는다.
+
+0011 이 더한 열 칸은 여기 들어오지 않는다. 이 컬럼이 `UNIQUE (raw_job_id, field_name)` 의
+인덱스에 걸려 있어 0009·0010 이 쓴 CHECK 넓히기(새 컬럼 추가 -> 값 이동 -> 옛 컬럼 삭제)가
+통하지 않는다 — SQLite 는 인덱스가 걸린 컬럼을 DROP 하지 못한다. 새 칸의 손보정이 필요해지면
+그때 따로 다룬다.
 
 정규화는 규칙을 먼저 적용하고 그 위에 보정을 덮는다. 규칙을 개선하면 보정하지 않은 필드는
 같이 좋아지고, 보정한 필드는 사람이 정한 값을 유지한다. 보정 행을 지우면 다음 정규화에서
