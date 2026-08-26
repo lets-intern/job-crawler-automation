@@ -182,8 +182,8 @@ async def test_the_classified_columns_reach_normalized_jobs(conn: sqlite3.Connec
     assert row["body"] == BODY
 
 
-async def test_what_the_site_gave_wins_over_what_the_body_says(conn: sqlite3.Connection) -> None:
-    """분류는 빈 칸을 채우는 쪽이지 덮는 쪽이 아니다."""
+async def test_the_classification_wins_over_what_the_site_gave(conn: sqlite3.Connection) -> None:
+    """열한 칸은 분류가 가진다. 옛 수집이 넣어 둔 값이 있어도 덮는다 (2026-08-26 결정)."""
     conn.execute(
         "UPDATE raw_jobs SET raw_data_json = ? WHERE id = 1",
         (
@@ -192,7 +192,7 @@ async def test_what_the_site_gave_wins_over_what_the_body_says(conn: sqlite3.Con
                     "source_url": "https://x/1",
                     "title": "공고 1",
                     "body": BODY,
-                    "employment_type": "사이트가 준 값",
+                    "employment_type": "Permanent",
                 },
                 ensure_ascii=False,
             ),
@@ -204,7 +204,74 @@ async def test_what_the_site_gave_wins_over_what_the_body_says(conn: sqlite3.Con
     row = conn.execute(
         "SELECT employment_type FROM normalized_jobs WHERE raw_job_id = 1"
     ).fetchone()
-    assert row["employment_type"] == "사이트가 준 값"
+    assert row["employment_type"] == "정규직"
+
+
+async def test_a_blank_classification_clears_the_old_collected_value(
+    conn: sqlite3.Connection,
+) -> None:
+    """분류가 빈 칸을 내면 옛 값도 남지 않는다.
+
+    남겨 두면 `IT - 구축/운영/최적화` 같은 사이트 표기가 계속 나가고, 판정 칸 셋의 닫힌
+    목록이 640건에 대해 성립하지 않는다 (`.claude/docs/api-contract.md`).
+    """
+    conn.execute(
+        "UPDATE raw_jobs SET raw_data_json = ? WHERE id = 1",
+        (
+            json.dumps(
+                {
+                    "source_url": "https://x/1",
+                    "title": "공고 1",
+                    "body": BODY,
+                    "job_category": "IT - 구축/운영/최적화",
+                },
+                ensure_ascii=False,
+            ),
+        ),
+    )
+
+    # GOOD 응답은 job_category 를 비워 둔다
+    await run(conn, GOOD)
+
+    row = conn.execute("SELECT job_category FROM normalized_jobs WHERE raw_job_id = 1").fetchone()
+    assert row["job_category"] is None
+
+
+async def test_the_six_collected_columns_are_untouched_by_the_classification(
+    conn: sqlite3.Connection,
+) -> None:
+    """분류가 이기는 것은 열한 칸뿐이다. 수집이 주는 여섯 칸은 그대로다."""
+    conn.execute(
+        "UPDATE raw_jobs SET raw_data_json = ? WHERE id = 1",
+        (
+            json.dumps(
+                {
+                    "source_url": "https://x/1",
+                    "title": "공고 1",
+                    "body": BODY,
+                    "company": "한화솔루션",
+                    "deadline": "2026-09-30",
+                    "start_date": "2026-09-01",
+                },
+                ensure_ascii=False,
+            ),
+        ),
+    )
+
+    await run(conn, GOOD)
+
+    row = conn.execute(
+        """
+        SELECT title, body, company, deadline, start_date, source_url
+          FROM normalized_jobs WHERE raw_job_id = 1
+        """
+    ).fetchone()
+    assert row["title"] == "공고 1"
+    assert row["body"] == BODY
+    assert row["company"] == "한화솔루션"
+    assert row["deadline"] == "2026-09-30"
+    assert row["start_date"] == "2026-09-01"
+    assert row["source_url"] == "https://x/1"
 
 
 async def test_every_call_is_recorded_with_its_tokens(conn: sqlite3.Connection) -> None:
