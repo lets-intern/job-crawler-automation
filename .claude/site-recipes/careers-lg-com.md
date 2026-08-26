@@ -109,3 +109,34 @@ DB 가 진실이다. 이미 적재된 행은 다시 쓰지 않는다 — `raw_jo
 `list.date_is_deadline` 을 참으로 적었다. 목록의 `recEndDateTime` 이 그 공고의 마감일이므로,
 마감이 지난 공고는 상세를 열지 않고 건너뛴다. 2026-08-25 실행(run 253)에서 88건 중 1건이
 마감으로 걸렀고 나머지는 이미 아는 공고라 상세 요청이 한 번도 나가지 않았다.
+
+## 칸 매핑 (2026-08-26, 본문 나누기 Push 2)
+
+`crawlers` 16번 행의 설정에서 그대로 옮겼다. 같은 값이
+`seeds/site-configs-20260826.json` 에 있고 `tests/test_split_body_mapping.py` 가 픽스처에
+돌려 본다. 문서와 저장된 설정이 갈리지 않는지는 `tests/test_site_recipe_mapping.py` 가 본다.
+
+목록도 상세도 API 다. 본문은 HTML 조각이라 정규화의 html_text 규칙이 편다. 모집 부문(recList)마다 값이 따로 있어 * 로 전부 모은다.
+지원방법(submitMethodInfo)과 채용 유형(recruitTypeName)은 갈 칸이 없어 기타로 모았다.
+
+| 칸 | 어디서 | 자리 |
+|---|---|---|
+| 제목 | 상세 API | `data.jobNoticesDetail.jobNoticesDetail.jobNoticeName` |
+| 본문 원문 | 상세 API | `data.jobNoticesDetail.recList.*.detailContext` |
+| 필수 조건 | 상세 API | `data.jobNoticesDetail.jobNoticesDetail.qualForAppInfo`<br>`data.jobNoticesDetail.recList.*.requiredItem`<br>`data.jobNoticesDetail.recList.*.majorCodeName` |
+| 모집 마감일 | 상세 API | `data.jobNoticesDetail.jobNoticesDetail.recEndDate` |
+| 조직·부서 | 상세 API | `data.jobNoticesDetail.recList.*.orgName` |
+| 모집 기업 | 상세 API | `data.jobNoticesDetail.jobNoticesDetail.companyName` |
+| 모집 시작일 | 상세 API | `data.jobNoticesDetail.jobNoticesDetail.recStartDate` |
+| 직군 | 상세 API | `data.jobNoticesDetail.jobNoticesDetail.jobGroupSh`<br>`data.jobNoticesDetail.recList.*.jobGroupName` |
+| 고용형태 | 비움 | 사이트가 이 값을 따로 주지 않는다 |
+| 경력 구분 | 상세 API | `data.jobNoticesDetail.jobNoticesDetail.careerTypeName` |
+| 근무지 | 상세 API | `data.jobNoticesDetail.recList.*.locationName` |
+| 모집인원 | 상세 API | `data.jobNoticesDetail.recList.*.numbers` |
+| 주요 업무 | 상세 API | `data.jobNoticesDetail.recList.*.detailContext` |
+| 우대 조건 | 상세 API | `data.jobNoticesDetail.recList.*.preferredItem` |
+| 전형 절차 | 상세 API | `data.jobNoticesDetail.jobNoticesDetail.recProcessInfo`<br>`data.jobNoticesDetail.prcList.*.displayName`<br>`data.jobNoticesDetail.prcList.*.stepSchedule` |
+| 기타 | 상세 API | `data.jobNoticesDetail.jobNoticesDetail.otherInfo`<br>`data.jobNoticesDetail.jobNoticesDetail.submitMethodInfo`<br>`data.jobNoticesDetail.jobNoticesDetail.recruitTypeName` |
+
+빈 칸은 그 사이트가 그 값을 따로 주지 않는다는 사실이다. 다른 값으로 채우지 않는다 —
+한화 `department` 에 근무지가 들어가 있던 것이 그렇게 생긴 버그다.

@@ -113,3 +113,35 @@ API 가 주는 마감일은 `applyEndDt = 20260830` 이다. `deadline` 의 `date
 `raw_jobs` 에는 값이 그대로 남으므로 규칙에 `%Y%m%d` 를 더한 뒤 재정규화하면 복구된다.
 2026-08-25 기준 20건이 전부 이미 아는 공고라 새로 적재된 행은 없고, **다음에 올라오는 새 공고가
 이 문제를 처음 만난다.**
+
+## 칸 매핑 (2026-08-26, 본문 나누기 Push 2)
+
+`crawlers` 17번 행의 설정에서 그대로 옮겼다. 같은 값이
+`seeds/site-configs-20260826.json` 에 있고 `tests/test_split_body_mapping.py` 가 픽스처에
+돌려 본다. 문서와 저장된 설정이 갈리지 않는지는 `tests/test_site_recipe_mapping.py` 가 본다.
+
+헤더 x-hkmc-service 가 없으면 400 이다. 상세 주소는 recuYy·recuType·recuCls 세 값으로 만든다. 마감일이 20260830 형식이라
+정규화 규칙에 %Y%m%d 형식이 있어야 한다. 전형 절차는 procStep1Nm~procStep7Nm 일곱 자리를 모은다 — 한 자리만 읽으면 '지원서 접수'
+하나로 끝난다.
+
+| 칸 | 어디서 | 자리 |
+|---|---|---|
+| 제목 | 상세 API | `data.applyInfo.recuNoticeNm` |
+| 본문 원문 | 상세 API | `data.applyInfo.privJdDtl`<br>`data.applyInfo.aboutTeamNtc`<br>`data.applyInfo.etc` |
+| 필수 조건 | 상세 API | `data.applyInfo.privMustReq` |
+| 모집 마감일 | 상세 API | `data.applyInfo.applyEndDt` |
+| 조직·부서 | 상세 API | `data.applyInfo.fldCodeNm` |
+| 모집 기업 | 비움 | 사이트가 이 값을 따로 주지 않는다 |
+| 모집 시작일 | 상세 API | `data.applyInfo.appDispStDt` |
+| 직군 | 상세 API | `data.applyInfo.jdGroupNm`<br>`data.applyInfo.secCodeNm` |
+| 고용형태 | 비움 | 사이트가 이 값을 따로 주지 않는다 |
+| 경력 구분 | 상세 API | `data.applyInfo.channelCodeNm` |
+| 근무지 | 상세 API | `data.applyInfo.workPlaceCodeNm` |
+| 모집인원 | 비움 | 사이트가 이 값을 따로 주지 않는다 |
+| 주요 업무 | 상세 API | `data.applyInfo.privJdDtl` |
+| 우대 조건 | 상세 API | `data.applyInfo.prefReq` |
+| 전형 절차 | 상세 API | `data.applyInfo.procStep1Nm`<br>`data.applyInfo.procStep2Nm`<br>`data.applyInfo.procStep3Nm`<br>`data.applyInfo.procStep4Nm`<br>`data.applyInfo.procStep5Nm`<br>`data.applyInfo.procStep6Nm`<br>`data.applyInfo.procStep7Nm` |
+| 기타 | 상세 API | `data.applyInfo.etc`<br>`data.applyInfo.posCodeNm1`<br>`data.applyInfo.jdRecuCateNm`<br>`data.applyInfo.hashTag` |
+
+빈 칸은 그 사이트가 그 값을 따로 주지 않는다는 사실이다. 다른 값으로 채우지 않는다 —
+한화 `department` 에 근무지가 들어가 있던 것이 그렇게 생긴 버그다.

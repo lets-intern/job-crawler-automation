@@ -540,7 +540,7 @@
       "list_mode": "api",
       "detail_mode": "playwright",
       "default_company": null,
-      "note": "목록은 API, 상세는 렌더다. 상세 문서는 본문이 '◆ 업무내용' 처럼 한 덩어리라 갈라낼 수 없고, 같은 값이 목록 API 에 항목마다 별도 필드로 있다. 그래서 직군·근무지·모집인원·주요 업무·자격요건·전형절차·근로제도를 목록에서 읽어 나른다. 상세 문서가 주는 회사·직원유형·근무지·영입마감일은 이름표(dt)로 읽는다. start_date 는 공고 등록일(regDate)이다 — 사이트가 모집 시작일을 따로 적지 않는다.",
+      "note": "목록은 API, 상세는 렌더다. 상세 문서는 본문이 '◆ 업무내용' 처럼 한 덩어리라 갈라낼 수 없고, 같은 값이 목록 API 에 항목마다 별도 필드로 있다. 그래서 직군·모집인원·주요 업무·자격요건·전형절차·근로제도를 목록에서 읽어 나른다. 상세 문서가 주는 회사·직원유형·근무지·영입마감일은 이름표(dt)로 읽는다. start_date 는 공고 등록일(regDate)이다 — 사이트가 모집 시작일을 따로 적지 않는다.",
       "api_config": {
         "list": {
           "url": "https://careers.kakao.com/public/api/job-list?skillSet=&part=BUSINESS_SERVICES&company=KAKAO&employeeType=&page=1",
@@ -552,18 +552,11 @@
             "company": "companyName",
             "start_date": "regDate",
             "job_category": "jobPartName",
-            "employment_type": "employeeTypeName",
-            "work_location": "locationName",
             "headcount": "displayRecruitCount",
             "duties": "workContentDesc",
             "requirements": "qualification",
             "hiring_process": "jobOfferProcessDesc",
-            "etc_info": "workTypeDesc",
-            "body": [
-              "introduction",
-              "workContentDesc",
-              "qualification"
-            ]
+            "etc_info": "workTypeDesc"
           },
           "id_field": "realId",
           "link_template": "https://careers.kakao.com/jobs/{id}?skillSet=&part=BUSINESS_SERVICES&company=KAKAO&employeeType=&page=1",

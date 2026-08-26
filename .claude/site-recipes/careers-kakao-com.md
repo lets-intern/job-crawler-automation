@@ -36,3 +36,35 @@
 |---|---|---|---|
 | 2026-08-25 | 최초 등록(크롤러 25) | 상세 URL 없이 등록해 상세 셀렉터가 확인되지 않았다 | 판정이 찾은 상세 주소로 상세 셀렉터까지 만들게 했다 |
 | 2026-08-25 | 재등록(크롤러 30) | | 목록 11건, 상세 3건 성공, 실패 0건 (run 303) |
+
+## 칸 매핑 (2026-08-26, 본문 나누기 Push 2)
+
+`crawlers` 30번 행의 설정에서 그대로 옮겼다. 같은 값이
+`seeds/site-configs-20260826.json` 에 있고 `tests/test_split_body_mapping.py` 가 픽스처에
+돌려 본다. 문서와 저장된 설정이 갈리지 않는지는 `tests/test_site_recipe_mapping.py` 가 본다.
+
+목록은 API, 상세는 렌더다. 상세 문서는 본문이 '◆ 업무내용' 처럼 한 덩어리라 갈라낼 수 없고, 같은 값이 목록 API 에 항목마다 별도 필드로 있다. 그래서
+직군·모집인원·주요 업무·자격요건·전형절차·근로제도를 목록에서 읽어 나른다. 상세 문서가 주는 회사·직원유형·근무지·영입마감일은 이름표(dt)로 읽는다.
+start_date 는 공고 등록일(regDate)이다 — 사이트가 모집 시작일을 따로 적지 않는다.
+
+| 칸 | 어디서 | 자리 |
+|---|---|---|
+| 제목 | 상세 HTML | `.tit_jobs` |
+| 본문 원문 | 상세 HTML | `.cont_board` |
+| 필수 조건 | 목록 API | `qualification` |
+| 모집 마감일 | 상세 HTML | `.list_info dt:-soup-contains("영입마감일") + dd` |
+| 조직·부서 | 비움 | 사이트가 이 값을 따로 주지 않는다 |
+| 모집 기업 | 상세 HTML | `.list_info dt:-soup-contains("회사정보") + dd` |
+| 모집 시작일 | 목록 API | `regDate` |
+| 직군 | 목록 API | `jobPartName` |
+| 고용형태 | 상세 HTML | `.list_info dt:-soup-contains("직원유형") + dd` |
+| 경력 구분 | 비움 | 사이트가 이 값을 따로 주지 않는다 |
+| 근무지 | 상세 HTML | `.list_info dt:-soup-contains("근무지 정보") + dd` |
+| 모집인원 | 목록 API | `displayRecruitCount` |
+| 주요 업무 | 목록 API | `workContentDesc` |
+| 우대 조건 | 비움 | 사이트가 이 값을 따로 주지 않는다 |
+| 전형 절차 | 목록 API | `jobOfferProcessDesc` |
+| 기타 | 목록 API | `workTypeDesc` |
+
+빈 칸은 그 사이트가 그 값을 따로 주지 않는다는 사실이다. 다른 값으로 채우지 않는다 —
+한화 `department` 에 근무지가 들어가 있던 것이 그렇게 생긴 버그다.
