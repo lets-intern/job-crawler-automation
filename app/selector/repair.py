@@ -509,7 +509,7 @@ async def _ask(client: Any, model: str, prompt: str) -> tuple[SelectorSet, int, 
     last_text = ""
     usage: Usage | None = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
-        last_text, usage = await call_model(client, model, prompt, attempt, kind="고치기")
+        last_text, usage = await call_model(client, model, prompt, attempt, kind="셀렉터 고치기")
         try:
             return parse_selectors(last_text), attempt, usage, []
         except SelectorSchemaError as exc:

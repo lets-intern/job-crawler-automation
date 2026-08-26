@@ -8,22 +8,26 @@
 - 생성마다 모델 ID, 입출력 토큰 수, 지연을 로그로 남긴다
 - API 키는 환경변수에서만 읽고 어디에도 남기지 않는다
 
+호출 자체는 `app/llm/gemini.py` 가 한다. 본문 분류(`app/classify/`)가 같은 경로를 쓰기
+때문이고, 이 파일은 셀렉터 생성에만 있는 것 — 프롬프트, 응답 스키마, 자체 검증 — 만 갖는다.
+
 페이지를 가져오는 것은 공용 fetch 클라이언트다 (`.claude/rules/crawling.md`).
 """
 
 from __future__ import annotations
 
 import logging
-import time
 from dataclasses import dataclass, field
 from typing import Any
 
 from google import genai
-from google.genai import errors as genai_errors
 
 from app.config import Settings, get_settings
 from app.crawler.fetcher import PageSource, get_fetcher
 from app.crawler.playwright import STATIC
+from app.llm.gemini import LlmCallError, Usage
+from app.llm.gemini import build_client as build_gemini_client
+from app.llm.gemini import call_model as call_gemini
 from app.selector.cleaner import CleanedHtml, clean_html
 from app.selector.narrow import Narrowing, narrow_item_selector
 from app.selector.schema import (
@@ -99,17 +103,6 @@ class SelectorGenerationError(RuntimeError):
     def __init__(self, reason: str, message: str) -> None:
         super().__init__(message)
         self.reason = reason
-
-
-@dataclass(frozen=True)
-class Usage:
-    """호출 1회의 비용. 이 숫자가 없으면 나중에 비용 질문에 답할 수 없다."""
-
-    model: str
-    input_tokens: int
-    output_tokens: int
-    total_tokens: int
-    latency_ms: int
 
 
 @dataclass(frozen=True)
@@ -257,12 +250,12 @@ async def generate_from_html(
 
 def build_client(settings: Settings | None = None) -> genai.Client:
     """API 키는 환경변수에서만 온다. 소스에도 로그에도 남기지 않는다."""
-    resolved = settings or get_settings()
-    if not resolved.gemini_api_key:
+    try:
+        return build_gemini_client(settings)
+    except LlmCallError as exc:
         raise SelectorGenerationError(
-            "no_api_key", "GEMINI_API_KEY 가 비어 있다. 서버 문제가 아니라 셀렉터 생성만 막힌다"
-        )
-    return genai.Client(api_key=resolved.gemini_api_key)
+            exc.reason, "GEMINI_API_KEY 가 비어 있다. 서버 문제가 아니라 셀렉터 생성만 막힌다"
+        ) from exc
 
 
 def build_prompt(
@@ -280,74 +273,25 @@ def build_prompt(
 
 
 async def call_model(
-    client: Any, model: str, prompt: str, attempt: int, kind: str = "생성"
+    client: Any, model: str, prompt: str, attempt: int, kind: str = "셀렉터 생성"
 ) -> tuple[str, Usage]:
-    """호출 1회. 모델 ID·토큰·지연을 남긴다.
+    """셀렉터용 호출 1회. 스키마와 시스템 지시만 이 파일 것이고 나머지는 공용이다.
 
     생성과 고치기가 같은 함수를 쓴다. 두 번째 API 경로를 만들면 로그도 재시도 규칙도 두 벌이
     되고, 한쪽만 고쳐진 채로 남는다. `kind` 는 로그에서 둘을 가르는 이름일 뿐이다.
     """
-    started = time.monotonic()
     try:
-        response = await client.aio.models.generate_content(
-            model=model,
-            contents=prompt,
-            config={
-                "system_instruction": _SYSTEM_INSTRUCTION,
-                "response_mime_type": "application/json",
-                "response_schema": SelectorSet,
-                "temperature": 0.0,
-            },
+        return await call_gemini(
+            client,
+            model,
+            prompt,
+            attempt,
+            kind,
+            response_schema=SelectorSet,
+            system_instruction=_SYSTEM_INSTRUCTION,
         )
-    except genai_errors.APIError as exc:
-        # 운영자에게 보이는 문구에는 코드와 메시지만 옮긴다. 키는 헤더로만 나가므로 여기 없다.
-        raise SelectorGenerationError(
-            "api_error", f"Gemini 호출 실패({exc.code}): {exc.message}"
-        ) from exc
-
-    latency_ms = int((time.monotonic() - started) * 1000)
-    usage = _usage(model, response, latency_ms)
-    logger.info(
-        "셀렉터 %s model=%s attempt=%d input_tokens=%d output_tokens=%d "
-        "total_tokens=%d latency_ms=%d finish_reason=%s",
-        kind,
-        usage.model,
-        attempt,
-        usage.input_tokens,
-        usage.output_tokens,
-        usage.total_tokens,
-        usage.latency_ms,
-        _finish_reason(response),
-    )
-    return _text(response), usage
-
-
-def _usage(model: str, response: Any, latency_ms: int) -> Usage:
-    meta = getattr(response, "usage_metadata", None)
-    return Usage(
-        model=model,
-        input_tokens=_count(meta, "prompt_token_count"),
-        output_tokens=_count(meta, "candidates_token_count"),
-        total_tokens=_count(meta, "total_token_count"),
-        latency_ms=latency_ms,
-    )
-
-
-def _count(meta: Any, name: str) -> int:
-    value = getattr(meta, name, None)
-    return int(value) if value is not None else 0
-
-
-def _finish_reason(response: Any) -> str:
-    candidates = getattr(response, "candidates", None) or []
-    if not candidates:
-        return "없음"
-    return str(getattr(candidates[0], "finish_reason", "없음"))
-
-
-def _text(response: Any) -> str:
-    """본문을 꺼낸다. 막히거나 잘린 응답은 빈 문자열로 와서 `unparsable` 이 된다."""
-    return getattr(response, "text", None) or ""
+    except LlmCallError as exc:
+        raise SelectorGenerationError(exc.reason, str(exc)) from exc
 
 
 def _notes(
