@@ -66,9 +66,35 @@ Push 1·2 가 칸과 매핑을 바꿨다. 지금 쌓인 307건은 **옛 여섯 �
 
         백업을 알림을 끈 뒤에 떴다. 그래서 이 사본으로 복구하면 `ntfy_enabled` 가 0 이다.
         복구할 때 알림을 다시 켜야 한다.
-    - [ ] 3.2 수집 데이터를 비운다
+    - [x] 3.2 수집 데이터를 비운다
         - 위 다섯 표를 비운다
-        - [ ] 3.2.V 검증: 다섯 표가 0행이고 규칙·설정·크롤러·워크플로우가 그대로인지
+        - [x] 3.2.V 검증: 다섯 표가 0행이고 규칙·설정·크롤러·워크플로우가 그대로인지
+
+        비우기 전에 워크플로우 여섯을 `paused` 로 내리고 앱을 다시 읽혔다. `status` 를 표에서
+        내리는 것만으로는 이미 등록된 APScheduler 잡이 사라지지 않는다 — 잡을 지우는 것은
+        `WorkflowScheduler.sync` 고, 그것을 부르는 자리가 기동과 API 뿐이다. 개발 구성이
+        `--reload` 로 떠 있어서 `app/__init__.py` 를 건드리면 기동이 다시 돌고 거기서 sync 가
+        `paused` 인 잡을 뺀다. 컨테이너는 내리지 않았다.
+
+        지운 순서는 자식부터다: `crawl_run_failures` -> `crawl_runs` ->
+        `job_field_overrides` -> `normalized_jobs` -> `raw_jobs`. `PRAGMA foreign_keys` 를 켠
+        채로 한 트랜잭션에 묶고, COMMIT 전에 `PRAGMA foreign_key_check` 가 비는 것을 봤다.
+
+        | 표 | 이전 | 이후 |
+        |---|---|---|
+        | `raw_jobs` | 321 | 0 |
+        | `normalized_jobs` | 321 | 0 |
+        | `job_field_overrides` | 0 | 0 |
+        | `crawl_runs` | 77 | 0 |
+        | `crawl_run_failures` | 0 | 0 |
+        | `normalization_rules` | 27 | 27 |
+        | `app_settings` | 7 | 7 |
+        | `schema_migrations` | 12 | 12 |
+        | `crawlers` | 11 | 11 |
+        | `workflows` | 6 | 6 |
+
+        크롤러 열한 행의 셀렉터와 API 설정도 그대로다. `workflows` 의 누적
+        `success_count`·`fail_count` 는 건드리지 않았다 — 지우라고 한 표가 아니다.
     - [ ] 3.3 열한 사이트를 하나씩 돌린다
         - [ ] 3.3.V 검증: 사이트별 `crawl_runs` 행과 성공·건너뜀·실패 수를 표로 남긴다
     - [ ] 3.4 칸이 채워졌는지 센다
