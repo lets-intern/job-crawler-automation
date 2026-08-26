@@ -503,7 +503,7 @@
       "list_mode": "playwright",
       "detail_mode": "static",
       "default_company": null,
-      "note": "목록은 렌더, 상세는 정적이다. 본문 셀렉터 .p-container__inner 가 상단 내비게이션을 먼저 잡고 있었다 — :not(.p-navbar__inner-container) 를 붙였다. 상세 마크업이 공고마다 달라 제목·본문·마감일 말고는 비운다. 받은 픽스처가 집중채용 랜딩 한 건이라 그 한 건으로 넓혀 말하지 않는다.",
+      "note": "목록은 렌더, 상세는 정적이다. 본문 셀렉터 .p-container__inner 가 상단 내비게이션을 먼저 잡고 있었다 — :not(.p-navbar__inner-container) 를 붙였다. 마감일이 blockquote 였는데 그 자리에 있는 것은 대개 현직자 인터뷰 인용문이다 — 264건 중 138건이 인용문을 마감일로 받아 date_parse 에서 통째로 빠졌다. 모집 기간을 이름표로 단 blockquote 만 잡도록 좁혔고, 그 이름표가 없는 공고의 마감일은 빈 칸이다 (264건 중 본문에 모집 기간이 있는 것은 4건뿐이다). 상세 마크업이 공고마다 달라 제목·본문·마감일 말고는 비운다.",
       "selectors": {
         "list": {
           "item": "div.p-container ul a[href*='job-detail']",
@@ -517,7 +517,7 @@
           "title": "title",
           "body": ".p-container__inner:not(.p-navbar__inner-container)",
           "requirements": "",
-          "deadline": "blockquote",
+          "deadline": "blockquote:has(strong:-soup-contains(\"모집 기간\"))",
           "department": "",
           "company": "",
           "start_date": "",
