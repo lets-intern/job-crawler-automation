@@ -20,12 +20,15 @@
 from __future__ import annotations
 
 import pathlib
+import re
 import sqlite3
 from collections.abc import Iterator
 
 import pytest
+from fastapi.testclient import TestClient
 
 from app import db
+from app.api import crawlers as crawlers_api
 from app.api.review_filter import (
     DUP_SOURCE_URL,
     DUP_TITLE,
@@ -37,6 +40,7 @@ from app.api.review_filter import (
     filter_sql,
     order_clause,
 )
+from app.main import app
 
 LIST_URL = "https://www.python.org/jobs/"
 
@@ -130,6 +134,22 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
         yield connection
     finally:
         connection.close()
+
+
+@pytest.fixture
+def client(tmp_path: pathlib.Path, conn: sqlite3.Connection) -> Iterator[TestClient]:
+    def request_connection() -> Iterator[sqlite3.Connection]:
+        connection = db.connect(tmp_path / "jobs.db")
+        try:
+            yield connection
+        finally:
+            connection.close()
+
+    app.dependency_overrides[crawlers_api.get_connection] = request_connection
+    try:
+        yield TestClient(app)
+    finally:
+        app.dependency_overrides.clear()
 
 
 def measured(conn: sqlite3.Connection, picked: JobFilter) -> tuple[int, int, int]:
@@ -227,3 +247,67 @@ def test_보정으로_고친_제목이_중복_판정에_쓰인다(conn: sqlite3.
         (int(sdi["raw_job_id"]), "삼성전기"),
     )
     assert measured(conn, JobFilter(dup=DUP_TITLE_COMPANY)) == (2, 7, 5)
+
+
+# 표의 묶음 칸. `3번 묶음 · 2건` 처럼 번호와 그 묶음의 건수를 함께 적는다
+GROUP_CELL = re.compile(r"(\d+)번 묶음 · (\d+)건")
+
+
+def test_화면이_묶음_수와_여분을_숫자로_적는다(client: TestClient) -> None:
+    """여분만 적으면 지울 수 있는 최대치가 지울 건수로 읽힌다."""
+    html = client.get("/ui/review", params={"dup": DUP_TITLE}).text
+    assert "중복 묶음 (제목 기준)" in html
+    assert "7묶음 22건" in html
+    assert "15건이" in html and "여분이다" in html
+
+
+def test_표의_행마다_묶음_번호와_건수가_붙는다(client: TestClient) -> None:
+    html = client.get("/ui/review", params={"dup": DUP_TITLE, "page_size": "100"}).text
+    found = GROUP_CELL.findall(html)
+    assert len(found) == 22
+    # 큰 묶음이 먼저 오고 같은 묶음이 붙어 있다
+    assert found[:7] == [("1", "7")] * 7
+    assert found[7:12] == [("2", "5")] * 5
+
+
+def test_페이지를_넘겨도_중복_조건이_유지된다(client: TestClient) -> None:
+    """페이지 버튼의 주소는 서버가 지금 조건을 달아 만든다."""
+    html = client.get("/ui/review", params={"dup": DUP_TITLE, "page_size": "20"}).text
+    assert "dup=title" in html
+    second = client.get(
+        "/ui/review", params={"dup": DUP_TITLE, "page_size": "20", "page": "2"}
+    ).text
+    assert "21-22번째" in second and "2 / 2 페이지" in second
+    assert "7묶음 22건" in second
+
+
+def test_중복이_없으면_무엇을_하면_되는지_적는다(client: TestClient) -> None:
+    """`없음` 으로 끝내지 않는다. 원본 주소 기준은 파이프라인이 고장 났을 때만 걸린다."""
+    html = client.get("/ui/review", params={"dup": DUP_SOURCE_URL}).text
+    assert "0묶음 0건" in html
+    assert "원본 주소 기준으로 겹치는 공고가 없다" in html
+
+
+def test_중복_조건을_안_걸면_묶음_칸이_없다(client: TestClient) -> None:
+    html = client.get("/ui/review").text
+    assert "중복 묶음" not in html
+    assert GROUP_CELL.search(html) is None
+
+
+def test_걸린_전부_고르기가_묶음_전체임을_적는다(client: TestClient) -> None:
+    """여분만 걸린 줄 알고 켜면 짝까지 사라진다. 한 건도 남지 않는다."""
+    html = client.get("/ui/review", params={"dup": DUP_TITLE}).text
+    assert "중복 조건에 걸린 22건은 묶음 전체다" in html
+    assert "여분 15건이 아니라 짝까지 전부 지워진다" in html
+
+
+def test_필터_폼에_중복_기준이_모두_있다(client: TestClient) -> None:
+    html = client.get("/ui/review/filters").text
+    assert 'name="dup"' in html
+    for value, label in (
+        (DUP_TITLE_COMPANY, "제목 + 회사"),
+        (DUP_TITLE, "제목"),
+        (DUP_SOURCE_URL, "원본 주소"),
+    ):
+        assert f'value="{value}"' in html
+        assert label in html
