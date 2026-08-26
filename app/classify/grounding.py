@@ -35,7 +35,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-from app.classify.schema import EXTRACT_FIELDS, JUDGE_CHOICES, JUDGE_FIELDS
+from app.classify.schema import EXTRACT_FIELDS, JUDGE_CHOICES, JUDGE_FIELDS, UNDECIDED
 
 # 비교에서 지우는 글자. 공백, 글머리표, 구두점, 괄호, 따옴표다. 뜻을 나르는 글자는 남는다
 _NOISE = re.compile(r"[\s·•·◦○●□■▪▶▷–—\-*_.,;:!?()\[\]{}<>\"'`~/\\|]+")
@@ -116,7 +116,8 @@ def ground(fields: Mapping[str, str], body: str) -> Grounded:
 
     for name in JUDGE_FIELDS:
         value = fields.get(name, "").strip()
-        if not value:
+        if not value or value == UNDECIDED:
+            # 고르지 않았다는 답이다. 버린 것이 아니라 본문에 근거가 없다는 뜻이라 세지 않는다
             kept[name] = ""
             continue
         if value not in JUDGE_CHOICES[name]:

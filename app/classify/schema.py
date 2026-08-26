@@ -26,6 +26,11 @@
 판정 칸에는 근거 문장이 따라온다(`*_evidence`). 그 문장이 본문에 없으면 판정을 버린다 —
 읽고 고른 것인지 지어낸 것인지 가를 방법이 그것뿐이다.
 
+"본문만으로는 고를 수 없다" 를 답할 자리가 `판단불가` 다. 그 자리가 없으면 모델은 아무거나
+고른다. 빈 문자열을 쓰지 않는 것은 **Gemini 가 빈 문자열이 든 enum 을 400 으로 거절하기
+때문이다** (2026-08-26 확인: `response_schema.properties[career_level].enum[0]: cannot be
+empty`). `판단불가` 는 저장되지 않고 빈 칸이 된다.
+
 | reason | 뜻 |
 |---|---|
 | `unparsable` | JSON 이 아니거나, 객체·문자열이 아닌 자리에 다른 타입이 왔다 |
@@ -39,7 +44,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from typing import Any, Literal, get_args
+from typing import Any, Final, Literal, get_args
 
 from pydantic import BaseModel
 
@@ -48,17 +53,25 @@ from pydantic import BaseModel
 # 스키마에 없는 칸 이름을 거르는 일은 `validate_classification()` 이 받은 뒤에 한다.
 
 
+# 본문만으로는 고를 수 없다는 답. 목록의 값이 아니라 "고르지 않았다" 는 표시이고, 저장될
+# 때는 빈 칸이 된다. 빈 문자열을 쓰지 못하는 것은 Gemini 가 빈 값이 든 enum 을 거절해서다.
+#
+# 아래 `Literal` 안에는 이 이름 대신 같은 글자를 적는다. 타입 검사기는 Literal 안에서 변수를
+# 읽지 못한다. 둘이 갈리지 않는지는 `_choices()` 아래의 검사가 본다
+UNDECIDED: Final = "판단불가"
+
+
 class Classification(BaseModel):
     """본문을 나눈 열한 칸과, 판정 칸 셋의 근거 문장.
 
     뽑는 칸은 자유 문자열이고 본문에 없으면 빈 문자열이다. 판정 칸은 `Literal` 이라 목록에
-    없는 값이 애초에 응답에 담기지 못한다. 빈 문자열이 목록에 들어 있는 것은 "본문만으로는
-    고를 수 없다" 를 답할 자리가 있어야 하기 때문이다 — 자리가 없으면 모델은 아무거나 고른다.
+    없는 값이 애초에 응답에 담기지 못한다. `판단불가` 가 목록에 있는 것은 "본문만으로는 고를
+    수 없다" 를 답할 자리가 있어야 하기 때문이다 — 자리가 없으면 모델은 아무거나 고른다.
     """
 
     # 판정하는 칸. 목록은 운영 DB 640건의 실제 값에서 뽑았다 (아래 주석)
     job_category: Literal[
-        "",
+        "판단불가",
         "개발·IT",
         "연구개발",
         "생산·제조",
@@ -74,13 +87,13 @@ class Classification(BaseModel):
         "디자인",
         "고객서비스",
         "기타",
-    ] = ""
+    ] = UNDECIDED
     job_category_evidence: str = ""
 
-    employment_type: Literal["", "정규직", "계약직", "인턴", "기타"] = ""
+    employment_type: Literal["판단불가", "정규직", "계약직", "인턴", "기타"] = UNDECIDED
     employment_type_evidence: str = ""
 
-    career_level: Literal["", "신입", "경력", "무관"] = ""
+    career_level: Literal["판단불가", "신입", "경력", "무관"] = UNDECIDED
     career_level_evidence: str = ""
 
     # 뽑는 칸. 본문에 있는 글자를 그대로 옮긴다
@@ -121,12 +134,18 @@ RESPONSE_FIELDS: tuple[str, ...] = tuple(Classification.model_fields)
 
 def _choices(name: str) -> tuple[str, ...]:
     annotation = Classification.model_fields[name].annotation
-    return tuple(value for value in get_args(annotation) if value)
+    return tuple(value for value in get_args(annotation) if value and value != UNDECIDED)
 
 
-# 판정 칸이 고를 수 있는 값. 모델에 보내는 목록과 받은 뒤 거르는 목록이 같아야 해서 스키마
-# 하나에서 뽑는다 — 두 벌을 두면 목록을 넓힐 때 한쪽만 넓어진다
+# 판정 칸이 고를 수 있는 값. `판단불가` 는 값이 아니라 "고르지 않았다" 는 표시라 여기 없다.
+# 모델에 보내는 목록과 받은 뒤 거르는 목록이 같아야 해서 스키마 하나에서 뽑는다 — 두 벌을
+# 두면 목록을 넓힐 때 한쪽만 넓어진다
 JUDGE_CHOICES: dict[str, tuple[str, ...]] = {name: _choices(name) for name in JUDGE_FIELDS}
+
+# 스키마에 적은 글자와 위 상수가 갈리면 "고르지 않았다" 가 목록 안의 값이 되어 그대로 저장된다.
+# 임포트 시점에 걸린다 — 640건을 돌린 뒤에 알게 될 일이 아니다
+for _name in JUDGE_FIELDS:
+    assert UNDECIDED in get_args(Classification.model_fields[_name].annotation), _name
 
 
 class ClassifySchemaError(ValueError):

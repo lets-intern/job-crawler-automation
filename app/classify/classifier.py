@@ -39,6 +39,7 @@ from app.classify.grounding import ground
 from app.classify.schema import (
     CLASSIFY_FIELDS,
     JUDGE_CHOICES,
+    UNDECIDED,
     Classification,
     ClassifySchemaError,
     parse_classification,
@@ -99,10 +100,10 @@ _PROMPT = """아래는 채용공고 본문이다. 이것을 정해진 칸으로 
 - **이 셋은 글자가 본문에 그대로 없어도 된다.** 본문을 읽고 판단해서 고른다. `백엔드 개발자를
   찾습니다` 이면 job_category 는 개발·IT 다. `5년 이상 경험` 이면 career_level 은 경력이다.
 - **반드시 위 목록에 있는 값만 쓴다.** 목록에 없는 값을 새로 만들지 않는다. 어디에도 맞지
-  않으면 목록의 기타를, 본문만으로는 판단할 수 없으면 빈 문자열을 쓴다.
+  않으면 목록의 기타를, 본문만으로는 판단할 수 없으면 판단불가 를 쓴다.
 - 고른 칸마다 `job_category_evidence` 처럼 `_evidence` 가 붙은 자리에 **그렇게 판단한
   근거가 되는 본문 문장을 그대로 옮겨 적는다.** 한 문장이면 된다. 본문에 없는 문장을 적지
-  않는다. 근거를 적을 수 없으면 그 칸을 빈 문자열로 둔다.
+  않는다. 근거를 적을 수 없으면 그 칸을 판단불가 로 둔다.
 - 회사명·공고 제목·모집 시작일·마감일은 어느 칸에도 넣지 않는다. 그 넷은 따로 수집한다.
 
 [본문]
@@ -176,7 +177,7 @@ def build_prompt(body: str) -> tuple[str, list[str]]:
     if len(text) > MAX_BODY_CHARS:
         notes.append(f"본문이 {len(text)}자라 앞 {MAX_BODY_CHARS}자만 보냈다")
         text = text[:MAX_BODY_CHARS]
-    choices = {name: " / ".join(values) for name, values in JUDGE_CHOICES.items()}
+    choices = {name: " / ".join((*values, UNDECIDED)) for name, values in JUDGE_CHOICES.items()}
     return _PROMPT.format(body=text, **choices), notes
 
 

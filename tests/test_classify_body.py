@@ -309,3 +309,42 @@ async def test_the_response_schema_forces_the_list() -> None:
 
     schema = client.calls[0]["config"]["response_schema"]
     assert schema.model_fields["career_level"].annotation is not str
+
+
+def test_the_enum_never_carries_an_empty_value() -> None:
+    """Gemini 가 빈 값이 든 enum 을 400 으로 거절한다 (2026-08-26 스무 건 표본에서 확인).
+
+    그때 스무 건이 전부 `api_error` 로 끝났다. 스키마가 잘못되면 본문을 보내기도 전에
+    막히므로 토큰은 나가지 않지만, 그 사실을 아는 데 실행 한 번이 든다.
+    """
+    from typing import get_args
+
+    from app.classify.schema import UNDECIDED, Classification
+
+    for name in JUDGE_FIELDS:
+        values = get_args(Classification.model_fields[name].annotation)
+        assert values, name
+        assert "" not in values, name
+        assert UNDECIDED in values, name
+
+
+async def test_undecided_is_stored_as_an_empty_column_and_is_not_counted_as_invented() -> None:
+    """ "고를 수 없다" 는 답이다. 버린 것이 아니라 본문에 근거가 없다는 뜻이다."""
+    from app.classify.schema import UNDECIDED
+
+    result, _ = await classify(
+        response(job_category=UNDECIDED, employment_type=UNDECIDED, career_level=UNDECIDED)
+    )
+
+    assert result.fields["job_category"] == ""
+    assert result.dropped == []
+    assert result.evidence == {}
+
+
+async def test_the_prompt_offers_the_undecided_answer() -> None:
+    """자리가 없으면 모델은 아무거나 고른다."""
+    from app.classify.schema import UNDECIDED
+
+    _, client = await classify(response())
+
+    assert UNDECIDED in client.calls[0]["contents"]
