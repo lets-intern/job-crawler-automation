@@ -11,7 +11,6 @@ import json
 import pathlib
 import sqlite3
 from collections.abc import Iterator
-from typing import Any
 
 import pytest
 
@@ -64,7 +63,10 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
 def _seed(conn: sqlite3.Connection, count: int = 3) -> None:
     """크롤러 하나, 워크플로우 하나, 본문이 있는 공고 몇 건."""
     conn.execute(
-        "INSERT INTO crawlers (id, name, list_url, status) VALUES (1, '테스트', 'https://x', 'promoted')"
+        """
+        INSERT INTO crawlers (id, name, list_url, status)
+        VALUES (1, '테스트', 'https://x', 'promoted')
+        """
     )
     conn.execute("INSERT INTO workflows (id, crawler_id, name) VALUES (1, 1, '테스트')")
     for index in range(1, count + 1):
@@ -162,7 +164,10 @@ async def test_the_classified_columns_reach_normalized_jobs(conn: sqlite3.Connec
     await run(conn, GOOD)
 
     row = conn.execute(
-        "SELECT employment_type, duties, requirements, body FROM normalized_jobs WHERE raw_job_id = 1"
+        """
+        SELECT employment_type, duties, requirements, body
+          FROM normalized_jobs WHERE raw_job_id = 1
+        """
     ).fetchone()
     assert row["employment_type"] == "정규직"
     assert row["requirements"] == "관련 경험 5년 이상이신 분"
@@ -265,8 +270,8 @@ async def test_only_the_ids_it_was_given_are_classified(conn: sqlite3.Connection
 
 def test_the_classification_survives_a_renormalization(conn: sqlite3.Connection) -> None:
     """분류 결과를 normalized_jobs 에만 썼다면 재정규화 한 번에 사라진다."""
-    from app.normalize.backfill import BackfillProgress, renormalize
     from app.classify.store import save_classification
+    from app.normalize.backfill import BackfillProgress, renormalize
 
     save_classification(conn, 1, {"employment_type": "정규직"}, model="gemini-3.5-flash")
 

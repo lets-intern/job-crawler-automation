@@ -16,8 +16,12 @@
 ## 회사명은 두 출처에서 하나를 고른다
 
 `raw_data_json.company` 가 비어 있지 않으면 그 값을 쓰고 `company_source='parsed'` 다.
-비어 있으면 그 크롤러의 `crawlers.default_company` 를 쓰고 `company_source='operator'` 다.
-둘 다 없으면 둘 다 NULL 이다 — 빈 문자열로 채우지 않는다.
+비어 있으면 그 크롤러의 `crawlers.default_company` 를, 그것도 비어 있으면 **크롤러 이름**을
+쓰고 `company_source='operator'` 다. 크롤러 이름조차 없는 경우에만 둘 다 NULL 이다 —
+빈 문자열로 채우지 않는다.
+
+크롤러 이름까지 내려가는 것은 목록이 회사명을 주지 않는 사이트(토스·우아한형제들)를 위한
+것이다. 비워 두는 것보다 상위 기업 이름이라도 있는 편이 낫다 (2026-08-26 결정).
 
 파싱값이 이기는 이유는 공고 단위가 사이트 단위보다 구체적이기 때문이다. 삼성 채용 사이트
 하나에 삼성SDS 와 삼성전기 공고가 섞여 들어오고, 그 둘을 구분하는 것은 파싱값뿐이다.
@@ -229,10 +233,20 @@ def apply_classification(
 
 
 def read_default_company(conn: sqlite3.Connection, raw_job_id: int) -> str | None:
-    """그 건을 수집한 크롤러에 운영자가 적어 둔 회사명. 없으면 None 이다. 읽기 전용이다."""
+    """공고가 회사명을 주지 않을 때 쓸 값. 없으면 None 이다. 읽기 전용이다.
+
+    운영자가 크롤러에 적어 둔 `crawlers.default_company` 가 먼저고, 그것도 비어 있으면
+    **크롤러 이름**을 쓴다. 토스·우아한형제들은 목록이 회사명을 주지 않는데, 비워 두는 것보다
+    상위 기업 이름이라도 있는 편이 낫다 (2026-08-26 결정).
+
+    크롤러 이름을 쓴 것도 `company_source` 는 `operator` 다. 그 열이 가르는 것은 "사이트가
+    준 값인가, 우리가 채운 값인가" 이고 둘 다 뒤쪽이다. 어느 쪽으로 채웠는지는 `crawlers`
+    행을 보면 안다 — 값이 둘로 갈린다고 출처를 셋으로 늘리면 소비 측이 읽던 두 값에 모르는
+    값이 하나 는다 (`.claude/docs/api-contract.md`).
+    """
     row = conn.execute(
         """
-        SELECT c.default_company AS default_company
+        SELECT c.default_company AS default_company, c.name AS name
           FROM raw_jobs r
           JOIN workflows w ON w.id = r.workflow_id
           JOIN crawlers c ON c.id = w.crawler_id
@@ -242,8 +256,11 @@ def read_default_company(conn: sqlite3.Connection, raw_job_id: int) -> str | Non
     ).fetchone()
     if row is None:
         return None
-    value = row["default_company"]
-    return str(value) if value is not None else None
+    for column in ("default_company", "name"):
+        value = row[column]
+        if value is not None and str(value).strip():
+            return str(value)
+    return None
 
 
 def read_raw(conn: sqlite3.Connection, raw_job_id: int) -> tuple[str, dict[str, object]]:
