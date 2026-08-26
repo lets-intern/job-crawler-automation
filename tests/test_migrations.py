@@ -141,6 +141,7 @@ ALL_VERSIONS = [
     "0010",
     "0011",
     "0012",
+    "0013",
 ]
 
 
@@ -869,7 +870,8 @@ def test_the_override_down_drops_the_corrections_the_old_check_cannot_hold(
         [("title", "사람이 고친 제목"), ("work_location", "서울")],
     )
 
-    db.migrate_down(conn, steps=1)
+    # 0012 까지 되돌린다. 뒤에 붙은 마이그레이션 수만큼 걸음이 늘어난다
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0012"))
 
     rows = conn.execute("SELECT field_name FROM job_field_overrides").fetchall()
     assert [row["field_name"] for row in rows] == ["title"]

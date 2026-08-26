@@ -50,6 +50,7 @@ from app.crawler.failures import SUCCESS
 from app.crawler.fetcher import FetchError, FetchPolicy, RobotsDisallowedError, get_fetcher
 from app.crawler.playwright import PLAYWRIGHT, RENDER_MODES, STATIC, Renderer, open_source
 from app.crawler.runner import TEST, RunTarget, collect_selectors, run_once
+from app.llm.log import SELECTOR_GENERATE, SELECTOR_REPAIR, record_call
 from app.selector.api_schema import (
     ApiConfig,
     ApiConfigError,
@@ -632,6 +633,10 @@ async def create_crawler(
             f"채웠다: {discovery.link.template}"
         )
 
+    # 생성 1회가 행 1개다. 상세 셀렉터를 위해 두 번 불렀으면 그 둘을 합친 값이 들어간다
+    # (`_added`). 남기지 못해도 등록은 그대로 간다 (`app/llm/log.py`)
+    record_call(conn, feature=SELECTOR_GENERATE, usage=result.usage)
+
     return CrawlerOut(
         id=crawler_id,
         name=name,
@@ -1109,6 +1114,8 @@ async def repair_selectors(
         raise HTTPException(
             status_code=status, detail={"reason": exc.reason, "message": str(exc)}
         ) from exc
+
+    record_call(conn, feature=SELECTOR_REPAIR, usage=outcome.usage)
 
     after_matches = outcome.after.summary()
     unverified = _skipped_detail_fields(after_matches, detail_url or None)
