@@ -1,5 +1,5 @@
 {
-  "note": "열한 사이트의 크롤러 설정. 2026-08-26 에 본문 나누기 Push 2 로 매핑을 다시 쓴 값이고 tests/test_site_configs.py 와 tests/test_split_body_mapping.py 가 같은 픽스처에 돌려 본다. crawlers 행에 그대로 들어간다. 응답에 별도 필드로 있는 값은 최대한 매핑하고, 갈 칸이 없는 것은 기타(etc_info)로 모은다 — 매핑하지 않은 값은 저장되지 않아 다시 얻을 길이 없다.",
+  "note": "열한 사이트의 크롤러 설정. crawlers 행에 그대로 들어간다. **수집은 여섯 칸만 한다** — 제목·본문·모집 시작일·모집 마감일·회사명·원본 주소. 나머지 열한 칸(직군·근무지·경력 구분·고용형태·모집인원·주요 업무·우대사항·전형 절차·자격요건·조직 부서·기타)은 본문을 읽어 나눈다 (app/classify/). tests/test_site_configs.py 와 tests/test_split_body_mapping.py 가 같은 픽스처에 돌려 본다.",
   "recorded_at": "2026-08-26",
   "crawlers": [
     {
@@ -47,34 +47,9 @@
           "fields": {
             "title": "data.jobNoticesDetail.jobNoticesDetail.jobNoticeName",
             "body": "data.jobNoticesDetail.recList.*.detailContext",
-            "requirements": [
-              "data.jobNoticesDetail.jobNoticesDetail.qualForAppInfo",
-              "data.jobNoticesDetail.recList.*.requiredItem",
-              "data.jobNoticesDetail.recList.*.majorCodeName"
-            ],
             "deadline": "data.jobNoticesDetail.jobNoticesDetail.recEndDate",
-            "department": "data.jobNoticesDetail.recList.*.orgName",
             "company": "data.jobNoticesDetail.jobNoticesDetail.companyName",
-            "start_date": "data.jobNoticesDetail.jobNoticesDetail.recStartDate",
-            "job_category": [
-              "data.jobNoticesDetail.jobNoticesDetail.jobGroupSh",
-              "data.jobNoticesDetail.recList.*.jobGroupName"
-            ],
-            "career_level": "data.jobNoticesDetail.jobNoticesDetail.careerTypeName",
-            "work_location": "data.jobNoticesDetail.recList.*.locationName",
-            "headcount": "data.jobNoticesDetail.recList.*.numbers",
-            "duties": "data.jobNoticesDetail.recList.*.detailContext",
-            "preferred": "data.jobNoticesDetail.recList.*.preferredItem",
-            "hiring_process": [
-              "data.jobNoticesDetail.jobNoticesDetail.recProcessInfo",
-              "data.jobNoticesDetail.prcList.*.displayName",
-              "data.jobNoticesDetail.prcList.*.stepSchedule"
-            ],
-            "etc_info": [
-              "data.jobNoticesDetail.jobNoticesDetail.otherInfo",
-              "data.jobNoticesDetail.jobNoticesDetail.submitMethodInfo",
-              "data.jobNoticesDetail.jobNoticesDetail.recruitTypeName"
-            ]
+            "start_date": "data.jobNoticesDetail.jobNoticesDetail.recStartDate"
           },
           "headers": {}
         }
@@ -135,19 +110,9 @@
               "data.item.unitDt.*.ruDtlJob",
               "data.item.rtEct"
             ],
-            "requirements": "data.item.rtExmQlf",
             "deadline": "data.item.rtAcptEndDttm",
             "company": "data.item.sdNm",
-            "start_date": "data.item.rtAcptStrtDttm",
-            "work_location": "data.item.unitDt.*.ruWorkpl",
-            "headcount": "data.item.unitDt.*.ruRcrtPrsn",
-            "duties": "data.item.unitDt.*.ruDtlJob",
-            "hiring_process": "data.item.rtExmProc",
-            "etc_info": [
-              "data.item.rtEct",
-              "data.item.rtRctPrd",
-              "data.item.unitDt.*.ruInqr"
-            ]
+            "start_date": "data.item.rtAcptStrtDttm"
           },
           "headers": {
             "referer": "https://www.hanwhain.com/"
@@ -212,26 +177,8 @@
               "data.items.*.titleKr",
               "data.items.*.taskKr"
             ],
-            "requirements": [
-              "data.result.qlfctKr",
-              "data.items.*.qlfctKr"
-            ],
             "company": "data.result.cmpNameKr",
-            "start_date": "data.result.startdate",
-            "work_location": "data.items.*.workPlaceKr",
-            "duties": "data.items.*.taskKr",
-            "preferred": "data.items.*.favorKr",
-            "etc_info": [
-              "data.result.etcKr",
-              "data.result.processKr",
-              "data.result.docInfoKr",
-              "data.result.attachmentKr",
-              "data.items.*.memoKr",
-              "data.addFiles.*.titleKr",
-              "data.addFiles.*.fileOriginalName",
-              "data.result.mainTel",
-              "data.result.email"
-            ]
+            "start_date": "data.result.startdate"
           },
           "headers": {
             "referer": "https://www.samsungcareers.com/hr/"
@@ -289,20 +236,11 @@
         "detail": {
           "title": ".box-title",
           "body": ".detail-content-wrapper",
-          "requirements": ".detail-content-item:has(.detail-content-title:-soup-contains(\"Looking For\")) .detail-content-box",
+          "requirements": "",
           "deadline": ".box-detail-item:has(.label:-soup-contains(\"지원 기간\")) .value",
           "department": "",
           "company": ".box-detail-item:has(.label:-soup-contains(\"회사\")) .value",
-          "start_date": ".box-detail-item:has(.label:-soup-contains(\"지원 기간\")) .value",
-          "job_category": ".box-detail-item:has(.label:-soup-contains(\"직무\")) .value",
-          "employment_type": ".box-detail-item:has(.label:-soup-contains(\"유형\")) .value",
-          "career_level": ".box-detail-item:has(.label:-soup-contains(\"구분\")) .value",
-          "work_location": ".box-detail-item:has(.label:-soup-contains(\"지역\")) .value",
-          "headcount": "",
-          "duties": ".detail-content-item:has(.detail-content-title:-soup-contains(\"About the job\")) .detail-content-box",
-          "preferred": ".detail-content-item:has(.detail-content-title:-soup-contains(\"Preferred\")) .detail-content-box",
-          "hiring_process": ".detail-content-item:has(.detail-content-title:-soup-contains(\"Recruiting Process\")) .detail-content-box",
-          "etc_info": ".detail-content-item:has(.detail-content-title:-soup-contains(\"Please Read\")) .detail-content-box"
+          "start_date": ".box-detail-item:has(.label:-soup-contains(\"지원 기간\")) .value"
         }
       }
     },
@@ -348,33 +286,8 @@
               "data.applyInfo.aboutTeamNtc",
               "data.applyInfo.etc"
             ],
-            "requirements": "data.applyInfo.privMustReq",
             "deadline": "data.applyInfo.applyEndDt",
-            "department": "data.applyInfo.fldCodeNm",
-            "start_date": "data.applyInfo.appDispStDt",
-            "job_category": [
-              "data.applyInfo.jdGroupNm",
-              "data.applyInfo.secCodeNm"
-            ],
-            "career_level": "data.applyInfo.channelCodeNm",
-            "work_location": "data.applyInfo.workPlaceCodeNm",
-            "duties": "data.applyInfo.privJdDtl",
-            "preferred": "data.applyInfo.prefReq",
-            "hiring_process": [
-              "data.applyInfo.procStep1Nm",
-              "data.applyInfo.procStep2Nm",
-              "data.applyInfo.procStep3Nm",
-              "data.applyInfo.procStep4Nm",
-              "data.applyInfo.procStep5Nm",
-              "data.applyInfo.procStep6Nm",
-              "data.applyInfo.procStep7Nm"
-            ],
-            "etc_info": [
-              "data.applyInfo.etc",
-              "data.applyInfo.posCodeNm1",
-              "data.applyInfo.jdRecuCateNm",
-              "data.applyInfo.hashTag"
-            ]
+            "start_date": "data.applyInfo.appDispStDt"
           },
           "headers": {
             "accept": "application/json, text/plain, */*",
@@ -405,20 +318,11 @@
         "detail": {
           "title": "h4.title",
           "body": ".board-content",
-          "requirements": ".board-content p.hire-title:-soup-contains(\"자격\") + ul.hire-bul",
+          "requirements": "",
           "deadline": ".date-detail",
           "department": "",
           "company": ".board-type",
-          "start_date": ".date-detail",
-          "job_category": "",
-          "employment_type": "",
-          "career_level": "",
-          "work_location": "",
-          "headcount": "",
-          "duties": "",
-          "preferred": "",
-          "hiring_process": "p.hire-title:-soup-contains(\"전형절차\") + ol.hire-step",
-          "etc_info": "p.hire-title:-soup-contains(\"기타사항\") + ul.hire-bul"
+          "start_date": ".date-detail"
         }
       }
     },
@@ -442,20 +346,11 @@
         "detail": {
           "title": "h2.h2-title",
           "body": "div.content",
-          "requirements": "th:-soup-contains(\"자격요건\") + td",
+          "requirements": "",
           "deadline": "th:-soup-contains(\"채용공고\") + td",
           "department": "",
           "company": "dt:-soup-contains(\"자회사/BG\") + dd",
-          "start_date": "th:-soup-contains(\"채용공고\") + td",
-          "job_category": "dt:-soup-contains(\"모집분야\") + dd",
-          "employment_type": "",
-          "career_level": "",
-          "work_location": "dt:-soup-contains(\"지역\") + dd",
-          "headcount": "dt:-soup-contains(\"인원\") + dd",
-          "duties": "dt:-soup-contains(\"수행업무\") + dd",
-          "preferred": "",
-          "hiring_process": "th:-soup-contains(\"전형절차\") + td",
-          "etc_info": "th:-soup-contains(\"기타사항\") + td"
+          "start_date": "th:-soup-contains(\"채용공고\") + td"
         }
       }
     },
@@ -483,16 +378,7 @@
           "deadline": ".card_info dt:-soup-contains(\"모집 기간\") + dd",
           "department": "",
           "company": ".card_info dt:-soup-contains(\"모집 부서\") + dd",
-          "start_date": ".card_info dt:-soup-contains(\"모집 기간\") + dd",
-          "job_category": ".card_info dt:-soup-contains(\"모집 분야\") + dd",
-          "employment_type": ".card_info dt:-soup-contains(\"근로 조건\") + dd",
-          "career_level": ".card_info dt:-soup-contains(\"모집 경력\") + dd",
-          "work_location": "",
-          "headcount": "",
-          "duties": "",
-          "preferred": "",
-          "hiring_process": "",
-          "etc_info": ""
+          "start_date": ".card_info dt:-soup-contains(\"모집 기간\") + dd"
         }
       }
     },
@@ -520,16 +406,7 @@
           "deadline": "blockquote:has(strong:-soup-contains(\"모집 기간\"))",
           "department": "",
           "company": "",
-          "start_date": "",
-          "job_category": "",
-          "employment_type": "",
-          "career_level": "",
-          "work_location": "",
-          "headcount": "",
-          "duties": "",
-          "preferred": "",
-          "hiring_process": "",
-          "etc_info": ""
+          "start_date": ""
         }
       }
     },
@@ -550,13 +427,7 @@
           "fields": {
             "title": "jobOfferTitle",
             "company": "companyName",
-            "start_date": "regDate",
-            "job_category": "jobPartName",
-            "headcount": "displayRecruitCount",
-            "duties": "workContentDesc",
-            "requirements": "qualification",
-            "hiring_process": "jobOfferProcessDesc",
-            "etc_info": "workTypeDesc"
+            "start_date": "regDate"
           },
           "id_field": "realId",
           "link_template": "https://careers.kakao.com/jobs/{id}?skillSet=&part=BUSINESS_SERVICES&company=KAKAO&employeeType=&page=1",
@@ -583,16 +454,7 @@
           "deadline": ".list_info dt:-soup-contains(\"영입마감일\") + dd",
           "department": "",
           "company": ".list_info dt:-soup-contains(\"회사정보\") + dd",
-          "start_date": "",
-          "job_category": "",
-          "employment_type": ".list_info dt:-soup-contains(\"직원유형\") + dd",
-          "career_level": "",
-          "work_location": ".list_info dt:-soup-contains(\"근무지 정보\") + dd",
-          "headcount": "",
-          "duties": "",
-          "preferred": "",
-          "hiring_process": "",
-          "etc_info": ""
+          "start_date": ""
         }
       }
     },
@@ -639,18 +501,10 @@
           "deadline": ".flag-type span:nth-of-type(2)",
           "department": "",
           "company": "",
-          "start_date": "",
-          "job_category": ".flag-tag button",
-          "employment_type": ".flag-type span:nth-of-type(1)",
-          "career_level": ".flag-career",
-          "work_location": "",
-          "headcount": "",
-          "duties": "",
-          "preferred": "",
-          "hiring_process": "",
-          "etc_info": ""
+          "start_date": ""
         }
       }
     }
-  ]
+  ],
+  "why_the_mappings_were_removed": "2026-08-26 에 이 파일에 칸 매핑을 가득 적었다가 같은 날 뺐다. 애써 만든 것을 왜 지웠는지 다음 사람이 묻기 때문에 적어 둔다. 매핑 방식은 사이트 11곳 x 칸 16개 = 176번의 판단이었고, 640건 실측에서 절반도 채우지 못했다 — 제목·본문·원본 주소 100%, 회사명 98%, 마감일 71%, 시작일 70%, 나머지 열세 칸은 21~66% 였다. 그리고 176번 중 다섯 곳에서 뜻이 다른 칸에 값이 들어가 있었다: 한화 부서에 근무지, SK 부서에 직무, 네이버 회사에 부서, 두산 마감일에 '지원자 개별일정', 우아한형제들 마감일에 '기간제 영입 종료시'. 사이트가 하나 늘 때마다 판단이 16번 는다. 그래서 수집은 어느 사이트나 확실히 주는 여섯 칸만 하고, 나누는 것은 본문을 읽는 쪽으로 옮겼다 (.claude/tasks/todo/prd-llm-classify.md). 회사명이 여섯에 남은 이유는 하나다 — 본문에 회사명이 글자로 나오는 것이 348건 중 32% 뿐이라 (SK 는 103건 중 1건) 본문에서는 못 뽑는다. 목록 응답에는 companyName·sdNm·corpName 으로 깨끗하게 있다. 이 파일의 지난 모양은 git 이력에 있다."
 }

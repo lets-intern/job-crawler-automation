@@ -46,34 +46,20 @@ JSON 본문으로 보내면 답하지 않는다. 요청 전문은 `seeds/site-co
 | 2026-08-23 | 마감일이 정규화에서 통째로 빠짐 | `date_parse` 가 한국식 형식만 시도했다 | `%B %d, %Y` 를 규칙에 더하고 재정규화 (`seeds/snapshot/README.md`) |
 | 2026-08-25 | 목록을 렌더에서 API 로 전환 | 목록 API 가 104건을 한 번에 준다. 렌더 경로는 20건만 보고 있었다 | 수동 실행 1회(run 252)에서 83건 적재, 실패 0건 |
 
-## 칸 매핑 (2026-08-26, 본문 나누기 Push 2)
+## 칸 매핑 (2026-08-26, 수집은 여섯 칸)
 
-`crawlers` 15번 행의 설정에서 그대로 옮겼다. 같은 값이
-`seeds/site-configs-20260826.json` 에 있고 `tests/test_split_body_mapping.py` 가 픽스처에
-돌려 본다. 문서와 저장된 설정이 갈리지 않는지는 `tests/test_site_recipe_mapping.py` 가 본다.
+**이 사이트는 여섯 칸만 수집한다** — 제목·본문·모집 마감일·모집 시작일·모집 기업, 그리고 원본 주소. 나머지 열한 칸(직군·근무지·경력 구분·고용형태·모집인원·주요 업무·우대사항·전형 절차·자격요건·조직 부서·기타)은 본문을 읽어 나눈다.
 
-목록은 폼으로 물어보고 104건이 한 번에 온다. 상세는 서버가 그린 HTML 이라 셀렉터로 읽는다. 값 상자는 자리(nth-child)가 아니라
-이름표(.label)로 찾는다 — 자리로 잡으면 상자 순서가 바뀔 때 조용히 다른 값이 들어온다. 그 버그로 직무가 department 에 들어가 있었다. 마감
-시간(23:59)은 지원 기간과 다른 상자라 지금 어느 칸에도 안 들어간다.
+`crawlers` 15번 행의 설정에서 그대로 옮겼다. 같은 값이 `seeds/site-configs-20260826.json` 에 있고 `tests/test_split_body_mapping.py` 가 픽스처에 돌려 본다. 문서와 저장된 설정이 갈리지 않는지는 `tests/test_site_recipe_mapping.py` 가 본다.
 
 | 칸 | 어디서 | 자리 |
 |---|---|---|
-| 제목 | 상세 HTML | `.box-title` |
-| 본문 원문 | 상세 HTML | `.detail-content-wrapper` |
-| 필수 조건 | 상세 HTML | `.detail-content-item:has(.detail-content-title:-soup-contains("Looking For")) .detail-content-box` |
-| 모집 마감일 | 상세 HTML | `.box-detail-item:has(.label:-soup-contains("지원 기간")) .value` |
-| 조직·부서 | 비움 | 사이트가 이 값을 따로 주지 않는다 |
-| 모집 기업 | 상세 HTML | `.box-detail-item:has(.label:-soup-contains("회사")) .value` |
-| 모집 시작일 | 상세 HTML | `.box-detail-item:has(.label:-soup-contains("지원 기간")) .value` |
-| 직군 | 상세 HTML | `.box-detail-item:has(.label:-soup-contains("직무")) .value` |
-| 고용형태 | 상세 HTML | `.box-detail-item:has(.label:-soup-contains("유형")) .value` |
-| 경력 구분 | 상세 HTML | `.box-detail-item:has(.label:-soup-contains("구분")) .value` |
-| 근무지 | 상세 HTML | `.box-detail-item:has(.label:-soup-contains("지역")) .value` |
-| 모집인원 | 비움 | 사이트가 이 값을 따로 주지 않는다 |
-| 주요 업무 | 상세 HTML | `.detail-content-item:has(.detail-content-title:-soup-contains("About the job")) .detail-content-box` |
-| 우대 조건 | 상세 HTML | `.detail-content-item:has(.detail-content-title:-soup-contains("Preferred")) .detail-content-box` |
-| 전형 절차 | 상세 HTML | `.detail-content-item:has(.detail-content-title:-soup-contains("Recruiting Process")) .detail-content-box` |
-| 기타 | 상세 HTML | `.detail-content-item:has(.detail-content-title:-soup-contains("Please Read")) .detail-content-box` |
+| 제목 | 상세 셀렉터 | `.box-title` |
+| 본문 | 상세 셀렉터 | `.detail-content-wrapper` |
+| 모집 마감일 | 상세 셀렉터 | `.box-detail-item:has(.label:-soup-contains("지원 기간")) .value` |
+| 모집 시작일 | 상세 셀렉터 | `.box-detail-item:has(.label:-soup-contains("지원 기간")) .value` |
+| 모집 기업 | 상세 셀렉터 | `.box-detail-item:has(.label:-soup-contains("회사")) .value` |
 
-빈 칸은 그 사이트가 그 값을 따로 주지 않는다는 사실이다. 다른 값으로 채우지 않는다 —
-한화 `department` 에 근무지가 들어가 있던 것이 그렇게 생긴 버그다.
+여기 없는 칸은 이 사이트가 그 값을 주지 않는다는 사실이다. 다른 값으로 채우지 않는다.
+
+2026-08-26 이전에는 이 표에 열여섯 칸이 있었다. 그 매핑을 뺀 이유는 `seeds/site-configs-20260826.json` 의 `why_the_mappings_were_removed` 에 있다 — 사이트 11곳 x 칸 16개 = 176번의 판단이 640건에서 절반도 채우지 못했고, 그중 다섯 곳이 뜻이 다른 칸에 값을 넣고 있었다.

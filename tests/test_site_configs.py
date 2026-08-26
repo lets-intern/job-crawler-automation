@@ -92,7 +92,7 @@ def test_lg_reads_eighty_eight_postings_and_a_body_per_sector() -> None:
     assert len({item.link for item in listing.items}) == 88
     assert listing.items[0].date == "2026.09.13 23:00"
     assert detail.fields["body"].strip()
-    assert detail.fields["requirements"].strip()
+    assert detail.fields["requirements"] == ""
     assert detail.fields["deadline"] == "2026.09.13 23:00"
 
 
@@ -106,7 +106,7 @@ def test_hanwha_reads_a_page_of_twenty_and_a_job_body() -> None:
     assert listing.items[0].company == "한화생명"
     assert listing.items[0].link.endswith("detail?rtSeq=19463")
     assert "LIFEPLUS TV" in detail.fields["body"]
-    assert detail.fields["requirements"].strip()
+    assert detail.fields["requirements"] == ""
     assert detail.fields["deadline"] == "2026.08.25 15:00"
 
 
@@ -121,7 +121,7 @@ def test_samsung_reads_nine_on_the_first_page_and_a_body_per_role() -> None:
     assert "seqno=22878" in listing.items[0].link
     assert "~" in listing.items[0].date
     assert detail.fields["body"].strip()
-    assert detail.fields["requirements"].strip()
+    assert detail.fields["requirements"] == ""
     # 마감일은 목록의 기간에서 온다. 상세에는 적지 않았다
     assert not detail.fields["deadline"]
 
@@ -138,7 +138,7 @@ def test_sk_reads_a_hundred_and_four_and_a_server_rendered_detail() -> None:
     assert len({item.link for item in listing.items}) == 104
     assert listing.items[0].link == "https://www.skcareers.com/Recruit/Detail/R261752"
     assert detail.fields["body"].strip()
-    assert detail.fields["requirements"].strip()
+    assert detail.fields["requirements"] == ""
     assert "August 25, 2026" in detail.fields["deadline"]
 
 
@@ -152,11 +152,12 @@ def test_hyundai_reads_twenty_and_a_plain_text_body() -> None:
     assert len({item.link for item in listing.items}) == 20
     assert listing.items[0].link.endswith("recuYy=2026&recuType=N2&recuCls=295")
     assert detail.fields["body"].strip()
-    assert detail.fields["requirements"].strip()
-    assert detail.fields["department"] == "모빌리티 선행개발"
+    assert detail.fields["requirements"] == ""
+    # 조직·부서도 이제 수집하지 않는다. 본문을 나누는 쪽이 채운다 (1.2)
+    assert detail.fields["department"] == ""
 
 
-def test_lotte_reads_eight_and_fills_the_qualifications() -> None:
+def test_lotte_reads_eight_and_carries_the_qualifications_inside_the_body() -> None:
     selector_set = selectors("롯데그룹")
 
     listing = parse_list(
@@ -168,7 +169,8 @@ def test_lotte_reads_eight_and_fills_the_qualifications() -> None:
 
     assert len(listing.items) == 8
     assert detail.fields["body"].strip()
-    assert "4년제 학사" in detail.fields["requirements"]
+    # 자격요건은 이제 수집이 아니라 본문을 나누는 쪽이 채운다 (1.2)
+    assert "4년제 학사" in detail.fields["body"]
 
 
 # 마감 건너뜀 --------------------

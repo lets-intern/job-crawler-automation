@@ -51,34 +51,20 @@ POST 만 받게 바뀌면 여기가 먼저 깨진다.
 | 2026-08-25 | 최초 등록(크롤러 20, 22) | 상세 경로를 못 찾았다 | `onclick` 인자를 읽는 주소 형식을 판정에 넣었다 |
 | 2026-08-25 | 재등록(크롤러 31) | | 목록 30건, 상세 3건 성공, 실패 0건 (run 301) |
 
-## 칸 매핑 (2026-08-26, 본문 나누기 Push 2)
+## 칸 매핑 (2026-08-26, 수집은 여섯 칸)
 
-`crawlers` 31번 행의 설정에서 그대로 옮겼다. 같은 값이
-`seeds/site-configs-20260826.json` 에 있고 `tests/test_split_body_mapping.py` 가 픽스처에
-돌려 본다. 문서와 저장된 설정이 갈리지 않는지는 `tests/test_site_recipe_mapping.py` 가 본다.
+**이 사이트는 여섯 칸만 수집한다** — 제목·본문·모집 마감일·모집 시작일·모집 기업, 그리고 원본 주소. 나머지 열한 칸(직군·근무지·경력 구분·고용형태·모집인원·주요 업무·우대사항·전형 절차·자격요건·조직 부서·기타)은 본문을 읽어 나눈다.
 
-정적 HTML 이다. 마감일이 tbody > tr:nth-child(4) > td 를 보고 있어 '지원자 개별일정' 을 마감일로 읽고 있었다 — 이름표(th)로
-바꿨다. 자회사/BG 가 계열사라 company 로 가고 department 는 비운다. 본문을 div.content 로 넓혔다. dt/dd 와 표가 서로 다른
-블록이라 좁게 잡으면 접수방법·문의처·일정이 통째로 사라진다. 끝에 이전글/다음글이 딸려 온다.
+`crawlers` 31번 행의 설정에서 그대로 옮겼다. 같은 값이 `seeds/site-configs-20260826.json` 에 있고 `tests/test_split_body_mapping.py` 가 픽스처에 돌려 본다. 문서와 저장된 설정이 갈리지 않는지는 `tests/test_site_recipe_mapping.py` 가 본다.
 
 | 칸 | 어디서 | 자리 |
 |---|---|---|
-| 제목 | 상세 HTML | `h2.h2-title` |
-| 본문 원문 | 상세 HTML | `div.content` |
-| 필수 조건 | 상세 HTML | `th:-soup-contains("자격요건") + td` |
-| 모집 마감일 | 상세 HTML | `th:-soup-contains("채용공고") + td` |
-| 조직·부서 | 비움 | 사이트가 이 값을 따로 주지 않는다 |
-| 모집 기업 | 상세 HTML | `dt:-soup-contains("자회사/BG") + dd` |
-| 모집 시작일 | 상세 HTML | `th:-soup-contains("채용공고") + td` |
-| 직군 | 상세 HTML | `dt:-soup-contains("모집분야") + dd` |
-| 고용형태 | 비움 | 사이트가 이 값을 따로 주지 않는다 |
-| 경력 구분 | 비움 | 사이트가 이 값을 따로 주지 않는다 |
-| 근무지 | 상세 HTML | `dt:-soup-contains("지역") + dd` |
-| 모집인원 | 상세 HTML | `dt:-soup-contains("인원") + dd` |
-| 주요 업무 | 상세 HTML | `dt:-soup-contains("수행업무") + dd` |
-| 우대 조건 | 비움 | 사이트가 이 값을 따로 주지 않는다 |
-| 전형 절차 | 상세 HTML | `th:-soup-contains("전형절차") + td` |
-| 기타 | 상세 HTML | `th:-soup-contains("기타사항") + td` |
+| 제목 | 상세 셀렉터 | `h2.h2-title` |
+| 본문 | 상세 셀렉터 | `div.content` |
+| 모집 마감일 | 상세 셀렉터 | `th:-soup-contains("채용공고") + td` |
+| 모집 시작일 | 상세 셀렉터 | `th:-soup-contains("채용공고") + td` |
+| 모집 기업 | 상세 셀렉터 | `dt:-soup-contains("자회사/BG") + dd` |
 
-빈 칸은 그 사이트가 그 값을 따로 주지 않는다는 사실이다. 다른 값으로 채우지 않는다 —
-한화 `department` 에 근무지가 들어가 있던 것이 그렇게 생긴 버그다.
+여기 없는 칸은 이 사이트가 그 값을 주지 않는다는 사실이다. 다른 값으로 채우지 않는다.
+
+2026-08-26 이전에는 이 표에 열여섯 칸이 있었다. 그 매핑을 뺀 이유는 `seeds/site-configs-20260826.json` 의 `why_the_mappings_were_removed` 에 있다 — 사이트 11곳 x 칸 16개 = 176번의 판단이 640건에서 절반도 채우지 못했고, 그중 다섯 곳이 뜻이 다른 칸에 값을 넣고 있었다.

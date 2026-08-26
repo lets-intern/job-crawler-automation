@@ -139,33 +139,20 @@ API 보다 느리다. **API 가 있으면 API 를 쓴다.**
 값이 비어 있지 않으므로 본문 없는 공고를 거르는 관문(`DetailEmptyError`)에 걸리지 않는다.
 제목·계열사·마감일·링크는 정확하므로 적재해 두고, 이 사실을 여기 적어 둔다.
 
-## 칸 매핑 (2026-08-26, 본문 나누기 Push 2)
+## 칸 매핑 (2026-08-26, 수집은 여섯 칸)
 
-`crawlers` 19번 행의 설정에서 그대로 옮겼다. 같은 값이
-`seeds/site-configs-20260826.json` 에 있고 `tests/test_split_body_mapping.py` 가 픽스처에
-돌려 본다. 문서와 저장된 설정이 갈리지 않는지는 `tests/test_site_recipe_mapping.py` 가 본다.
+**이 사이트는 여섯 칸만 수집한다** — 제목·본문·모집 마감일·모집 시작일·모집 기업, 그리고 원본 주소. 나머지 열한 칸(직군·근무지·경력 구분·고용형태·모집인원·주요 업무·우대사항·전형 절차·자격요건·조직 부서·기타)은 본문을 읽어 나눈다.
 
-계열사 11곳이 sdNm 으로 온다. 20건씩 4쪽이고 마지막 쪽에서 hasNext 가 false 가 된다. 부서 개념이 없어 department 를 비웠다 —
-근무지(ruWorkpl)가 거기 들어가 있던 것이 이번에 고친 버그다. 접수 안내(rtRctPrd)와 문의처(ruInqr)는 기타로 모았다.
+`crawlers` 19번 행의 설정에서 그대로 옮겼다. 같은 값이 `seeds/site-configs-20260826.json` 에 있고 `tests/test_split_body_mapping.py` 가 픽스처에 돌려 본다. 문서와 저장된 설정이 갈리지 않는지는 `tests/test_site_recipe_mapping.py` 가 본다.
 
 | 칸 | 어디서 | 자리 |
 |---|---|---|
 | 제목 | 상세 API | `data.item.rtNm` |
-| 본문 원문 | 상세 API | `data.item.unitDt.*.ruNm`<br>`data.item.unitDt.*.ruDtlJob`<br>`data.item.rtEct` |
-| 필수 조건 | 상세 API | `data.item.rtExmQlf` |
+| 본문 | 상세 API | `data.item.unitDt.*.ruNm`<br>`data.item.unitDt.*.ruDtlJob`<br>`data.item.rtEct` |
 | 모집 마감일 | 상세 API | `data.item.rtAcptEndDttm` |
-| 조직·부서 | 비움 | 사이트가 이 값을 따로 주지 않는다 |
-| 모집 기업 | 상세 API | `data.item.sdNm` |
 | 모집 시작일 | 상세 API | `data.item.rtAcptStrtDttm` |
-| 직군 | 비움 | 사이트가 이 값을 따로 주지 않는다 |
-| 고용형태 | 비움 | 사이트가 이 값을 따로 주지 않는다 |
-| 경력 구분 | 비움 | 사이트가 이 값을 따로 주지 않는다 |
-| 근무지 | 상세 API | `data.item.unitDt.*.ruWorkpl` |
-| 모집인원 | 상세 API | `data.item.unitDt.*.ruRcrtPrsn` |
-| 주요 업무 | 상세 API | `data.item.unitDt.*.ruDtlJob` |
-| 우대 조건 | 비움 | 사이트가 이 값을 따로 주지 않는다 |
-| 전형 절차 | 상세 API | `data.item.rtExmProc` |
-| 기타 | 상세 API | `data.item.rtEct`<br>`data.item.rtRctPrd`<br>`data.item.unitDt.*.ruInqr` |
+| 모집 기업 | 상세 API | `data.item.sdNm` |
 
-빈 칸은 그 사이트가 그 값을 따로 주지 않는다는 사실이다. 다른 값으로 채우지 않는다 —
-한화 `department` 에 근무지가 들어가 있던 것이 그렇게 생긴 버그다.
+여기 없는 칸은 이 사이트가 그 값을 주지 않는다는 사실이다. 다른 값으로 채우지 않는다.
+
+2026-08-26 이전에는 이 표에 열여섯 칸이 있었다. 그 매핑을 뺀 이유는 `seeds/site-configs-20260826.json` 의 `why_the_mappings_were_removed` 에 있다 — 사이트 11곳 x 칸 16개 = 176번의 판단이 640건에서 절반도 채우지 못했고, 그중 다섯 곳이 뜻이 다른 칸에 값을 넣고 있었다.
