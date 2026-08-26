@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from app import db
+from app.normalize.rules import NORMALIZED_FIELDS
 
 # .claude/docs/data-model.md 의 컬럼. 문서에 없는 컬럼은 늘리지 않는다
 EXPECTED_COLUMNS = {
@@ -139,6 +140,7 @@ ALL_VERSIONS = [
     "0009",
     "0010",
     "0011",
+    "0012",
 ]
 
 
@@ -805,13 +807,70 @@ def test_split_body_down_drops_only_the_ten_it_added(conn: sqlite3.Connection) -
     assert not set(SPLIT_BODY_COLUMNS) & _columns(conn, "normalized_jobs")
 
 
-def test_split_body_does_not_widen_the_override_check(conn: sqlite3.Connection) -> None:
-    """손보정은 여섯 칸 그대로다. 0011 은 `job_field_overrides` 를 건드리지 않았다."""
+def test_the_override_check_covers_the_new_columns(conn: sqlite3.Connection) -> None:
+    """0012 가 넓혔다. 새 칸에 자동으로 뽑은 값이 틀렸을 때 사람이 고칠 수 있어야 한다."""
+    db.migrate_up(conn)
+    _seed_raw_job(conn)
+
+    for field in NORMALIZED_FIELDS:
+        conn.execute(
+            "INSERT INTO job_field_overrides (raw_job_id, field_name, value) VALUES (1, ?, ?)",
+            (field, "사람이 고친 값"),
+        )
+
+    stored = conn.execute("SELECT count(*) AS n FROM job_field_overrides").fetchone()
+    assert stored["n"] == len(NORMALIZED_FIELDS)
+
+
+def test_the_override_check_still_refuses_a_column_that_is_not_normalized(
+    conn: sqlite3.Connection,
+) -> None:
+    """넓어진 것은 `normalized_jobs` 의 칸까지다. `source_url` 은 공고의 신원이라 못 고친다."""
     db.migrate_up(conn)
     _seed_raw_job(conn)
 
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute(
             "INSERT INTO job_field_overrides (raw_job_id, field_name, value) VALUES (1, ?, ?)",
-            ("work_location", "서울"),
+            ("source_url", "https://example.test/other"),
         )
+
+
+def test_the_override_migration_keeps_the_rows_it_did_not_add(conn: sqlite3.Connection) -> None:
+    """표를 다시 만드는 마이그레이션이다. 있던 보정이 id 까지 그대로 넘어와야 한다."""
+    db.migrate_up(conn)
+    db.migrate_down(conn, steps=1)
+    _seed_raw_job(conn)
+    conn.execute(
+        "INSERT INTO job_field_overrides (raw_job_id, field_name, value) VALUES (1, ?, ?)",
+        ("title", "사람이 고친 제목"),
+    )
+    before = conn.execute("SELECT id, created_at FROM job_field_overrides").fetchone()
+
+    db.migrate_up(conn)
+
+    after = conn.execute(
+        "SELECT id, field_name, value, created_at FROM job_field_overrides"
+    ).fetchall()
+    assert len(after) == 1
+    assert after[0]["id"] == before["id"]
+    assert after[0]["value"] == "사람이 고친 제목"
+    assert after[0]["created_at"] == before["created_at"]
+
+
+def test_the_override_down_drops_the_corrections_the_old_check_cannot_hold(
+    conn: sqlite3.Connection,
+) -> None:
+    """되돌리면 새 칸의 보정은 사라진다. 옛 CHECK 에 담을 자리가 없다."""
+    db.migrate_up(conn)
+    _seed_raw_job(conn)
+    conn.executemany(
+        "INSERT INTO job_field_overrides (raw_job_id, field_name, value) VALUES (1, ?, ?)",
+        [("title", "사람이 고친 제목"), ("work_location", "서울")],
+    )
+
+    db.migrate_down(conn, steps=1)
+
+    rows = conn.execute("SELECT field_name FROM job_field_overrides").fetchall()
+    assert [row["field_name"] for row in rows] == ["title"]
+    assert conn.execute("SELECT count(*) AS n FROM raw_jobs").fetchone()["n"] == 1

@@ -33,9 +33,21 @@ from fastapi.testclient import TestClient
 
 from app import db
 from app.api import crawlers as crawlers_api
+from app.api.review_filter import FIELD_LABELS
 from app.main import app
+from app.normalize.rules import NORMALIZED_FIELDS
 
 LIST_URL = "https://www.python.org/jobs/"
+
+# 0011 이 더한 열 칸. 이 파일이 세는 것은 옛 여섯 칸이라 새 칸은 값으로 채워 둔다
+SPLIT_COLUMNS: tuple[str, ...] = tuple(
+    name
+    for name in NORMALIZED_FIELDS
+    if name not in ("company", "title", "department", "deadline", "body", "requirements")
+)
+
+# 화면이 그 열 칸을 부르는 이름. 건수 표에 한 줄씩 나온다
+SPLIT_LABELS: tuple[str, ...] = tuple(FIELD_LABELS[name] for name in SPLIT_COLUMNS)
 
 # (raw_job_id, workflow_id, company, title, department, deadline, body, requirements)
 # 빈 값의 세 가지 모양을 섞는다. 화면에서는 셋이 구분되지 않는다
@@ -78,11 +90,14 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
             """,
             (raw_job_id, workflow_id, f"{LIST_URL}{raw_job_id}/", f"hash-{raw_job_id}"),
         )
+        # 0011 이 더한 열 칸은 전부 채워 둔다. 여기서 세는 것은 옛 여섯 칸의 빈 건수이고,
+        # 새 칸까지 비워 두면 다섯 행 모두가 `아무 필드나` 에 걸려 그 셈이 뜻을 잃는다
         connection.execute(
-            """
+            f"""
             INSERT INTO normalized_jobs (raw_job_id, company, title, department, deadline,
-                                         body, requirements, source_url)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                         body, requirements, source_url,
+                                         {", ".join(SPLIT_COLUMNS)})
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?{", ?" * len(SPLIT_COLUMNS)})
             """,
             (
                 raw_job_id,
@@ -93,6 +108,7 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
                 body,
                 requirements,
                 f"{LIST_URL}{raw_job_id}/",
+                *("있음" for _ in SPLIT_COLUMNS),
             ),
         )
     connection.commit()
@@ -138,6 +154,8 @@ def test_필드별_빈_건수가_직접_센_수와_같다(client: TestClient) ->
         "본문": 1,  # 4번 (공백뿐)
         "자격요건": 1,  # 5번
         "아무 필드나": 4,  # 2·3·4·5번
+        # 0011 이 더한 열 칸은 이 픽스처에서 다 채워져 있다
+        **dict.fromkeys(SPLIT_LABELS, 0),
     }
 
 
@@ -196,6 +214,7 @@ def test_나머지_조건은_건수에_걸린다(client: TestClient) -> None:
         "본문": 1,  # 4번
         "자격요건": 1,  # 5번
         "아무 필드나": 2,  # 4·5번
+        **dict.fromkeys(SPLIT_LABELS, 0),
     }
 
 

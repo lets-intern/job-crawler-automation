@@ -71,7 +71,16 @@ DEFAULT_PAGE_SIZE = 20
 PAGE_WINDOW = 2
 
 # 여러 줄로 들어오는 필드. 한 줄 입력으로 고치면 줄바꿈이 사라진다
-LONG_FIELDS: frozenset[str] = frozenset({"body", "requirements"})
+LONG_FIELDS: frozenset[str] = frozenset(
+    {
+        "body",
+        "requirements",
+        "duties",
+        "preferred",
+        "hiring_process",
+        "etc_info",
+    }
+)
 
 # 모달을 닫으라고 화면에 알리는 이벤트 이름. `base.html` 의 여닫는 스크립트가 이것을 듣는다
 MODAL_DONE_EVENT = "app-modal-done"
@@ -86,6 +95,16 @@ _BASE = """
            n.deadline      AS deadline,
            n.body          AS body,
            n.requirements  AS requirements,
+           n.start_date    AS start_date,
+           n.job_category  AS job_category,
+           n.employment_type AS employment_type,
+           n.career_level  AS career_level,
+           n.work_location AS work_location,
+           n.headcount     AS headcount,
+           n.duties        AS duties,
+           n.preferred     AS preferred,
+           n.hiring_process AS hiring_process,
+           n.etc_info      AS etc_info,
            n.source_url    AS source_url,
            n.normalized_at AS normalized_at,
            n.delivered_at  AS delivered_at,

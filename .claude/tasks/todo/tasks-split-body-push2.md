@@ -124,7 +124,7 @@ Push 1 이 칸을 확정하고 스키마를 만들었다. 이 Push 는 사이트
           여러 자리를 모을 수 없어, SK 마감 시간(`23:59`)처럼 본문 밖에 있는 값 몇 개는
           어느 칸에도 안 들어간다 — 레시피에 적었다
         - [x] 2.4.V 검증: 2.3.V 와 같은 파일이 HTML 사이트도 함께 본다
-    - [ ] 2.6 새 칸도 손보정할 수 있게 한다
+    - [x] 2.6 새 칸도 손보정할 수 있게 한다
         - `job_field_overrides.field_name` 의 CHECK 가 옛 여섯 칸에 묶여 있어 **새 칸 열 개는
           검수 화면에서 고칠 수 없다.** 자동으로 뽑은 값이 틀렸을 때 사람이 고칠 길이 없다
         - 그 컬럼이 `UNIQUE (raw_job_id, field_name)` 자동 인덱스에 걸려 있어 0009·0010 이 쓴
@@ -132,9 +132,31 @@ Push 1 이 칸을 확정하고 스키마를 만들었다. 이 Push 는 사이트
           컬럼을 지우지 못한다
         - **표를 다시 만든다.** 2026-08-26 확인 결과 이 표는 **0행**이라 옮길 데이터가 없다.
           마이그레이션 0012 로 새 CHECK 를 단 표를 만들고 인덱스를 다시 건다
-        - 되돌리는 법을 파일 주석에 적는다
-        - [ ] 2.6.V 검증: 마이그레이션 적용·역적용. 적용 뒤 새 칸 하나를 화면에서 고쳐 저장하고
-              재정규화해도 그 값이 살아남는지 확인 (보정은 규칙 다음에 덧씌워진다)
+        - `migrations/0012_override_new_columns.sql` — 새 CHECK 를 단 표를 만들고, 행을 id 째
+          옮기고, 옛 표를 지우고, 이름을 되돌린다. 되돌리는 법과 역적용 전에 새 칸 보정을
+          뽑아 두는 SELECT 를 파일 주석에 적었다
+        - `app/normalize/engine.py` 의 `OVERRIDABLE_FIELDS` 를 `NORMALIZED_FIELDS` 로 넓혔다.
+          코드만 넓히면 DB 가 거절하고 DB 만 넓히면 코드가 보정을 읽고 버린다
+        - 검수 화면이 새 칸을 그리게 했다. `app/api/review.py` 의 `_BASE` 가 옛 여섯 칸만
+          읽고 있어 넓힌 목록으로는 KeyError 가 났다. `FIELD_LABELS`·`EMPTY_NOTES` 에 새 칸의
+          이름과 "비어 있는 것이 정상일 수 있는 이유" 를 적고, 여러 줄로 들어오는 네 칸
+          (`duties`·`preferred`·`hiring_process`·`etc_info`)을 `LONG_FIELDS` 에 더했다
+        - **재정규화가 새 칸을 쓰지 못하고 있었다.** `app/normalize/backfill.py` 의 `_rewrite`
+          가 UPDATE 컬럼을 손으로 적어 옛 여섯 개만 쓰고 있었다 — 이대로면 새 칸은 재정규화로
+          영원히 NULL 이다. `insert_normalized` 와 같은 `NORMALIZED_FIELDS` 를 보게 고쳤다
+        - [x] 2.6.V 검증
+            - `tests/test_migrations.py` 64개 통과. 적용·역적용, 열여섯 칸이 다 들어가는지,
+              `source_url` 은 여전히 거절되는지, 표를 다시 만들어도 있던 보정이 id 째
+              넘어오는지, 역적용이 새 칸 보정만 떨어뜨리는지
+            - `tests/test_normalize_overrides.py` 9개 통과. 새 칸 보정이 재정규화 두 번을
+              넘겨도 살아남고, 열여섯 칸 전부 보정이 걸린다
+            - 운영 DB(포트 8000 컨테이너, `/data/jobs.db`)에 적용했다. 컨테이너는 내리지
+              않았다. 적용 전 `VACUUM INTO /data/jobs-before-0012-20260826.db`
+              (3,633,152바이트). 적용 시점 이 표는 0행이라 옮긴 데이터가 없다
+            - 화면 경로로 확인했다 — `PUT /ui/review/jobs/458` 로 `work_location` 을 고쳐
+              저장하고, `POST /api/rules/renormalize` 로 321건을 다시 정규화한 뒤에도 그
+              값이 남았다. 확인 후 같은 화면 경로로 보정을 지우고 다시 정규화해 규칙값(NULL)
+              으로 되돌렸다. `raw_jobs` 321건과 `delivered_at` 0건은 그대로다
 
     - [ ] 2.5 레시피에 매핑을 적는다
         - `.claude/site-recipes/` 열한 파일에 칸별 필드를 적는다

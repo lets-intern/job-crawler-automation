@@ -27,7 +27,7 @@ import pytest
 from app import db
 from app.crawler.runner import run_workflow
 from app.normalize.backfill import BackfillProgress, renormalize
-from app.normalize.engine import OPERATOR
+from app.normalize.engine import OPERATOR, OVERRIDABLE_FIELDS
 from tests.test_normalize_engine import raw_snapshot
 from tests.test_normalize_pipeline import (
     LIST_URL,
@@ -213,3 +213,34 @@ async def test_overrides_leave_raw_and_delivery_untouched(conn: sqlite3.Connecti
         for row in conn.execute("SELECT delivered_at FROM normalized_jobs ORDER BY id")
     ]
     assert delivered == [DELIVERED_AT, DELIVERED_AT]
+
+
+async def test_a_correction_on_a_new_column_survives_renormalization(
+    conn: sqlite3.Connection,
+) -> None:
+    """0012 가 넓힌 자리다. 새 칸도 사람이 고칠 수 있고 그 값이 살아남아야 한다.
+
+    보정은 규칙 다음에 덧씌워진다. 새 칸이 CHECK 에 막혀 있으면 저장 자체가 안 되고, 목록
+    (`OVERRIDABLE_FIELDS`)이 좁으면 저장은 되지만 정규화가 읽고 버린다.
+    """
+    await collect(conn)
+
+    set_override(conn, 1, "work_location", "사람이 정한 근무지")
+    run_renormalize(conn)
+    run_renormalize(conn)
+
+    assert normalized(conn, 1)["work_location"] == "사람이 정한 근무지"
+
+
+async def test_every_normalized_column_can_be_corrected(conn: sqlite3.Connection) -> None:
+    """열여섯 칸 전부다. 자동으로 뽑은 값이 틀렸을 때 고칠 길이 없는 칸을 남기지 않는다."""
+    await collect(conn)
+
+    for field in OVERRIDABLE_FIELDS:
+        set_override(conn, 1, field, f"{field} 를 사람이 고쳤다")
+    run_renormalize(conn)
+
+    row = normalized(conn, 1)
+    assert [row[field] for field in OVERRIDABLE_FIELDS] == [
+        f"{field} 를 사람이 고쳤다" for field in OVERRIDABLE_FIELDS
+    ]

@@ -102,18 +102,11 @@ COMPANY_SOURCE = "company_source"
 # 사람이 고칠 수 있는 필드. `job_field_overrides.field_name` 의 CHECK 제약과 같은 값이어야
 # 한다. `source_url` 은 공고의 신원이라 들어 있지 않다.
 #
-# 0011 이 더한 열 칸은 여기 없다. `NORMALIZED_FIELDS` 와 갈린 이유는 DB 쪽 사정이다 —
-# `job_field_overrides.field_name` 이 `UNIQUE (raw_job_id, field_name)` 인덱스에 걸려 있어
-# 0009·0010 이 쓴 CHECK 넓히기가 통하지 않는다. 목록을 여기서 늘리면 새 필드의 보정이 DB 에
-# 거절되고, 그 실패는 운영자가 검수 화면에서 저장을 누른 뒤에야 드러난다.
-OVERRIDABLE_FIELDS: tuple[str, ...] = (
-    "company",
-    "title",
-    "department",
-    "deadline",
-    "body",
-    "requirements",
-)
+# 0012 가 그 CHECK 를 열여섯 칸으로 넓혀서 `NORMALIZED_FIELDS` 와 같아졌다. 두 목록을 하나로
+# 합치지 않는 것은 뜻이 다르기 때문이다 — 이쪽은 "사람이 고쳐도 되는 칸" 이고, 언젠가
+# 고치면 안 되는 칸이 생기면 여기서만 빠진다. 늘릴 때는 마이그레이션과 같은 커밋에서 늘린다.
+# 코드만 넓히면 DB 가 거절하고, 그 실패는 운영자가 저장을 누른 뒤에야 드러난다.
+OVERRIDABLE_FIELDS: tuple[str, ...] = NORMALIZED_FIELDS
 
 
 class NormalizeError(RuntimeError):

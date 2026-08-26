@@ -45,7 +45,7 @@ from app.normalize.engine import (
     load_rules,
     normalized_values,
 )
-from app.normalize.rules import Rule
+from app.normalize.rules import NORMALIZED_FIELDS, Rule
 
 logger = logging.getLogger(__name__)
 
@@ -175,9 +175,13 @@ def renormalize(conn: sqlite3.Connection, progress: BackfillProgress) -> Backfil
 def _rewrite(conn: sqlite3.Connection, raw_job_id: int, rules: list[Rule]) -> None:
     """한 건을 다시 정규화한다. 행이 없으면 새로 넣는다.
 
-    UPDATE 가 적는 컬럼은 규칙이 만드는 여섯 개와 `company_source`, `normalized_at` 뿐이다.
+    UPDATE 가 적는 컬럼은 `NORMALIZED_FIELDS` 와 `company_source`, `normalized_at` 뿐이다.
     `delivered_at` 은 목록에 없고, 그래서 소비 측이 가져간 표시는 재정규화를 몇 번 돌려도
     그대로다.
+
+    컬럼 목록을 손으로 적지 않는다. `insert_normalized` 와 같은 상수를 봐야 최초 정규화와
+    재정규화가 같은 칸을 쓴다 — 0011 이 더한 열 칸이 여기 없어서, 재정규화로는 그 칸이
+    영원히 NULL 로 남고 있었다.
 
     운영자가 `crawlers.default_company` 를 고쳤으면 그 값이 이 경로로 반영된다. 회사명을
     파싱값으로 확정한 행은 운영자값을 고쳐도 같은 파싱값이 다시 이겨서 바뀌지 않는다.
@@ -186,23 +190,16 @@ def _rewrite(conn: sqlite3.Connection, raw_job_id: int, rules: list[Rule]) -> No
     않은 필드뿐이고, 그것이 검수가 살아남는 유일한 순서다.
     """
     _, fields = normalized_values(conn, raw_job_id, rules)
+    # 컬럼 이름은 이 모듈이 임포트한 상수에서만 온다. 밖에서 오는 값이 들어오지 않는다
+    columns = (*NORMALIZED_FIELDS, COMPANY_SOURCE)
     cursor = conn.execute(
-        """
+        f"""
         UPDATE normalized_jobs
-           SET company = ?, company_source = ?, title = ?, department = ?, deadline = ?,
-               body = ?, requirements = ?, normalized_at = datetime('now')
+           SET {", ".join(f"{name} = ?" for name in columns)},
+               normalized_at = datetime('now')
          WHERE raw_job_id = ?
         """,
-        (
-            fields["company"],
-            fields[COMPANY_SOURCE],
-            fields["title"],
-            fields["department"],
-            fields["deadline"],
-            fields["body"],
-            fields["requirements"],
-            raw_job_id,
-        ),
+        (*(fields[name] for name in columns), raw_job_id),
     )
     if cursor.rowcount == 0:
         # 적재는 됐는데 정규화에 실패했던 건이다. 규칙을 고친 뒤 이 경로로 복구된다
