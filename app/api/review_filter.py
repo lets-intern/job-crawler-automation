@@ -131,6 +131,42 @@ EMPTY_NOTES: dict[str, str] = {
     "etc_info": "기타 안내가 없는 공고는 빈다",
 }
 
+# 같은 공고가 두 번 들어왔는지 보는 기준. 무엇을 중복으로 볼지가 상황마다 달라 고르게 둔다.
+# 자동으로 지우지 않는다 — 삼성전자 DX부문과 삼성SDI가 각각 올린 `R&D분야 외국인 경력사원
+# 채용` 은 제목이 같아도 다른 공고다. 화면은 묶음을 보여주기만 하고 지우는 것은 사람이 고른다
+DUP_TITLE_COMPANY = "title_company"
+DUP_TITLE = "title"
+DUP_SOURCE_URL = "source_url"
+DUP_CRITERIA: tuple[str, ...] = (DUP_TITLE_COMPANY, DUP_TITLE, DUP_SOURCE_URL)
+DUP_LABELS: dict[str, str] = {
+    DUP_TITLE_COMPANY: "제목 + 회사",
+    DUP_TITLE: "제목",
+    DUP_SOURCE_URL: "원본 주소",
+}
+
+# 기준마다 무엇을 잡는지. 넓은 기준일수록 진짜 중복이 아닌 것이 섞인다는 것을 화면에 적는다
+DUP_NOTES: dict[str, str] = {
+    DUP_TITLE_COMPANY: "같은 회사가 같은 제목으로 두 번 올린 것. 가장 좁고 확실하다",
+    DUP_TITLE: "계열사가 나눠 올린 것까지 잡는다. 넓다 — 제목이 같아도 다른 공고일 수 있다",
+    DUP_SOURCE_URL: "같은 주소를 두 번 저장한 것. 중복 판정이 고장 났을 때만 걸린다",
+}
+
+# 묶음을 이루는 값에 붙일 이름. 표에 값만 늘어놓으면 무엇이 같아서 묶였는지 읽히지 않는다
+DUP_PART_LABELS: dict[str, tuple[str, ...]] = {
+    DUP_TITLE_COMPANY: ("제목", "회사"),
+    DUP_TITLE: ("제목",),
+    DUP_SOURCE_URL: ("원본 주소",),
+}
+
+# 묶음 목록에 몇 개까지 적을지. 번호는 전부에 매기고 표에 적는 것만 끊는다 —
+# 좁히지 않고 제목 기준을 고르면 묶음이 수백 개가 되어 표가 화면을 덮는다
+DUP_GROUP_PREVIEW = 20
+
+# 묶음 키를 이룰 값들을 잇는 글자. 제목·회사가 각각 `가/나` 와 `다` 일 때와 `가` 와 `나/다` 일
+# 때가 같은 키가 되지 않도록, 값에 들어갈 일이 없는 제어문자를 쓴다
+_DUP_SEPARATOR = "char(31)"
+_DUP_SEPARATOR_TEXT = "\x1f"
+
 # 지울 대상을 무엇으로 고른 것인지. "이 페이지의 20건" 과 "필터에 걸린 148건" 이 같은 단추
 # 뒤에 숨어 있으면 운영자는 20건인 줄 알고 148건을 지운다. 범위는 이름을 갖고, 화면은 그
 # 이름과 건수를 늘 함께 적는다
@@ -197,6 +233,7 @@ class JobFilter:
     crawled_to: str = ""
     normalized_from: str = ""
     normalized_to: str = ""
+    dup: str = ""
 
     def without_empty(self) -> JobFilter:
         """빈 값 조건만 뺀 같은 조건. 필드별 빈 건수를 세는 데 쓴다.
@@ -219,6 +256,7 @@ class JobFilter:
             "crawled_to": self.crawled_to,
             "normalized_from": self.normalized_from,
             "normalized_to": self.normalized_to,
+            "dup": self.dup,
         }
 
 
@@ -233,6 +271,7 @@ def read_filter(
     crawled_to: str = "",
     normalized_from: str = "",
     normalized_to: str = "",
+    dup: str = "",
 ) -> JobFilter:
     """화면이 보낸 값을 조건 한 벌로. 표에 없는 값은 조건을 걸지 않은 것으로 본다.
 
@@ -250,11 +289,27 @@ def read_filter(
         crawled_to=crawled_to.strip(),
         normalized_from=normalized_from.strip(),
         normalized_to=normalized_to.strip(),
+        dup=dup if dup in DUP_CRITERIA else "",
     )
 
 
 # 빈 값으로 볼 글자. 스페이스·탭·줄바꿈·캐리지리턴이다
 _BLANK_CHARS = "' ' || char(9) || char(10) || char(13)"
+
+
+def shown_value(field: str) -> str:
+    """그 필드가 화면에 보이는 값을 내는 SQL 조각. 보정이 있으면 사람이 정한 값이다.
+
+    빈 값 조건과 중복 조건이 같은 값을 본다. 한쪽이 규칙값만 보면, 사람이 회사명을 고쳐
+    두 건이 같은 회사가 된 뒤에도 중복으로 걸리지 않는다.
+
+    필드 이름은 이 파일의 `FIELD_LABELS` 에 있는 값만 들어온다 — 화면에서 온 문자열을 그대로
+    SQL 에 넣지 않는다.
+    """
+    return (
+        "COALESCE((SELECT o.value FROM job_field_overrides o"
+        f" WHERE o.raw_job_id = n.raw_job_id AND o.field_name = '{field}'), n.{field})"
+    )
 
 
 def empty_condition(field: str) -> str:
@@ -271,11 +326,32 @@ def empty_condition(field: str) -> str:
     필드 이름은 이 파일의 `FIELD_LABELS` 에 있는 값만 들어온다 — 화면에서 온 문자열을 그대로
     SQL 에 넣지 않는다.
     """
-    return (
-        "TRIM(COALESCE((SELECT o.value FROM job_field_overrides o"
-        f" WHERE o.raw_job_id = n.raw_job_id AND o.field_name = '{field}'),"
-        f" n.{field}, ''), {_BLANK_CHARS}) = ''"
-    )
+    return f"TRIM(COALESCE({shown_value(field)}, ''), {_BLANK_CHARS}) = ''"
+
+
+def _dup_parts(kind: str) -> tuple[str, ...]:
+    """그 기준이 무엇을 같다고 보는지, SQL 조각으로.
+
+    제목과 회사는 화면에 보이는 값(`shown_value`)을 본다. 원본 주소는 사람이 고칠 수 없는
+    값이라 저장된 컬럼을 그대로 쓴다.
+    """
+    if kind == DUP_TITLE_COMPANY:
+        return (shown_value("title"), shown_value("company"))
+    if kind == DUP_TITLE:
+        return (shown_value("title"),)
+    return ("n.source_url",)
+
+
+def _dup_key(kind: str) -> tuple[str, str]:
+    """묶음 키와, 그 키를 믿어도 되는지 판정하는 조건.
+
+    빈 값끼리는 묶지 않는다. 제목이 빈 40건이 한 묶음이 되면 `중복 40건` 이라고 적히는데,
+    그것은 중복이 아니라 셀렉터가 놓친 것이고 빈 값 조건이 이미 세고 있는 수다.
+    """
+    parts = _dup_parts(kind)
+    key = f" || {_DUP_SEPARATOR} || ".join(f"TRIM({part}, {_BLANK_CHARS})" for part in parts)
+    usable = " AND ".join(f"TRIM(COALESCE({part}, ''), {_BLANK_CHARS}) <> ''" for part in parts)
+    return key, usable
 
 
 def _empty_clause(picked: str) -> str:
@@ -334,6 +410,21 @@ def filter_sql(picked: JobFilter) -> tuple[str, list[Any]]:
             clauses.append(f"{column} < ?")
             params.append(upper)
 
+    # 중복은 나머지 조건 안에서 센다. `SK 안에서만 중복 찾기` 가 실제 쓰임이라, 전체에서 센
+    # 묶음을 나중에 좁히면 짝을 잃은 한 건만 남아 중복이 아닌 것이 중복으로 보인다.
+    # 여분만이 아니라 묶음 전체가 걸린다 — 짝을 봐야 어느 쪽을 지울지 정할 수 있다
+    if picked.dup in DUP_CRITERIA:
+        key, usable = _dup_key(picked.dup)
+        inner = " WHERE " + " AND ".join([*clauses, usable])
+        # 안쪽 질의가 바깥과 같은 조건을 그대로 쓴다. 바인딩도 같은 순서로 한 벌 더 간다
+        params = [*params, *params]
+        clauses.append(usable)
+        clauses.append(
+            f"({key}) IN (SELECT {key} FROM normalized_jobs n"
+            f" JOIN raw_jobs r ON r.id = n.raw_job_id{inner}"
+            " GROUP BY 1 HAVING count(*) > 1)"
+        )
+
     where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
     return where, params
 
@@ -354,11 +445,63 @@ def count(conn: sqlite3.Connection, picked: JobFilter) -> int:
     return _count(conn, where, params)
 
 
-def order_clause(sort: str, order: str) -> str:
-    """정렬 한 줄. 표 밖의 값이 오면 기본 정렬로 되돌린다."""
+def order_clause(sort: str, order: str, dup: str = "") -> str:
+    """정렬 한 줄. 표 밖의 값이 오면 기본 정렬로 되돌린다.
+
+    중복 조건이 걸리면 묶음이 앞자리다. 여분 15건을 고른 정렬로 흩어 놓으면 어느 것과 어느
+    것이 짝인지 표에서 읽을 수 없고, 페이지를 넘기면 짝이 다른 페이지로 갈라진다.
+    큰 묶음이 먼저 온다 — 일곱 건짜리가 두 건짜리보다 먼저 판단해야 하는 것이다.
+    """
     columns = SORTS.get(sort) or SORTS[DEFAULT_SORT]
     direction = ORDERS.get(order, "DESC")
-    return " ORDER BY " + ", ".join(f"{column} {direction}" for column in columns)
+    ordered = [f"{column} {direction}" for column in columns]
+    if dup in DUP_CRITERIA:
+        ordered = ["dup_size DESC", "dup_key ASC", *ordered]
+    return " ORDER BY " + ", ".join(ordered)
+
+
+def dup_columns(dup: str) -> str:
+    """중복 조건이 걸렸을 때만 목록 질의에 붙는 두 칸.
+
+    묶음 키와 그 묶음의 건수다. 건수는 조건에 걸린 전체에서 세므로 (창 함수는 `LIMIT` 전에
+    계산된다) 한 페이지에 세 건만 보여도 `5건 묶음` 이라고 적힌다.
+    """
+    if dup not in DUP_CRITERIA:
+        return ""
+    key, _ = _dup_key(dup)
+    return f", ({key}) AS dup_key, count(*) OVER (PARTITION BY {key}) AS dup_size"
+
+
+def dup_groups(conn: sqlite3.Connection, picked: JobFilter) -> list[dict[str, Any]]:
+    """지금 조건에 걸린 묶음 목록. 큰 묶음이 먼저다.
+
+    번호는 표의 행에도 같은 값이 적힌다. 목록 질의와 같은 순서로 매기므로 페이지를 넘겨도
+    `3번 묶음` 은 계속 같은 묶음이다.
+    """
+    if picked.dup not in DUP_CRITERIA:
+        return []
+    where, params = filter_sql(picked)
+    key, _ = _dup_key(picked.dup)
+    rows = conn.execute(
+        f"SELECT ({key}) AS dup_key, count(*) AS size FROM normalized_jobs n"
+        f" JOIN raw_jobs r ON r.id = n.raw_job_id{where}"
+        " GROUP BY 1 ORDER BY size DESC, dup_key ASC",
+        params,
+    ).fetchall()
+    labels = DUP_PART_LABELS[picked.dup]
+    found: list[dict[str, Any]] = []
+    for number, row in enumerate(rows, start=1):
+        text = str(row["dup_key"])
+        values = text.split(_DUP_SEPARATOR_TEXT)
+        found.append(
+            {
+                "number": number,
+                "key": text,
+                "parts": list(zip(labels, values, strict=False)),
+                "count": int(row["size"]),
+            }
+        )
+    return found
 
 
 def empty_counts(conn: sqlite3.Connection, picked: JobFilter) -> list[dict[str, Any]]:
@@ -473,6 +616,7 @@ def _describe(conn: sqlite3.Connection, picked: JobFilter, scope: str) -> str:
             f"진행 여부 {DEADLINE_STATES.get(picked.status, '전체')}",
             f"전달 여부 {DELIVERY_STATES.get(picked.delivered, '전체')}",
             f"빈 값 {EMPTY_LABELS.get(picked.empty, '안 걸림')}",
+            f"중복 {DUP_LABELS.get(picked.dup, '안 걸림')}",
             f"수집 {span(picked.crawled_from, picked.crawled_to)}",
             f"정규화 {span(picked.normalized_from, picked.normalized_to)}",
             f"검색어 {picked.query or '없음'}",
@@ -594,6 +738,7 @@ async def _delete_request(request: Request) -> tuple[str, list[int], JobFilter]:
                 "crawled_to",
                 "normalized_from",
                 "normalized_to",
+                "dup",
             )
         }
     )
