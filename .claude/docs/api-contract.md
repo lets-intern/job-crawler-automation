@@ -53,6 +53,16 @@ GET /api/jobs?updated_after=<ISO8601>&limit=100&cursor=<opaque>
       "deadline": "2026-09-30",
       "body": "본문",
       "requirements": "자격요건",
+      "start_date": "2026-09-01",
+      "job_category": "연구/개발",
+      "employment_type": "정규직",
+      "career_level": "신입",
+      "work_location": "경기 수원시",
+      "headcount": "0명",
+      "duties": "주요 업무",
+      "preferred": "우대 조건",
+      "hiring_process": "전형 절차",
+      "etc_info": "기타",
       "source_url": "https://...",
       "normalized_at": "2026-08-21T10:00:00Z"
     }
@@ -61,6 +71,30 @@ GET /api/jobs?updated_after=<ISO8601>&limit=100&cursor=<opaque>
   "has_more": true
 }
 ```
+
+`start_date` 부터 `etc_info` 까지 열 개는 나중에 더한 필드다. **더하는 방향이고 기존 필드는
+그대로 둔다** — 소비 측이 읽던 것이 사라지지 않는다. 특히 `deadline` 은 모집 마감일 그대로이고
+`start_date` 가 그 짝이다. `deadline` 의 뜻은 바뀌지 않았다.
+
+| 필드 | 뜻 |
+|---|---|
+| start_date | 모집 시작일 |
+| job_category | 직군 |
+| employment_type | 고용형태. 정규직 / 인턴 / 기간제 |
+| career_level | 경력 구분. 신입 / 경력 |
+| work_location | 근무지 |
+| headcount | 모집인원 |
+| duties | 주요 업무 |
+| preferred | 우대 조건 |
+| hiring_process | 전형 절차 |
+| etc_info | 기타 |
+
+**사이트가 그 값을 주지 않으면 `null` 이다.** 없는 값을 다른 값으로 채우지 않는다. 빈 값은
+"이 사이트는 이 값을 주지 않는다" 는 사실이고, 소비 측은 그 필드를 그리지 않으면 된다.
+어느 사이트가 어느 필드를 주는지는 `.claude/tasks/todo/tasks-split-body-push1.md` 의 표에 있다.
+
+기존 여섯 필드 중에서도 `department` 는 대부분의 사이트가 주지 않아 `null` 인 경우가 많다.
+`title`·`company`·`deadline`·`body`·`source_url` 은 채워진다.
 
 커서 기반이다. 소비 측이 한 번 폴링을 걸러도 다음에 이어서 받는다. 오프셋 기반이면 그 사이 삽입된
 행 때문에 건너뛰는 건이 생긴다.

@@ -60,6 +60,12 @@ script, style, 주석은 이미 걷어냈고 반복되는 목록 항목은 앞�
 - detail.title 과 detail.body 는 반드시 채운다.
 - detail.requirements, detail.deadline, detail.department 는 페이지에 해당 항목이 없으면
   빈 문자열로 둔다. 아무 요소나 억지로 고르지 않는다.
+- detail.start_date(모집 시작일), detail.job_category(직군), detail.employment_type(정규직
+  /인턴/기간제), detail.career_level(신입/경력), detail.work_location(근무지),
+  detail.headcount(모집인원), detail.duties(주요 업무), detail.preferred(우대 조건),
+  detail.hiring_process(전형 절차), detail.etc_info(기타) 도 같다. **그 값만 따로 담은
+  요소가 있을 때만** 채우고, 본문 안에 문장으로 섞여 있을 뿐이면 빈 문자열로 둔다.
+  본문 전체를 가리키는 셀렉터를 이 자리에 넣지 않는다 — 그러면 같은 본문이 칸마다 반복된다.
 - list.date 도 마찬가지다. 항목 안에 게시일이나 모집 기간이 보이지 않으면 빈 문자열로 둔다.
   날짜가 아닌 값을 날짜 자리에 넣지 않는다.
 - 클래스명이 `css-1d3w5wq` 처럼 자동 생성된 해시로 보이면 고르지 않는다. 그런 이름은 페이지나

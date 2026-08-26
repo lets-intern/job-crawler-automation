@@ -60,6 +60,7 @@ from app.notify.message import NewJob
 from app.notify.new_jobs import notify_new_jobs
 from app.selector.api_schema import ApiConfigError, parse_api_config
 from app.selector.schema import (
+    SPLIT_DETAIL_FIELDS,
     DetailSelectors,
     ListSelectors,
     SelectorSchemaError,
@@ -562,6 +563,10 @@ def _record(item: ListItem, detail: dict[str, str]) -> dict[str, str]:
 
     상세가 없는 사이트에서는 `title` 과 `deadline` 이 목록에서 온다. 상세를 따라가지 않으니
     그쪽에서 올 값이 없고, 목록에 있는 것을 두고 빈 칸으로 남기면 공고를 알아볼 수 없다.
+
+    `SPLIT_DETAIL_FIELDS` 의 열 칸은 상세에서 온 값을 그대로 싣는다. 목록에서 대신 채우지
+    않는다 — 사이트가 그 값을 주지 않으면 빈 칸이고, 빈 칸이 틀린 값보다 낫다
+    (`.claude/tasks/todo/prd-split-body.md`).
     """
     return {
         "source_url": item.link,
@@ -571,6 +576,7 @@ def _record(item: ListItem, detail: dict[str, str]) -> dict[str, str]:
         "deadline": detail["deadline"] or item.date,
         "department": detail["department"],
         "company": detail["company"] or item.company,
+        **{name: detail.get(name, "") for name in SPLIT_DETAIL_FIELDS},
         "list_title": item.title,
         "list_date": item.date,
     }

@@ -29,7 +29,7 @@ from app.normalize.engine import (
     load_rules,
     normalize_fields,
 )
-from app.normalize.rules import build_rule
+from app.normalize.rules import NORMALIZED_FIELDS, build_rule
 from app.selector.schema import DetailSelectors
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
@@ -93,16 +93,14 @@ def raw_snapshot(conn: sqlite3.Connection) -> str:
 
 
 def test_trim_collapses_whitespace() -> None:
+    """값이 있는 필드만 채워진다. 나머지는 규칙을 태우지 않고 None 이다."""
     rule = build_rule("title", "trim", {})
-    assert normalize_fields({"title": "  파이썬  \n  백엔드 개발자 "}, [rule]) == {
-        "company": None,
-        "title": "파이썬 백엔드 개발자",
-        "department": None,
-        "deadline": None,
-        "body": None,
-        "requirements": None,
-        "company_source": None,
-    }
+
+    fields = normalize_fields({"title": "  파이썬  \n  백엔드 개발자 "}, [rule])
+
+    assert set(fields) == {*NORMALIZED_FIELDS, "company_source"}
+    assert fields["title"] == "파이썬 백엔드 개발자"
+    assert [name for name, value in fields.items() if value is not None] == ["title"]
 
 
 def test_trim_with_strip_chars() -> None:

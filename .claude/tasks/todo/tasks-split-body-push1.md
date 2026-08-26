@@ -2,7 +2,7 @@
 
 > PRD: `.claude/tasks/todo/prd-split-body.md`
 > Push 범위: 열한 사이트 응답을 대조해 칸을 확정하고 스키마를 만든다
-> 상태: 진행 중
+> 상태: 완료
 
 ## 배경 (PRD 를 안 봐도 되도록)
 
@@ -41,7 +41,7 @@
 
 ## 작업
 
-- [ ] 1.0 칸을 확정하고 스키마를 만든다
+- [x] 1.0 칸을 확정하고 스키마를 만든다
     - [x] 1.1 새 다섯 사이트의 상세 응답을 받아 픽스처로 둔다
         - 두산(31)·네이버(32)·토스(33)·카카오(30)·우아한형제들(29). 크롤러 설정의
           `detail_url` 을 그대로 열었다
@@ -85,11 +85,39 @@
             - 적용 전후로 321건의 기존 여섯 칸 + `source_url` + `normalized_at` +
               `delivered_at` 이 같은 값이다 (sha256 `42a40126...971f1` 동일)
             - 새 칸 열 개는 321건 전부 NULL 이다
-    - [ ] 1.4 새 칸을 파이프라인이 나른다
-        - `_record()`, 정규화 엔진, 제공 API 응답 모델이 새 칸을 안다
-        - 셀렉터·API 설정 스키마가 새 필드 이름을 받는다
-        - **값이 없으면 빈 칸이다.** 없는 값을 다른 값으로 채우지 않는다
-        - [ ] 1.4.V 검증: 픽스처 기반 pytest — 새 칸이 응답에 있으면 채워지고 없으면 비는지
+    - [x] 1.4 새 칸을 파이프라인이 나른다
+        - `app/selector/schema.py` — `DetailSelectors` 에 열 필드를 더하고 그 이름을
+          `SPLIT_DETAIL_FIELDS` 로 묶었다. 전부 기본값이 있어서 이 필드들이 생기기 전에
+          저장된 셀렉터 JSON 이 키 없이도 그대로 통과한다(`OMITTABLE_FIELDS`), 값이 비어도
+          실패가 아니다(`OPTIONAL_DETAIL_FIELDS`)
+        - `app/selector/api_schema.py` — 상세 `fields` 를 `DETAIL_FIELDS` 로 검증하므로
+          새 이름을 그대로 받는다. 고칠 것이 없었다
+        - `app/crawler/parser.py`, `app/crawler/api_source.py` — 둘 다 `DETAIL_FIELDS` 를
+          훑어 읽으므로 고칠 것이 없었다
+        - `app/crawler/runner.py` 의 `_record()` — 상세에서 읽은 값을 그대로 싣는다.
+          목록에서 대신 채우지 않는다
+        - `app/normalize/rules.py` 의 `NORMALIZED_FIELDS` — 열 칸을 더했다. 규칙 화면의
+          필드 목록이 이 값을 읽으므로 새 칸에도 규칙을 걸 수 있다
+        - `app/normalize/engine.py` — `insert_normalized()` 가 `NORMALIZED_FIELDS` 에서
+          INSERT 문을 만든다. 손으로 적은 목록을 두면 칸이 늘 때마다 둘이 갈린다
+        - `app/normalize/engine.py` 의 `OVERRIDABLE_FIELDS` — 여섯 개로 고정했다. 늘리면
+          DB 의 CHECK 가 거절하고, 그 실패는 운영자가 저장을 누른 뒤에야 드러난다
+        - `app/api/jobs.py` — `JobOut` 과 `_SELECT` 에 열 필드. **더하는 방향이고 기존
+          필드는 그대로다.** `.claude/docs/api-contract.md` 를 같은 커밋에서 고쳤다
+        - `app/selector/generator.py` — 프롬프트에 새 필드를 적었다. **그 값만 따로 담은
+          요소가 있을 때만** 채우고 본문 전체를 가리키지 말라고 못 박았다
+        - [x] 1.4.V 검증
+            - `tests/test_split_body_pipeline.py` 5개 통과. 두산 목록·상세 픽스처로
+              워크플로우를 1회 돌려 `raw_jobs` 와 `normalized_jobs` 를 본다. 두산이 주는
+              칸(`job_category`·`work_location`·`headcount`·`duties`·`hiring_process`·
+              `etc_info`·`start_date`)은 채워지고, 주지 않는 칸(`department`·
+              `employment_type`·`career_level`·`preferred`)은 수집에서 빈 문자열,
+              정규화에서 NULL 이다
+            - `tests/test_api_jobs.py` 에 소비 측 경계 시험을 더했다. 채워진 칸은 값
+              그대로, 주지 않은 칸은 `null` 로 나간다
+            - 전체 `pytest -m "not live"` 1,172개 통과. `import app.main` 성공
+            - 포트 8000 운영 인스턴스가 새 필드를 실어 응답한다(열 개 전부 `null` —
+              매핑은 Push 2 다). `GET /api/jobs` 만 불렀고 `delivered_at` 은 여전히 0건이다
 
 ## 확정한 표 (1.2 결과)
 

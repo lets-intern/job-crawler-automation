@@ -50,6 +50,10 @@ from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 # 규칙이 값을 바꿀 수 있는 컬럼. `normalized_jobs` 에서 규칙이 만드는 것만 골라 적었다.
 # `source_url`, `raw_job_id`, `normalized_at` 은 파이프라인이 채우고, `delivered_at` 은
 # 제공 API 만 쓴다 (`.claude/rules/data-safety.md`).
+#
+# 뒤의 열 개는 0011 이 더한 칸이다. 사이트가 이미 나눠서 주는 값을 도로 합치지 않으려고
+# 늘렸고, 넷 이상의 사이트가 주는 것만 골랐다
+# (`migrations/0011_split_body_columns.sql`, `tests/test_split_body_columns.py`).
 NORMALIZED_FIELDS: tuple[str, ...] = (
     "company",
     "title",
@@ -57,6 +61,16 @@ NORMALIZED_FIELDS: tuple[str, ...] = (
     "deadline",
     "body",
     "requirements",
+    "start_date",
+    "job_category",
+    "employment_type",
+    "career_level",
+    "work_location",
+    "headcount",
+    "duties",
+    "preferred",
+    "hiring_process",
+    "etc_info",
 )
 
 # `normalization_rules.rule_type` 의 CHECK 제약과 같은 값이어야 한다.

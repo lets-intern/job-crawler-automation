@@ -99,9 +99,21 @@ OPERATOR = "operator"
 # 규칙이 만드는 필드가 아니라 해결 단계가 정하는 값이다. `NORMALIZED_FIELDS` 에 넣지 않는다.
 COMPANY_SOURCE = "company_source"
 
-# 사람이 고칠 수 있는 필드. `job_field_overrides.field_name` 의 CHECK 제약과 같은 값이어야 한다.
-# 규칙이 만드는 필드와 같은 여섯 개다. `source_url` 은 공고의 신원이라 들어 있지 않다.
-OVERRIDABLE_FIELDS: tuple[str, ...] = NORMALIZED_FIELDS
+# 사람이 고칠 수 있는 필드. `job_field_overrides.field_name` 의 CHECK 제약과 같은 값이어야
+# 한다. `source_url` 은 공고의 신원이라 들어 있지 않다.
+#
+# 0011 이 더한 열 칸은 여기 없다. `NORMALIZED_FIELDS` 와 갈린 이유는 DB 쪽 사정이다 —
+# `job_field_overrides.field_name` 이 `UNIQUE (raw_job_id, field_name)` 인덱스에 걸려 있어
+# 0009·0010 이 쓴 CHECK 넓히기가 통하지 않는다. 목록을 여기서 늘리면 새 필드의 보정이 DB 에
+# 거절되고, 그 실패는 운영자가 검수 화면에서 저장을 누른 뒤에야 드러난다.
+OVERRIDABLE_FIELDS: tuple[str, ...] = (
+    "company",
+    "title",
+    "department",
+    "deadline",
+    "body",
+    "requirements",
+)
 
 
 class NormalizeError(RuntimeError):
@@ -280,24 +292,17 @@ def insert_normalized(conn: sqlite3.Connection, raw_job_id: int, rules: Sequence
     `delivered_at` 은 쓰지 않는다. 제공 API 경로만 쓴다 (`.claude/rules/data-safety.md`).
     """
     source_url, fields = normalized_values(conn, raw_job_id, rules)
+    # 컬럼 이름은 이 모듈의 상수에서만 온다. 밖에서 오는 값이 들어오지 않는다. 손으로 적은
+    # 목록을 두면 칸이 늘 때마다 여기와 `NORMALIZED_FIELDS` 가 갈리고, 갈린 순간 새 칸은
+    # 조용히 NULL 로만 남는다
+    columns = (*NORMALIZED_FIELDS, COMPANY_SOURCE)
     cursor = conn.execute(
-        """
+        f"""
         INSERT INTO normalized_jobs
-               (raw_job_id, company, company_source, title, department, deadline, body,
-                requirements, source_url)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+               (raw_job_id, source_url, {", ".join(columns)})
+        VALUES (?, ?, {", ".join("?" for _ in columns)})
         """,
-        (
-            raw_job_id,
-            fields["company"],
-            fields[COMPANY_SOURCE],
-            fields["title"],
-            fields["department"],
-            fields["deadline"],
-            fields["body"],
-            fields["requirements"],
-            source_url,
-        ),
+        (raw_job_id, source_url, *(fields[name] for name in columns)),
     )
     return int(cursor.lastrowid or 0)
 

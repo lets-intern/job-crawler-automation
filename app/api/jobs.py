@@ -37,13 +37,21 @@ STORED_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 _SELECT = """
     SELECT id, company, title, department, deadline, body, requirements,
+           start_date, job_category, employment_type, career_level, work_location,
+           headcount, duties, preferred, hiring_process, etc_info,
            source_url, normalized_at
       FROM normalized_jobs
 """
 
 
 class JobOut(BaseModel):
-    """계약의 `items` 한 건. 필드 이름과 순서는 문서를 그대로 따른다."""
+    """계약의 `items` 한 건. 필드 이름과 순서는 문서를 그대로 따른다.
+
+    `start_date` 아래 열 개는 0011 이 더한 칸이다. **더하는 방향이라 기존 필드는 그대로다** —
+    소비 측이 읽던 것이 사라지지 않는다 (`.claude/docs/api-contract.md`).
+
+    사이트가 그 값을 주지 않으면 `null` 이다. 없는 값을 다른 값으로 채우지 않는다.
+    """
 
     id: int
     company: str | None
@@ -52,6 +60,17 @@ class JobOut(BaseModel):
     deadline: str | None
     body: str | None
     requirements: str | None
+    # 모집 시작일. `deadline`(모집 마감일)의 짝이고 그 필드를 대신하지 않는다
+    start_date: str | None
+    job_category: str | None
+    employment_type: str | None
+    career_level: str | None
+    work_location: str | None
+    headcount: str | None
+    duties: str | None
+    preferred: str | None
+    hiring_process: str | None
+    etc_info: str | None
     source_url: str
     normalized_at: str
 
@@ -144,6 +163,16 @@ def _out(row: sqlite3.Row) -> JobOut:
         deadline=row["deadline"],
         body=row["body"],
         requirements=row["requirements"],
+        start_date=row["start_date"],
+        job_category=row["job_category"],
+        employment_type=row["employment_type"],
+        career_level=row["career_level"],
+        work_location=row["work_location"],
+        headcount=row["headcount"],
+        duties=row["duties"],
+        preferred=row["preferred"],
+        hiring_process=row["hiring_process"],
+        etc_info=row["etc_info"],
         source_url=str(row["source_url"]),
         normalized_at=_iso(str(row["normalized_at"])),
     )

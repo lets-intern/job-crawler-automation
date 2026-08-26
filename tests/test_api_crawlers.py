@@ -22,7 +22,7 @@ from app.main import app
 from app.selector.detail_path import document_path
 from app.selector.discovery import Discovery
 from app.selector.generator import GenerationResult, SelectorGenerationError, Usage
-from app.selector.schema import SelectorSet, validate_selectors
+from app.selector.schema import SPLIT_DETAIL_FIELDS, SelectorSet, validate_selectors
 from app.selector.verify import verify_selectors
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
@@ -65,6 +65,8 @@ def stored(payload: dict[str, Any]) -> dict[str, Any]:
     filled["list"].setdefault("company", "")
     filled["list"].setdefault("link_template", "")
     filled["detail"].setdefault("company", "")
+    for name in SPLIT_DETAIL_FIELDS:
+        filled["detail"].setdefault(name, "")
     return filled
 
 
