@@ -23,8 +23,8 @@ from app.classify.batch import (
     classify_pending,
     remaining,
 )
-from app.classify.schema import CLASSIFY_FIELDS
-from app.classify.store import pending_ids, read_classification
+from app.classify.schema import RESPONSE_FIELDS
+from app.classify.store import pending_ids, read_classification, read_evidence
 from app.config import Settings
 from tests.test_selector_generator import FakeClient
 
@@ -39,13 +39,17 @@ def settings_with_key() -> Settings:
 
 
 def response(**fields: str) -> str:
-    return json.dumps({name: fields.get(name, "") for name in CLASSIFY_FIELDS})
+    return json.dumps({name: fields.get(name, "") for name in RESPONSE_FIELDS})
 
 
 GOOD = response(
-    employment_type="정규직",
     duties="제휴사 데이터 연동 구조 기획",
     requirements="관련 경험 5년 이상이신 분",
+    # 판정 칸은 목록에서 고르고 근거 문장이 본문에 있어야 산다
+    employment_type="정규직",
+    employment_type_evidence="◆ 직원 유형",
+    career_level="경력",
+    career_level_evidence="관련 경험 5년 이상이신 분",
 )
 
 
@@ -108,7 +112,10 @@ async def test_it_classifies_the_postings_that_have_a_body(conn: sqlite3.Connect
     assert progress.failed == 0
     stored = read_classification(conn, 1)
     assert stored["employment_type"] == "정규직"
+    assert stored["career_level"] == "경력"
     assert stored["duties"] == "제휴사 데이터 연동 구조 기획"
+    # 판정 칸을 그렇게 고른 근거가 남아 있어야 나중에 왜 그랬는지 답할 수 있다
+    assert read_evidence(conn, 1)["career_level"] == "관련 경험 5년 이상이신 분"
 
 
 async def test_an_already_classified_posting_is_not_run_again(conn: sqlite3.Connection) -> None:
@@ -265,7 +272,7 @@ async def test_only_the_ids_it_was_given_are_classified(conn: sqlite3.Connection
 
     assert progress.processed == 1
     assert read_classification(conn, 1) == {}
-    assert read_classification(conn, 2)["employment_type"] == "정규직"
+    assert read_classification(conn, 2)["duties"] == "제휴사 데이터 연동 구조 기획"
 
 
 def test_the_classification_survives_a_renormalization(conn: sqlite3.Connection) -> None:

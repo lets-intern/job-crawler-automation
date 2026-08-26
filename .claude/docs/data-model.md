@@ -218,7 +218,8 @@ append-only 인 `raw_jobs` 에 매달아야 몇 번을 다시 정규화해도 �
 | raw_job_id | 어느 수집 건의 분류인지. `normalized_jobs.id` 가 아니다. 유일하다 |
 | job_category, work_location, career_level, employment_type, headcount | |
 | duties, preferred, hiring_process, requirements, department, etc_info | |
-| dropped_fields | 모델이 냈지만 본문에서 찾지 못해 버린 칸 이름. 쉼표로 잇는다 |
+| dropped_fields | 모델이 냈지만 근거가 없어 버린 칸 이름. 쉼표로 잇는다 |
+| evidence_json | 판정 칸을 그렇게 고른 근거 문장. `{"career_level": "본문 문장"}` |
 | model | 그때의 모델 ID |
 | classified_at | |
 
@@ -237,6 +238,20 @@ append-only 인 `raw_jobs` 에 매달아야 몇 번을 다시 정규화해도 �
 
 **분류하지 못한 공고는 행이 없다.** 빈 행을 넣으면 "분류했는데 아무것도 안 나왔다" 와 "아직
 분류하지 않았다" 가 같은 모양이 되고, 다음 실행이 어느 쪽을 다시 돌아야 할지 모른다.
+
+칸이 두 가지다. **뽑는 칸** 여덟(`duties` `requirements` `preferred` `hiring_process`
+`work_location` `headcount` `department` `etc_info`)은 본문 글자를 그대로 옮기고, 값이
+본문에 없으면 버린다. **판정 칸** 셋(`job_category` `employment_type` `career_level`)은
+본문을 읽고 닫힌 목록에서 고른다 — `백엔드 개발자 채용` 어디에도 "직군: 개발" 이라고 적혀
+있지 않아서 글자 일치를 요구하면 이 셋은 영원히 빈다.
+
+판정 칸의 목록은 응답 스키마의 enum 이 강제하고, 목록과 그 근거는
+`.claude/tasks/todo/tasks-llm-classify.md` 에 있다. 목록을 정하지 않으면 같은 일이 사이트마다
+다른 이름으로 쌓인다 — 이 표가 생기기 전 640건에 `Permanent` 71건과 `정규직` 7건과 `정규`
+3건이 따로 있었다.
+
+판정 칸에는 근거 문장이 따라온다. 그 문장이 본문에 없으면 읽고 고른 것이 아니라 지어낸
+것이라 판정을 버린다.
 
 `dropped_fields` 는 셈을 위한 것이다. 모델이 무엇을 얼마나 지어내는지는 세어 봐야 알고,
 세지 않으면 프롬프트를 고쳐도 나아졌는지 말할 수 없다. 값이 본문에 있는지 보는 잣대는

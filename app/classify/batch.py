@@ -204,6 +204,7 @@ async def classify_ids(
             result.fields,
             model=result.usage.model,
             dropped=result.dropped,
+            evidence=result.evidence,
         )
         progress.dropped += len(result.dropped)
         try:

@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Mapping, Sequence
 
@@ -81,6 +82,20 @@ def read_classification(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, 
     return {name: str(row[name] or "") for name in CLASSIFY_FIELDS}
 
 
+def read_evidence(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, str]:
+    """판정 칸의 근거 문장. 아직 분류되지 않았거나 판정이 없으면 빈 dict 다. 읽기 전용이다."""
+    row = conn.execute(
+        "SELECT evidence_json FROM job_classifications WHERE raw_job_id = ?", (raw_job_id,)
+    ).fetchone()
+    if row is None:
+        return {}
+    try:
+        parsed = json.loads(row["evidence_json"] or "{}")
+    except json.JSONDecodeError:
+        return {}
+    return {str(k): str(v) for k, v in parsed.items()} if isinstance(parsed, dict) else {}
+
+
 def save_classification(
     conn: sqlite3.Connection,
     raw_job_id: int,
@@ -88,16 +103,21 @@ def save_classification(
     *,
     model: str,
     dropped: Sequence[str] = (),
+    evidence: Mapping[str, str] | None = None,
 ) -> None:
     """분류 결과를 넣거나 덮는다. 빈 값은 NULL 로 들어간다.
 
     덮는 것이 맞다. 분류는 본문에서 다시 만들 수 있는 값이라 이력을 쌓을 이유가 없고,
     한 공고에 결과가 둘이면 어느 쪽이 지금 값인지 알 수 없다.
+
+    `evidence` 는 판정 칸을 그렇게 고른 근거 문장이다. 남기지 않으면 나중에 "이 공고가 왜
+    경력으로 분류됐나" 에 답할 수 없다 (`migrations/0015_classification_evidence.sql`).
     """
-    columns = (*CLASSIFY_FIELDS, "dropped_fields", "model")
+    columns = (*CLASSIFY_FIELDS, "dropped_fields", "model", "evidence_json")
     values = [fields.get(name, "").strip() or None for name in CLASSIFY_FIELDS]
     values.append(", ".join(dropped))
     values.append(model)
+    values.append(json.dumps(dict(evidence or {}), ensure_ascii=False))
     assignments = ", ".join(f"{name} = excluded.{name}" for name in columns)
     conn.execute(
         f"""

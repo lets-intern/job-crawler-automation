@@ -1,8 +1,11 @@
 """본문 분류 테스트 (1.4.V).
 
-Gemini 를 실제로 부르지 않는다. 응답은 가짜 클라이언트가 돌려주고, 확인하는 것은 셋이다 —
+Gemini 를 실제로 부르지 않는다. 응답은 가짜 클라이언트가 돌려주고, 확인하는 것은 넷이다 —
 본문에 있는 값이 제 칸에 들어가는가, 본문에 없는 것이 빈 칸으로 남는가, **모델이 지어낸 값이
-버려지는가.**
+버려지는가**, 그리고 **판정 칸이 글자 일치 없이도 채워지는가.**
+
+칸이 두 가지다. 뽑는 칸은 본문 글자를 그대로 옮기고, 판정 칸은 닫힌 목록에서 고른 뒤 근거
+문장을 함께 낸다 (`app/classify/schema.py`).
 
 본문은 저장된 픽스처에서 그 사이트의 설정으로 뽑는다. 손으로 지어낸 본문에 돌리면 실제
 사이트의 글머리표와 줄바꿈을 못 보고 지나간다. 실사이트에 나가지 않는다.
@@ -21,8 +24,14 @@ from app.classify.classifier import (
     build_prompt,
     classify_body,
 )
-from app.classify.grounding import ground, in_body
-from app.classify.schema import CLASSIFY_FIELDS
+from app.classify.grounding import NO_EVIDENCE, NOT_IN_BODY, NOT_IN_LIST, ground, in_body
+from app.classify.schema import (
+    CLASSIFY_FIELDS,
+    EXTRACT_FIELDS,
+    JUDGE_CHOICES,
+    JUDGE_FIELDS,
+    RESPONSE_FIELDS,
+)
 from app.config import Settings
 from app.crawler.parser import parse_detail
 from app.selector.schema import validate_selectors
@@ -47,7 +56,7 @@ BODY = body_of("카카오", "kakao-detail-P-14503-20260826.html")
 
 
 def response(**fields: str) -> str:
-    return json.dumps({name: fields.get(name, "") for name in CLASSIFY_FIELDS})
+    return json.dumps({name: fields.get(name, "") for name in RESPONSE_FIELDS})
 
 
 def settings_with_key() -> Settings:
@@ -69,7 +78,6 @@ def test_the_fixture_body_is_a_real_posting() -> None:
 async def test_the_values_the_body_carries_land_in_their_columns() -> None:
     result, _ = await classify(
         response(
-            employment_type="정규직",
             headcount="0 명",
             requirements="API 연동 아키텍처, 웹/앱 서비스의 데이터 흐름, 시스템 연동에 대한 "
             "기술적 이해도가 높으신 분",
@@ -77,7 +85,6 @@ async def test_the_values_the_body_carries_land_in_their_columns() -> None:
         )
     )
 
-    assert result.fields["employment_type"] == "정규직"
     assert result.fields["headcount"] == "0 명"
     assert "API 연동 아키텍처" in result.fields["requirements"]
     assert result.fields["hiring_process"].startswith("서류전형")
@@ -87,11 +94,11 @@ async def test_the_values_the_body_carries_land_in_their_columns() -> None:
 
 async def test_the_columns_the_body_does_not_name_stay_empty() -> None:
     """본문에 없는 것은 빈 칸이다. 이것이 이 작업의 전제다."""
-    result, _ = await classify(response(employment_type="정규직"))
+    result, _ = await classify(response(headcount="0 명"))
 
-    assert result.filled == ["employment_type"]
+    assert result.filled == ["headcount"]
     for name in CLASSIFY_FIELDS:
-        if name != "employment_type":
+        if name != "headcount":
             assert result.fields[name] == "", name
 
 
@@ -100,16 +107,15 @@ async def test_a_value_that_is_not_in_the_body_is_thrown_away() -> None:
     result, _ = await classify(
         response(
             work_location="서울 강남구 테헤란로 123",
-            career_level="신입 및 경력 3년 이상",
-            employment_type="정규직",
+            headcount="0 명",
         )
     )
 
-    assert sorted(result.dropped) == ["career_level", "work_location"]
+    assert result.dropped == ["work_location"]
+    assert result.reasons["work_location"] == NOT_IN_BODY
     assert result.fields["work_location"] == ""
-    assert result.fields["career_level"] == ""
     # 본문에 있는 값은 그대로 남는다. 한 칸이 틀렸다고 나머지를 버리지 않는다
-    assert result.fields["employment_type"] == "정규직"
+    assert result.fields["headcount"] == "0 명"
     assert "버린 칸" in " ".join(result.notes)
 
 
@@ -145,10 +151,10 @@ async def test_a_column_the_schema_does_not_have_is_refused() -> None:
 
 
 async def test_a_broken_response_is_asked_once_more() -> None:
-    result, client = await classify("{ 이건 JSON 이 아니다", response(employment_type="정규직"))
+    result, client = await classify("{ 이건 JSON 이 아니다", response(headcount="0 명"))
 
     assert result.attempts == 2
-    assert result.fields["employment_type"] == "정규직"
+    assert result.fields["headcount"] == "0 명"
     assert len(client.calls) == 2
 
 
@@ -212,3 +218,94 @@ def test_grounding_keeps_an_empty_column_empty_without_calling_it_invented() -> 
 
     assert grounded.dropped == []
     assert set(grounded.fields) == set(CLASSIFY_FIELDS)
+
+
+def test_the_two_kinds_of_columns_add_up_to_the_eleven() -> None:
+    """칸이 늘거나 옮겨 다니면 여기서 걸린다."""
+    assert set(EXTRACT_FIELDS) | set(JUDGE_FIELDS) == set(CLASSIFY_FIELDS)
+    assert not set(EXTRACT_FIELDS) & set(JUDGE_FIELDS)
+
+
+def test_the_judge_columns_have_a_closed_list() -> None:
+    """목록을 정하지 않으면 같은 일이 사이트마다 다른 이름으로 쌓인다."""
+    assert JUDGE_CHOICES["employment_type"] == ("정규직", "계약직", "인턴", "기타")
+    assert JUDGE_CHOICES["career_level"] == ("신입", "경력", "무관")
+    assert "개발·IT" in JUDGE_CHOICES["job_category"]
+    for values in JUDGE_CHOICES.values():
+        assert "" not in values
+
+
+async def test_a_judgement_does_not_need_the_words_to_be_in_the_body() -> None:
+    """본문에 "개발·IT" 라고 적혀 있지 않다. 글자 일치를 요구하면 이 칸은 영원히 빈다."""
+    result, _ = await classify(
+        response(
+            job_category="개발·IT",
+            job_category_evidence="카카오비즈니스와 외부 제휴사 간 사업자 데이터 연동 구조 기획",
+            career_level="경력",
+            career_level_evidence="Product Owner로서 5년 이상 경험이 있으신 분",
+            employment_type="정규직",
+            employment_type_evidence="정규직",
+        )
+    )
+
+    assert result.fields["job_category"] == "개발·IT"
+    assert result.fields["career_level"] == "경력"
+    assert result.fields["employment_type"] == "정규직"
+    assert result.dropped == []
+
+
+async def test_a_judgement_without_evidence_in_the_body_is_thrown_away() -> None:
+    """읽고 고른 것인지 지어낸 것인지 가를 방법이 근거 문장뿐이다."""
+    result, _ = await classify(
+        response(
+            career_level="신입",
+            career_level_evidence="신입 사원을 우대합니다",
+        )
+    )
+
+    assert result.dropped == ["career_level"]
+    assert result.reasons["career_level"] == NO_EVIDENCE
+    assert result.fields["career_level"] == ""
+    assert result.evidence == {}
+
+
+async def test_a_judgement_with_no_evidence_at_all_is_thrown_away() -> None:
+    result, _ = await classify(response(employment_type="정규직"))
+
+    assert result.dropped == ["employment_type"]
+    assert result.reasons["employment_type"] == NO_EVIDENCE
+
+
+async def test_a_judgement_outside_the_list_is_thrown_away() -> None:
+    """목록 밖 값이 한 번 들어오면 그 칸으로 거르는 소비 측이 조용히 그 건을 놓친다."""
+    result, _ = await classify(response(job_category="백엔드", job_category_evidence="◆ 업무내용"))
+
+    assert result.dropped == ["job_category"]
+    assert result.reasons["job_category"] == NOT_IN_LIST
+    assert result.fields["job_category"] == ""
+
+
+async def test_the_evidence_comes_back_with_the_result() -> None:
+    """표본 스무 건 표가 판정 칸마다 근거 문장을 적어야 한다 (1.8.V)."""
+    result, _ = await classify(
+        response(employment_type="정규직", employment_type_evidence="◆ 직원 유형")
+    )
+
+    assert result.evidence == {"employment_type": "◆ 직원 유형"}
+
+
+async def test_the_prompt_carries_the_closed_list() -> None:
+    """무엇 중에서 고르는지 모르는 채로 고르면 가장 가까운 값이 아니라 첫 값이 나온다."""
+    _, client = await classify(response())
+
+    prompt = client.calls[0]["contents"]
+    for value in JUDGE_CHOICES["job_category"]:
+        assert value in prompt
+
+
+async def test_the_response_schema_forces_the_list() -> None:
+    """프롬프트로만 부탁하면 지킵니다가 아니라 대개 지킵니다가 된다."""
+    _, client = await classify(response())
+
+    schema = client.calls[0]["config"]["response_schema"]
+    assert schema.model_fields["career_level"].annotation is not str
