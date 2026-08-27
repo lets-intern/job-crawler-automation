@@ -111,6 +111,9 @@ class Settings(BaseSettings):
     # 동시 실행 상한의 초기값. 한 번 app_settings 에 들어간 뒤로는 DB 값이 이긴다
     # (`app/settings.py`). 초기값으로 들어갈 값이라 여기서 범위를 지킨다
     max_concurrent_runs: int = Field(default=3, ge=1)
+    # 워크플로우 첫 실행이 담을 항목 수의 초기 상한. 0 은 상한 없음이다. 등록하면 목록에
+    # 걸린 과거 공고가 통째로 들어오는 것을 막는다 (`app/settings.py` 의 `FIRST_RUN_LIMIT`)
+    first_run_limit: int = Field(default=20, ge=0)
     run_timeout_seconds: int = 600
 
     @field_validator(*_BLANK_FALLS_BACK, mode="before")
