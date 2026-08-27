@@ -1,6 +1,7 @@
 """새 다섯 사이트의 2026-08-26 상세 응답 픽스처가 실제로 쓸 수 있는 것인지 본다.
 
-칸을 확정하는 대조(`.claude/tasks/memos/보류/split-body/tasks-split-body-push1.md` 1.2)가 이 파일들만 보고
+칸을 확정하는 대조(`.claude/tasks/memos/보류/split-body/tasks-split-body-push1.md` 1.2)가
+이 파일들만 보고
 "이 사이트가 이 값을 주는가" 를 센다. 그래서 파일이 제자리에 있고, 셀 항목이 실제로 들어
 있는지를 먼저 확인한다. 여기가 깨지면 표가 잘못된 입력 위에서 만들어진다.
 

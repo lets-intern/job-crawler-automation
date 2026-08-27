@@ -17,6 +17,8 @@ _BLANK_FALLS_BACK = (
     "qwen_base_url",
     "claude_model",
     "gpt_model",
+    "ollama_model",
+    "ollama_base_url",
     "selector_generate_provider",
     "selector_repair_provider",
     "classify_provider",
@@ -24,7 +26,13 @@ _BLANK_FALLS_BACK = (
 
 # 앞뒤 공백만 걷어낸다. 비어 있는 것은 "키가 없다" 가 맞는 값이라 그대로 둔다.
 # 공백만 든 키는 `if not key` 를 통과해 버려서, 걷어내지 않으면 401 로만 나타난다
-_KEYS = ("gemini_api_key", "qwen_api_key", "claude_api_key", "gpt_api_key")
+_KEYS = (
+    "gemini_api_key",
+    "qwen_api_key",
+    "claude_api_key",
+    "gpt_api_key",
+    "ollama_api_key",
+)
 
 
 class Settings(BaseSettings):
@@ -55,6 +63,13 @@ class Settings(BaseSettings):
 
     gpt_api_key: str = ""
     gpt_model: str = "gpt-5.6-luna"
+
+    # Ollama Cloud 도 OpenAI 호환 엔드포인트로 부른다. 기본 모델을 두는 것은 `models.list()`
+    # 로 지금 있는 것을 확인했기 때문이고, 클라우드 모델 목록은 자주 바뀌므로 화면에서
+    # 고르는 것이 정상 경로다 (`.claude/tasks/memos/llm-provider-조사.md`)
+    ollama_api_key: str = ""
+    ollama_model: str = "gpt-oss:120b"
+    ollama_base_url: str = "https://ollama.com/v1"
 
     # 기능마다 어느 제공자를 쓰는가. 셋의 성격이 달라서 한 제공자로 다 하지 않는다 —
     # 셀렉터 생성은 등록할 때 한 번이고, 분류는 공고마다 한 번이라 비용의 대부분이 거기다.

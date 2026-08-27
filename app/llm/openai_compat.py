@@ -1,7 +1,8 @@
-"""OpenAI SDK 로 부르는 제공자들. GPT 와 Qwen 이다.
+"""OpenAI SDK 로 부르는 제공자들. GPT 와 Qwen 과 Ollama Cloud 다.
 
-Qwen(DashScope)이 OpenAI 호환 엔드포인트를 준다. `openai` SDK 에 `base_url` 만 바꿔 붙기
-때문에 SDK 를 하나 더 들이지 않아도 된다 (`.claude/tasks/memos/llm-provider-조사.md`).
+Qwen(DashScope)과 Ollama Cloud 가 OpenAI 호환 엔드포인트를 준다. `openai` SDK 에 `base_url`
+만 바꿔 붙기 때문에 SDK 를 하나 더 들이지 않아도 된다
+(`.claude/tasks/memos/llm-provider-조사.md`).
 
 **호환은 같은 제공자라는 뜻이 아니다.** 항목은 따로다 — 키도 모델 ID 도 요금도 다르고,
 `llm_calls.provider` 에 남아야 하는 이름도 다르다. 공유하는 것은 호출하는 코드뿐이다.
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 GPT = "gpt"
 QWEN = "qwen"
+OLLAMA = "ollama"
 
 # 응답을 스키마로 강제하는 Qwen 모델. 문서가 지원을 시리즈 단위로 적어서 앞자리로 맞춘다.
 # **별칭(`qwen-turbo`, `qwen-plus`, `qwen-flash`)은 여기 없다.** 별칭에서 되는 것은
@@ -136,6 +138,20 @@ GPT_PROVIDER = entry(
     model_setting="gpt_model",
     base_url_setting=None,
     schema_models=None,
+)
+
+# **빈 튜플은 "어느 모델도 강제하지 못한다" 는 뜻이다.** 문서가 "Ollama's Cloud currently
+# does not support structured outputs" 라고 적는다 — 로컬 Ollama 는 `format` 으로 되지만
+# 클라우드는 안 된다. 그래서 분류에는 쓸 수 없고 `no_schema_support` 로 거절된다.
+# 셀렉터 생성과 AI 수정에는 쓸 수 있다. 그쪽은 스키마를 벗어난 응답이 와도
+# `parse_selectors()` 가 거절하는 길이 있다 (`app/llm/providers.py` 의 `NEEDS_SCHEMA`)
+OLLAMA_PROVIDER = entry(
+    name=OLLAMA,
+    label="Ollama Cloud",
+    key_setting="ollama_api_key",
+    model_setting="ollama_model",
+    base_url_setting="ollama_base_url",
+    schema_models=(),
 )
 
 

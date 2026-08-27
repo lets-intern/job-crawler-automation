@@ -35,8 +35,13 @@ decision — hand-write the selector or drop the site.
 
 ## Providers
 
-Four providers are supported: Gemini, Claude, GPT and Qwen. The operator picks which one a given
-call uses. This replaces the earlier single-provider rule (2026-08-24, `.claude/tasks/memos/prd-crawler-v2-보류.md`).
+Five providers are supported: Gemini, Claude, GPT, Qwen and Ollama Cloud. The operator picks which
+one a given call uses. This replaces the earlier single-provider rule (2026-08-24,
+`.claude/tasks/memos/prd-crawler-v2-보류.md`); Ollama Cloud was added 2026-08-27.
+
+A provider that cannot constrain a response to a schema is not usable for classification. Ollama
+Cloud is the case that exists today — it serves selector generation and repair, and is refused for
+classification. State that in the provider entry; never work around it with a prompt.
 
 One thin call site, not an abstraction tower. A provider entry states its SDK, its model setting and
 how it returns token counts; nothing else in the codebase branches on which provider is in use. If a

@@ -14,10 +14,11 @@ from app.llm.base import LlmCallError, Provider
 from app.llm.claude import CLAUDE
 from app.llm.gemini import GEMINI
 from app.llm.log import CLASSIFY, SELECTOR_GENERATE, SELECTOR_REPAIR
-from app.llm.openai_compat import GPT_PROVIDER, QWEN_PROVIDER
+from app.llm.openai_compat import GPT_PROVIDER, OLLAMA_PROVIDER, QWEN_PROVIDER
 
 PROVIDERS: dict[str, Provider] = {
-    provider.name: provider for provider in (GEMINI, CLAUDE, GPT_PROVIDER, QWEN_PROVIDER)
+    provider.name: provider
+    for provider in (GEMINI, CLAUDE, GPT_PROVIDER, QWEN_PROVIDER, OLLAMA_PROVIDER)
 }
 
 # 응답이 스키마를 지키는 것에 기능이 걸려 있는 자리. 분류의 판정 칸이 닫힌 목록인 것이

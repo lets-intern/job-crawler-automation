@@ -207,9 +207,12 @@ def test_gpt_uses_the_sdk_default_address_not_a_swapped_one(
     assert "openai.com" in str(client.base_url)
 
 
-def test_all_four_providers_are_registered_under_the_names_the_prd_uses() -> None:
-    """`llm_calls.provider` 에 그대로 들어가는 이름이다. 여기서 갈리면 비용 집계가 갈린다."""
-    assert sorted(PROVIDERS) == ["claude", "gemini", "gpt", "qwen"]
+def test_all_providers_are_registered_under_the_names_the_prd_uses() -> None:
+    """`llm_calls.provider` 에 그대로 들어가는 이름이다. 여기서 갈리면 비용 집계가 갈린다.
+
+    2026-08-27 에 `ollama` 가 다섯 번째로 들어왔다 (`.claude/rules/llm.md`).
+    """
+    assert sorted(PROVIDERS) == ["claude", "gemini", "gpt", "ollama", "qwen"]
 
 
 @pytest.mark.parametrize(

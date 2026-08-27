@@ -312,3 +312,40 @@ Gemini 에 맞춰져 있다. `app/classify/schema.py` 가 적어 둔 대로 **Ge
 | Gemini `client.aio.interactions.create` | 문서에서 비동기 형태의 예제를 찾지 못했다. 이 Push 에서 쓰지 않는다 |
 
 앞의 셋은 키가 생기면 한 번의 호출로 답이 난다. 그때까지는 문서가 적은 것을 적어 둔다.
+
+## Ollama Cloud (2026-08-27 추가)
+
+사용자가 결제하기로 해서 다섯 번째로 붙였다. 확인은 문서와 실제 엔드포인트 둘 다 눌렀다.
+
+| | 값 | 어떻게 확인했나 |
+|---|---|---|
+| SDK | `openai` | OpenAI 호환 엔드포인트를 준다 |
+| base_url | `https://ollama.com/v1` | `GET /v1/models` 가 200, 키 없이 `POST /v1/chat/completions` 가 OpenAI 모양 `{"error":{"type":"api_error"}}` 로 401 |
+| 키 이름 | `OLLAMA_API_KEY` | 문서가 쓰는 이름과 같다. `<제공자>_API_KEY` 규칙과도 맞는다 |
+| 인증 | `Authorization: Bearer <key>` | SDK 가 `api_key` 로 붙인다 |
+| 스키마 강제 | **없다** | 문서: "Ollama's Cloud currently does not support structured outputs" |
+| 분류에 쓸 수 있나 | **못 쓴다** | 위 때문. `schema_models=()` 로 두면 `no_schema_support` 로 거절된다 |
+| 셀렉터 생성·수정 | 쓸 수 있다 | `NEEDS_SCHEMA` 에 없다. 스키마를 벗어나면 `parse_selectors()` 가 거절한다 |
+| 토큰 자리 | GPT 와 같다 | 호환 엔드포인트 |
+| 오류 타입 | GPT 와 같다 | `openai.APIError` 계열 |
+
+### 지금 있는 클라우드 모델 (2026-08-27, `GET /v1/models` 실측)
+
+18개다. **목록이 자주 바뀐다** — 문서가 모델 은퇴를 예고한다. 기본값은 `gpt-oss:120b` 로 뒀고,
+쓸 때는 화면에서 고르거나 이 엔드포인트로 다시 확인한다.
+
+```
+kimi-k2.6  kimi-k3  kimi-k2.7-code
+deepseek-v4-flash:0731  deepseek-v4-pro:0813
+glm-5.1  glm-5.2  glm-5.3-flash
+qwen3.5:397b  gpt-oss:120b  gpt-oss:20b
+nemotron-3-nano:30b  nemotron-3-super  nemotron-3-ultra
+minimax-m2.7  minimax-m3  mistral-large-3:675b  gemma4:31b
+```
+
+### 확인하지 못한 것
+
+| 무엇 | 왜 못 했나 |
+|---|---|
+| `response_format` 를 보냈을 때 무시하는지 400 으로 거절하는지 | 키가 없어 인증을 통과하지 못했다. 무시한다면 셀렉터 생성이 그대로 돌고, 거절한다면 첫 호출이 `api_error` 로 서고 메시지에 이유가 남는다 |
+| 요금 | 구독제로 보이나 문서에서 단가 표를 찾지 못했다 |

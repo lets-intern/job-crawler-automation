@@ -1,8 +1,8 @@
 """롯데 셀렉터를 2026-08-25 픽스처에 돌려 본다. 실사이트에 나가지 않는다.
 
 `detail.requirements` 가 비어 있어 8건 전부 자격요건이 빈 값으로 들어왔다
-(`.claude/tasks/done/fill-body/tasks-fill-body-push4.md` 4.5). 자격요건은 본문 안 `응시자격` 제목 다음
-목록에 있다.
+(`.claude/tasks/done/fill-body/tasks-fill-body-push4.md` 4.5). 자격요건은 본문 안
+`응시자격` 제목 다음 목록에 있다.
 
 제목으로 찾는다. 상세마다 절이 몇 개인지가 다르고, `n번째 ul` 로 잡으면 절 하나가 늘거나 줄 때
 엉뚱한 값이 자격요건으로 들어온다. `:-soup-contains()` 는 soupsieve 의 확장이고 파서가 이미
