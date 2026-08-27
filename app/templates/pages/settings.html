@@ -4,6 +4,18 @@
 {% block heading %}운영 설정{% endblock %}
 {% block content %}
 <section>
+  <h3>AI 제공자</h3>
+  <p>
+    키는 제공자마다 한 벌이고, 모델은 제공자가 아니라 기능에 붙는다.
+    화면에서 바꾸면 <span class="font-semibold text-slate-900">다음 호출부터</span> 적용된다.
+    서버를 다시 띄우지 않는다.
+  </p>
+  <div id="llm-form" hx-get="/ui/llm" hx-trigger="load" hx-swap="innerHTML">
+    {{ empty("제공자 설정을 불러오는 중") }}
+  </div>
+</section>
+
+<section>
   <h3>동시 실행 상한</h3>
   <p>
     저장한 값은 다음에 값을 읽는 쪽부터 적용된다. 재시작하지 않는다.
