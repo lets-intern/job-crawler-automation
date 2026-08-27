@@ -59,6 +59,7 @@ from pathlib import Path
 
 from app import db
 from app.crawler.hashing import content_hash
+from app.llm import settings as llm_settings
 from app.normalize.engine import (
     NormalizeError,
     RawJobMissingError,
@@ -240,6 +241,8 @@ class ImportResult:
     raw_duplicate: int = 0
     overrides_added: int = 0
     overrides_skipped: int = 0
+    llm_added: int = 0
+    llm_skipped: int = 0
     normalized_added: int = 0
     normalize_failed: int = 0
     errors: tuple[str, ...] = ()
@@ -282,6 +285,7 @@ def _merge(conn: sqlite3.Connection, source: sqlite3.Connection, version: str) -
     rules_added, rules_skipped = _merge_rules(conn, source)
     raw_ids, new_raw_ids, raw_duplicate = _merge_raw_jobs(conn, source, workflow_ids)
     overrides_added, overrides_skipped = _merge_overrides(conn, source, raw_ids)
+    llm_added, llm_skipped = _merge_llm_settings(conn, source)
     normalized_added, normalize_failed, errors = _normalize(conn, new_raw_ids)
     return ImportResult(
         version=version,
@@ -295,6 +299,8 @@ def _merge(conn: sqlite3.Connection, source: sqlite3.Connection, version: str) -
         raw_duplicate=raw_duplicate,
         overrides_added=overrides_added,
         overrides_skipped=overrides_skipped,
+        llm_added=llm_added,
+        llm_skipped=llm_skipped,
         normalized_added=normalized_added,
         normalize_failed=normalize_failed,
         errors=tuple(errors),
@@ -452,6 +458,48 @@ def _merge_rules(conn: sqlite3.Connection, source: sqlite3.Connection) -> tuple[
             (*key, row["enabled"], row["note"]),
         )
         known.add(key)
+        added += 1
+    return added, skipped
+
+
+def _merge_llm_settings(conn: sqlite3.Connection, source: sqlite3.Connection) -> tuple[int, int]:
+    """AI 제공자 설정을 더한다. 이미 값이 있는 항목은 건드리지 않는다.
+
+    **키가 같이 옮겨지는 것은 결정된 사항이다** (2026-08-27,
+    `.claude/tasks/todo/prd-llm-providers.md`). 서버를 옮길 때 키를 다시 넣지 않아도 되는
+    편이 낫다는 판단이고, 그래서 내보내기 화면이
+    이 파일에 키가 들어 있다고 알린다.
+
+    옮기는 것은 `app/llm/settings.py` 의 행뿐이다. `app_settings` 를 통째로 옮기면 알림 주소와
+    동시 실행 상한까지 따라와서, 이 서버의 운영 설정이 남의 파일 하나로 바뀐다.
+
+    이미 있는 값을 덮지 않는 것은 가져오기 전체의 규칙과 같다. 지금 도는 서버의 키가 올린
+    파일의 키로 조용히 바뀌면, 다음 호출이 어느 계정에서 나가는지 아무도 모른다.
+    """
+    if "app_settings" not in _table_names(source):
+        # 이 표가 없는 옛 파일도 나머지는 다 가져올 수 있다
+        return 0, 0
+
+    known = {
+        str(row["key"])
+        for row in conn.execute(
+            f"SELECT key FROM app_settings WHERE key IN ({','.join('?' * len(llm_settings.ROWS))})",
+            llm_settings.ROWS,
+        )
+    }
+    added = skipped = 0
+    for row in source.execute(
+        f"SELECT key, value FROM app_settings "
+        f"WHERE key IN ({','.join('?' * len(llm_settings.ROWS))}) ORDER BY key",
+        llm_settings.ROWS,
+    ):
+        if str(row["key"]) in known:
+            skipped += 1
+            continue
+        conn.execute(
+            "INSERT INTO app_settings (key, value) VALUES (?, ?)",
+            (str(row["key"]), str(row["value"])),
+        )
         added += 1
     return added, skipped
 

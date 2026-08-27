@@ -45,6 +45,11 @@
         <td class="num">{{ result.overrides_added }}</td>
         <td class="num">{{ result.overrides_skipped }}</td>
       </tr>
+      <tr>
+        <td>AI 제공자 설정</td>
+        <td class="num">{{ result.llm_added }}</td>
+        <td class="num">{{ result.llm_skipped }}</td>
+      </tr>
     </tbody>
   </table>
 </div>
@@ -67,6 +72,12 @@
     {% endfor %}
   </ul>
 </details>
+{% endif %}
+{% if result.llm_added %}
+<p>
+  API 키를 포함한 AI 제공자 설정 {{ result.llm_added }}건이 같이 들어왔다.
+  이 서버가 그 키로 호출한다. 지금 값은 운영 설정의 <strong>AI 제공자</strong> 에서 본다.
+</p>
 {% endif %}
 {% if result.workflows_added %}
 <p>워크플로우 {{ result.workflows_added }}개가 스케줄에 올랐다. 상태와 주기는 워크플로우 화면에서 본다.</p>
