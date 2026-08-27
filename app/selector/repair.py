@@ -57,12 +57,15 @@ from typing import Any
 
 from app.config import Settings, get_settings
 from app.crawler.fetcher import PageSource, get_fetcher
+from app.llm.base import LlmCallError, Provider
+from app.llm.log import SELECTOR_REPAIR
+from app.llm.providers import for_feature
 from app.selector.cleaner import DEFAULT_MAX_CHARS, CleanedHtml, clean_html
 from app.selector.generator import (
     MAX_ATTEMPTS,
     SelectorGenerationError,
     Usage,
-    build_client,
+    build_client_for,
     call_model,
 )
 from app.selector.schema import (
@@ -297,8 +300,8 @@ async def repair_from_html(
             "고칠 셀렉터가 없다",
         )
 
-    resolved_client = client or build_client(resolved)
-    model = resolved.gemini_model
+    provider, model = _chosen(resolved)
+    resolved_client = client or build_client_for(SELECTOR_REPAIR, resolved)
     cleaned_list = clean_html(list_html)
     cleaned_detail = clean_html(detail_html) if has_detail else None
     prompt = build_prompt(
@@ -313,7 +316,7 @@ async def repair_from_html(
         failed_targets=failed_targets,
     )
 
-    proposal, attempts, usage, extra_notes = await _ask(resolved_client, model, prompt)
+    proposal, attempts, usage, extra_notes = await _ask(resolved_client, model, prompt, provider)
 
     repaired, changes = _overlay(selectors, proposal, targets)
     after = verify_selectors(repaired, list_html, detail_html)
@@ -503,13 +506,25 @@ def _no_message_reason(item: FieldMatch) -> str:
     return "매칭 0개"
 
 
-async def _ask(client: Any, model: str, prompt: str) -> tuple[SelectorSet, int, Usage, list[str]]:
+def _chosen(settings: Settings) -> tuple[Provider, str]:
+    """셀렉터 고치기가 쓰는 제공자와 모델. 생성과 다른 제공자를 고를 수 있다."""
+    try:
+        return for_feature(SELECTOR_REPAIR, settings)
+    except LlmCallError as exc:
+        raise SelectorRepairError(exc.reason, str(exc)) from exc
+
+
+async def _ask(
+    client: Any, model: str, prompt: str, provider: Provider
+) -> tuple[SelectorSet, int, Usage, list[str]]:
     """모델에게 묻고 스키마로 검증한다. 재시도 규칙은 생성과 같다 — 깨진 응답만 1회."""
     last_error: SelectorSchemaError | None = None
     last_text = ""
     usage: Usage | None = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
-        last_text, usage = await call_model(client, model, prompt, attempt, kind="셀렉터 고치기")
+        last_text, usage = await call_model(
+            client, model, prompt, attempt, kind="셀렉터 고치기", provider=provider
+        )
         try:
             return parse_selectors(last_text), attempt, usage, []
         except SelectorSchemaError as exc:

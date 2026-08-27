@@ -108,11 +108,14 @@ Qwen 분류가 가능해진다는 뜻이고, 크레딧이 막힌 지금 상태�
         - [x] 1.5.V 검증: `tests/test_config.py` 에 기본값과 빈 문자열 처리를 더한다.
               기능별 선택이 비었을 때 어떤 제공자로 떨어지는지도 잠근다
 
-    - [ ] 1.6 세 호출 자리가 고른 제공자를 쓰게 한다
+    - [x] 1.6 세 호출 자리가 고른 제공자를 쓰게 한다
         - `app/selector/generator.py` · `app/selector/repair.py` · `app/classify/classifier.py`
         - 셋 다 `resolved.gemini_model` 을 직접 읽고 있다. 기능에 맞는 설정을 읽도록 바꾼다
         - `app/classify/batch.py` 197줄의 실패 기록도 같이 본다
-        - [ ] 1.6.V 검증: 기존 셀렉터·분류 pytest 가 전부 통과하는지 본다. 여기에 더해
+        - 같이 고친 것: `app/api/ui.py` 의 `no_api_key` 안내가 `GEMINI_API_KEY` 를 못박고
+          있었다. 제공자를 고를 수 있게 된 뒤로는 틀린 문장이라 제공자 중립으로 바꾸고,
+          새 사유 `unknown_provider`·`no_schema_support` 의 다음 수를 같이 적었다
+        - [x] 1.6.V 검증: 기존 셀렉터·분류 pytest 가 전부 통과하는지 본다. 여기에 더해
               **기능마다 다른 제공자를 지정했을 때 각자 그것을 부르는지** 픽스처로 확인한다
 
     - [ ] 1.7 호출 기록에 실제 제공자가 남는다

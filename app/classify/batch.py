@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from app.classify.classifier import ClassifyError, classify_body
+from app.classify.classifier import ClassifyError, chosen, classify_body
 from app.classify.store import pending_count, pending_ids, read_body, save_classification
 from app.config import Settings, get_settings
 from app.llm.base import Usage
@@ -173,6 +173,9 @@ async def classify_ids(
     resolved = settings or get_settings()
 
     try:
+        # 모델 이름을 여기서 먼저 읽는다. 실패한 호출도 기록해야 하는데, 그때는 응답이
+        # 없어 어느 모델이 실패했는지 알 길이 이것뿐이다
+        model = chosen(resolved)[1]
         resolved_client = client or _client(resolved)
         rules = load_rules(conn)
     except (ClassifyError, NormalizeError) as exc:
@@ -194,7 +197,7 @@ async def classify_ids(
                 body, settings=resolved, client=resolved_client, on_call=counted
             )
         except ClassifyError as exc:
-            _note_failed_call(conn, resolved.gemini_model, exc)
+            _note_failed_call(conn, model, exc)
             progress.note(f"raw_jobs {raw_job_id}: {exc}")
             continue
 
