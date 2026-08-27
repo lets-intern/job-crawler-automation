@@ -143,14 +143,18 @@ async def test_a_posting_with_no_body_is_never_picked_up(conn: sqlite3.Connectio
 
 
 async def test_a_failure_stops_at_that_posting(conn: sqlite3.Connection) -> None:
-    """한 건이 실패해도 나머지는 간다. 실패한 건은 다음 실행이 다시 집어 든다."""
+    """한 건이 실패해도 나머지는 간다. 실패한 건은 다음 실행이 다시 집어 든다.
+
+    깨진 응답이 가는 곳이 `raw_jobs 3` 인 것은 분류가 **최근 것부터** 돌기 때문이다
+    (2026-08-27, `app/classify/store.py`).
+    """
     progress = await run(conn, "깨진 응답", "여전히 깨진", GOOD)
 
     assert progress.failed == 1
     assert progress.processed == 2
     # 실패한 공고는 행이 없어서 다음 실행이 다시 본다
-    assert pending_ids(conn) == [1]
-    assert "raw_jobs 1" in progress.errors[0]
+    assert pending_ids(conn) == [3]
+    assert "raw_jobs 3" in progress.errors[0]
 
 
 async def test_a_failed_classification_leaves_the_collected_body_alone(
