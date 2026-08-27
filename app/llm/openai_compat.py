@@ -99,6 +99,12 @@ def _caller(name: str, label: str) -> Any:
     return call_model
 
 
+async def list_models(client: Any) -> list[str]:
+    """지금 부를 수 있는 모델 ID. 셋 다 같은 모양이라 함수 하나로 끝난다."""
+    page = await client.models.list()
+    return [str(model.id) for model in getattr(page, "data", []) if getattr(model, "id", "")]
+
+
 def entry(
     name: str,
     label: str,
@@ -116,6 +122,7 @@ def entry(
         build_client=_build(key_setting, base_url_setting),
         call_model=_caller(name, label),
         schema_models=schema_models,
+        list_models=list_models,
     )
 
 

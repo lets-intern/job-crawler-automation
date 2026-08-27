@@ -1,0 +1,24 @@
+{# 기능 하나의 모델 고르는 칸. 제공자를 바꾸면 이 조각만 다시 온다.
+
+   목록이 있으면 고르는 상자, 없으면 손으로 적는 칸이다. 목록을 못 받는 일이 정상이라
+   (키가 없거나, 크레딧이 끊겼거나, 제공자가 목록을 안 주거나) 그때도 저장은 되어야 한다.
+
+   "환경변수 따라가기" 를 빈 값으로 둔다. 지금 값을 베껴 넣으면 배포가 모델을 올려도
+   이 기능만 옛 모델에 남는다 #}
+{% if models %}
+<select id="llm-model-{{ feature }}" name="model" class="min-w-[16rem]">
+  <option value="">환경변수 모델을 따라간다</option>
+  {% for name in models %}
+  <option value="{{ name }}" {% if current == name %}selected{% endif %}>{{ name }}</option>
+  {% endfor %}
+  {% if current and current not in models %}
+  {# 저장된 값이 목록에 없다. 지우지 않고 남긴다 — 목록이 늦게 갱신됐을 수도 있다 #}
+  <option value="{{ current }}" selected>{{ current }} (목록에 없다)</option>
+  {% endif %}
+</select>
+<span class="text-sm text-slate-600">{{ models | length }}개</span>
+{% else %}
+<input id="llm-model-{{ feature }}" name="model" type="text" class="min-w-[16rem]"
+       value="{{ current }}" placeholder="모델 이름. 비우면 환경변수를 따라간다">
+{% if problem %}<span class="text-sm text-slate-600">{{ problem }}</span>{% endif %}
+{% endif %}

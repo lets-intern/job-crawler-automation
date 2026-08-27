@@ -210,6 +210,36 @@ def settings_for(
     return base.model_copy(update=update)
 
 
+async def list_models(
+    conn: sqlite3.Connection, provider: str, settings: Settings | None = None
+) -> tuple[list[str], str]:
+    """그 제공자가 지금 주는 모델 목록과, 못 받았으면 그 사유.
+
+    **목록을 못 받는 것이 저장을 막지 않는다.** 사유만 적고 빈 목록을 돌려준다 — 운영자는
+    모델 이름을 손으로 적으면 되고, 목록은 편의다. 모델 ID 를 소스에 적지 않으려고 물어보는
+    것이라 (`.claude/rules/llm.md`) 못 받았다고 적어 둔 값으로 대신하지 않는다.
+    """
+    entry = _entry(provider)
+    if entry.list_models is None:
+        return [], f"`{provider}` 는 모델 목록을 주지 않는다. 이름을 손으로 적는다"
+
+    base = settings or get_settings()
+    stored = _stored(conn)
+    if not _key_value(entry, stored, base):
+        return [], f"`{provider}` 의 API 키가 없다. 키를 저장하면 목록을 받아 온다"
+
+    overridden = base.model_copy(update={entry.key_setting: _key_value(entry, stored, base)})
+    try:
+        client = entry.build_client(overridden)
+        names = await entry.list_models(client)
+    except LlmCallError as exc:
+        return [], str(exc)
+    except Exception as exc:  # SDK 마다 예외가 달라 여기서만 넓게 받는다
+        logger.warning("%s 모델 목록을 받지 못했다: %s", provider, exc)
+        return [], f"목록을 받지 못했다: {exc}"
+    return sorted(names), ""
+
+
 def _entry(provider: str) -> Provider:
     entry = registry.PROVIDERS.get(provider)
     if entry is None:

@@ -77,6 +77,20 @@ class CallModel(Protocol):
     ) -> Awaitable[tuple[str, Usage]]: ...
 
 
+class ListModels(Protocol):
+    """제공자가 지금 주는 모델 ID 목록.
+
+    화면의 모델 칸을 채우는 데만 쓴다. **모델 ID 를 소스에 적지 않기 위해서다**
+    (`.claude/rules/llm.md`) — 제공자마다 모델이 뜨고 지고, 적어 둔 목록은 적은 날부터
+    낡는다. 물어보면 오늘 있는 것이 온다.
+
+    실패는 예외로 올린다. 목록을 못 받는 것이 호출을 막지는 않는다 — 부르는 쪽이 빈 목록으로
+    떨어뜨리고 운영자는 모델 이름을 손으로 적으면 된다.
+    """
+
+    def __call__(self, client: Any) -> Awaitable[list[str]]: ...
+
+
 @dataclass(frozen=True)
 class Provider:
     """제공자 항목 하나. 여기 적힌 것 말고 어디에서도 제공자로 분기하지 않는다.
@@ -95,6 +109,8 @@ class Provider:
     model_setting: str
     build_client: Callable[[Settings], Any]
     call_model: CallModel
+    # 화면의 모델 칸을 채울 목록을 어떻게 받아 오는가. 없으면 손으로 적는다
+    list_models: ListModels | None = None
     # 응답을 스키마로 강제하는 모델. `None` 은 모든 모델이 강제한다는 뜻이다.
     # 값이 있으면 그것으로 시작하는 모델만 강제한다 — 문서가 지원을 시리즈 단위로 적는다
     schema_models: tuple[str, ...] | None = None

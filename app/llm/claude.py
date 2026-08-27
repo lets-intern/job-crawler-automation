@@ -81,6 +81,12 @@ async def call_model(
     return _text(response), usage
 
 
+async def list_models(client: Any) -> list[str]:
+    """지금 부를 수 있는 모델 ID. 화면의 모델 칸을 채우는 데만 쓴다."""
+    page = await client.models.list(limit=100)
+    return [str(model.id) for model in getattr(page, "data", []) if getattr(model, "id", "")]
+
+
 # 어느 모델이든 Structured Outputs 로 응답을 강제한다. 그래서 `schema_models` 를 두지 않는다
 CLAUDE = Provider(
     name=PROVIDER,
@@ -89,6 +95,7 @@ CLAUDE = Provider(
     model_setting="claude_model",
     build_client=build_client,
     call_model=call_model,
+    list_models=list_models,
 )
 
 

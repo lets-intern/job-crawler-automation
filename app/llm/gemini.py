@@ -73,6 +73,25 @@ async def call_model(
     return _text(response), usage
 
 
+async def list_models(client: Any) -> list[str]:
+    """지금 부를 수 있는 모델 ID. 화면의 모델 칸을 채우는 데만 쓴다.
+
+    `models/` 접두사를 뗀다. 호출에 넣는 이름은 접두사 없는 쪽이라, 목록에서 고른 값이
+    그대로 설정에 들어가야 한다.
+
+    `generateContent` 를 못 하는 것은 뺀다. 임베딩과 `aqa` 가 목록에 같이 오는데 이 서비스가
+    그것을 부를 일이 없고, 골라 놓으면 저장은 되고 호출만 실패한다. **거르는 기준을 모델
+    이름이 아니라 API 가 말하는 것에 둔다** — 이름으로 거르면 그 규칙이 새 모델에서 틀린다.
+    """
+    names: list[str] = []
+    async for model in await client.aio.models.list():
+        name = str(getattr(model, "name", "") or "")
+        actions = getattr(model, "supported_actions", None) or []
+        if name and "generateContent" in actions:
+            names.append(name.removeprefix("models/"))
+    return names
+
+
 # 어느 모델이든 `response_schema` 로 응답을 강제한다. 그래서 `schema_models` 를 두지 않는다
 GEMINI = Provider(
     name=PROVIDER,
@@ -81,6 +100,7 @@ GEMINI = Provider(
     model_setting="gemini_model",
     build_client=build_client,
     call_model=call_model,
+    list_models=list_models,
 )
 
 

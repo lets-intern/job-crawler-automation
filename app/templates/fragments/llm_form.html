@@ -14,43 +14,48 @@
       키는 제공자마다 한 벌이다. 저장하면 다음 호출부터 쓰고 서버를 다시 띄우지 않는다.
       저장된 값은 다시 보여주지 않는다 — 어깨너머로 읽히는 것을 막는다.
     </p>
-    <table>
-      <thead>
-        <tr>
-          <th>제공자</th>
-          <th>지금 상태</th>
-          <th>어디서 왔나</th>
-          <th>새 키</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for key in config.keys %}
-        <tr>
-          <td><code>{{ key.provider }}</code></td>
-          <td>
-            {% if key.present %}
-            {{ state("있음") }}
-            {% if key.tail %}<span class="text-sm text-slate-600">끝 네 자리 {{ key.tail }}</span>
-            {% else %}<span class="text-sm text-slate-600">네 자리 이하라 가렸다</span>{% endif %}
-            {% else %}
-            {{ state("없음") }}
-            {% endif %}
-          </td>
-          <td class="text-sm text-slate-600">
-            {% if not key.present %}—
-            {% elif key.stored %}이 화면에서 저장
-            {% else %}환경변수{% endif %}
-          </td>
-          <td>
-            <input name="value" type="password" size="28" autocomplete="off"
-                   placeholder="새 키를 넣는다. 비우고 저장하면 지운다"
-                   form="llm-key-{{ key.provider }}">
-            <button type="submit" form="llm-key-{{ key.provider }}">저장</button>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="table-scroll">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>제공자</th>
+            <th>지금 상태</th>
+            <th>어디서 왔나</th>
+            <th>새 키</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for key in config.keys %}
+          <tr>
+            <td><code>{{ key.provider }}</code></td>
+            <td class="whitespace-nowrap">
+              {% if key.present %}
+              {{ state("있음") }}
+              {% if key.tail %}
+              <span class="text-slate-600">끝 네 자리 <code>{{ key.tail }}</code></span>
+              {% else %}<span class="text-slate-600">네 자리 이하라 가렸다</span>{% endif %}
+              {% else %}
+              {{ state("없음") }}
+              {% endif %}
+            </td>
+            <td class="whitespace-nowrap text-slate-600">
+              {% if not key.present %}—
+              {% elif key.stored %}이 화면에서 저장
+              {% else %}환경변수{% endif %}
+            </td>
+            <td>
+              <div class="flex items-center gap-2">
+                <input name="value" type="password" autocomplete="off" class="min-w-[20rem]"
+                       placeholder="새 키를 넣는다. 비우고 저장하면 지운다"
+                       form="llm-key-{{ key.provider }}">
+                <button type="submit" form="llm-key-{{ key.provider }}">저장</button>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
     {{ wait("저장하는 중") }}
 </fieldset>
 
@@ -68,21 +73,35 @@
     {% if feature.problem %}
     {{ failure("사용 불가", feature.problem, title="지금 이 조합으로는 부를 수 없다") }}
     {% endif %}
-    <p>
+    {# 제공자를 바꾸면 모델 칸만 다시 받아 온다. 제공자마다 모델이 다르므로 앞 제공자의
+       목록을 남겨 두면 없는 모델을 고르게 된다 #}
+    <div class="flex flex-wrap items-center gap-2">
       <label for="llm-provider-{{ feature.feature }}">제공자</label>
-      <select id="llm-provider-{{ feature.feature }}" name="provider">
+      <select id="llm-provider-{{ feature.feature }}" name="provider"
+              hx-get="/ui/llm/models" hx-trigger="change"
+              hx-target="#llm-model-box-{{ feature.feature }}" hx-swap="innerHTML"
+              hx-vals='{"feature": "{{ feature.feature }}"}'>
         {% for name in provider_names %}
         <option value="{{ name }}" {% if feature.provider == name %}selected{% endif %}>
           {{ name }}{% if not config.key(name).present %} (키 없음){% endif %}
         </option>
         {% endfor %}
       </select>
-      <label for="llm-model-{{ feature.feature }}" class="ml-2">모델</label>
-      <input id="llm-model-{{ feature.feature }}" name="model" type="text" size="28"
-             value="{{ feature.model }}">
+
+      <label for="llm-model-{{ feature.feature }}">모델</label>
+      <span id="llm-model-box-{{ feature.feature }}"
+            hx-get="/ui/llm/models" hx-trigger="load" hx-swap="innerHTML"
+            hx-vals='{"provider": "{{ feature.provider }}",
+                      "feature": "{{ feature.feature }}",
+                      "model": "{{ feature.model }}"}'
+            class="inline-flex flex-wrap items-center gap-2">
+        <input id="llm-model-{{ feature.feature }}" name="model" type="text"
+               class="min-w-[16rem]" value="{{ feature.model }}">
+      </span>
+
       <button type="submit">저장</button>
       {{ wait("저장하는 중") }}
-    </p>
+    </div>
     <p class="text-sm text-slate-600">
       지금 <code>{{ feature.provider }}</code> 의 <code>{{ feature.model }}</code> 로 돈다.
       {% if feature.stored %}이 화면에서 저장한 값이다{% else %}환경변수 값이다{% endif %}.

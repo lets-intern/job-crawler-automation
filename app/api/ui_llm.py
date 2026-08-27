@@ -57,6 +57,34 @@ def llm_form_fragment(
     return _form(request, conn)
 
 
+@router.get("/ui/llm/models", response_class=HTMLResponse)
+async def llm_models_fragment(
+    request: Request,
+    conn: Annotated[sqlite3.Connection, Depends(get_connection)],
+    provider: str = "",
+    feature: str = "",
+    model: str = "",
+) -> HTMLResponse:
+    """모델 고르는 칸 하나. 제공자를 바꾸면 이 조각만 다시 그린다.
+
+    **목록을 못 받아도 200 이다.** 칸은 손으로 적는 칸으로 나오고 사유만 옆에 적힌다 —
+    목록은 편의이지 저장의 조건이 아니다. 키가 없는 제공자를 골라 보는 것도 정상 흐름이다.
+    """
+    try:
+        models, problem = await store.list_models(conn, provider)
+    except store.LlmSettingError as exc:
+        models, problem = [], str(exc)
+    return render(
+        request,
+        "fragments/llm_models.html",
+        feature=feature,
+        provider=provider,
+        models=models,
+        current=model,
+        problem=problem,
+    )
+
+
 @router.put("/ui/llm/key/{provider}", response_class=HTMLResponse)
 def update_key_fragment(
     request: Request,
