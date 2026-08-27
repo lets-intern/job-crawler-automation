@@ -15,9 +15,19 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # 셀렉터 생성. 없어도 임포트와 서버 기동은 성공한다 — 셀렉터 생성만 실패한다
+    # 모델 제공자. 키가 없어도 임포트와 서버 기동은 성공한다 — 그 제공자를 쓰는 기능만
+    # 실패하고, 조용히 다른 제공자로 넘어가지 않는다 (`.claude/rules/llm.md`)
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.5-flash"
+
+    # Qwen 은 OpenAI 호환 엔드포인트로 부른다. 기본 모델을 별칭(`qwen-plus` 등)으로 두지
+    # 않는 것은 별칭이 응답을 스키마로 강제하지 못해 분류에 쓸 수 없어서다
+    # (`app/llm/openai_compat.py`)
+    qwen_api_key: str = ""
+    qwen_model: str = "qwen3.8-flash"
+    # 문서는 워크스페이스 전용 도메인을 권한다. 그 주소는 콘솔에서 봐야 알 수 있어 기본값으로
+    # 둘 수 없다. 옮길 때 이 값을 바꾼다
+    qwen_base_url: str = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
 
     # 저장
     database_path: str = "./data/jobs.db"
