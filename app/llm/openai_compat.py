@@ -1,4 +1,4 @@
-"""OpenAI SDK 로 부르는 제공자들. 지금은 Qwen 하나다.
+"""OpenAI SDK 로 부르는 제공자들. GPT 와 Qwen 이다.
 
 Qwen(DashScope)이 OpenAI 호환 엔드포인트를 준다. `openai` SDK 에 `base_url` 만 바꿔 붙기
 때문에 SDK 를 하나 더 들이지 않아도 된다 (`.claude/tasks/memos/llm-provider-조사.md`).
@@ -25,6 +25,7 @@ from app.llm.base import LlmCallError, Provider, Usage, log_usage
 
 logger = logging.getLogger(__name__)
 
+GPT = "gpt"
 QWEN = "qwen"
 
 # 응답을 스키마로 강제하는 Qwen 모델. 문서가 지원을 시리즈 단위로 적어서 앞자리로 맞춘다.
@@ -39,7 +40,7 @@ QWEN_SCHEMA_MODELS = (
 )
 
 
-def _build(key_setting: str, base_url_setting: str) -> Any:
+def _build(key_setting: str, base_url_setting: str | None) -> Any:
     def build_client(settings: Settings) -> AsyncOpenAI:
         """API 키는 설정에서만 온다. 소스에도 로그에도 남기지 않는다.
 
@@ -49,7 +50,10 @@ def _build(key_setting: str, base_url_setting: str) -> Any:
         api_key = getattr(settings, key_setting)
         if not api_key:
             raise LlmCallError("no_api_key", f"{key_setting.upper()} 가 비어 있다")
-        return AsyncOpenAI(api_key=api_key, base_url=getattr(settings, base_url_setting))
+        # 주소를 갈아 끼우는 것은 호환 엔드포인트를 쓰는 제공자뿐이다. GPT 는 SDK 의 기본
+        # 주소를 그대로 쓰므로 `None` 이고, 그때는 인자를 넘기지 않는다
+        base_url = getattr(settings, base_url_setting) if base_url_setting else None
+        return AsyncOpenAI(api_key=api_key, base_url=base_url)
 
     return build_client
 
@@ -98,7 +102,7 @@ def entry(
     label: str,
     key_setting: str,
     model_setting: str,
-    base_url_setting: str,
+    base_url_setting: str | None,
     schema_models: tuple[str, ...] | None,
 ) -> Provider:
     """OpenAI SDK 로 부르는 제공자 항목 하나."""
@@ -120,6 +124,18 @@ QWEN_PROVIDER = entry(
     model_setting="qwen_model",
     base_url_setting="qwen_base_url",
     schema_models=QWEN_SCHEMA_MODELS,
+)
+
+# Structured Outputs 는 모델에 붙은 기능이 아니라 API 의 기능이라, `schema_models` 를 두지
+# 않는다. 다만 지원 모델 표가 `gpt-4o-2024-08-06` 과 "그 이후" 까지만 적고 `gpt-5.6` 계열의
+# 이름을 따로 적지는 않는다. 그보다 오래된 모델을 설정에 넣으면 이 가정이 깨진다
+GPT_PROVIDER = entry(
+    name=GPT,
+    label="GPT",
+    key_setting="gpt_api_key",
+    model_setting="gpt_model",
+    base_url_setting=None,
+    schema_models=None,
 )
 
 

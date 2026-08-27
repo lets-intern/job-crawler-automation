@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     # 둘 수 없다. 옮길 때 이 값을 바꾼다
     qwen_base_url: str = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
 
+    claude_api_key: str = ""
+    claude_model: str = "claude-haiku-4-5-20251001"
+
+    gpt_api_key: str = ""
+    gpt_model: str = "gpt-5.6-luna"
+
     # 저장
     database_path: str = "./data/jobs.db"
 

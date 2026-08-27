@@ -15,6 +15,7 @@ dependencies = [
     "google-genai",
     # Qwen 도 이걸로 부른다. OpenAI 호환 엔드포인트라 base_url 만 다르다
     "openai",
+    "anthropic",
     "pydantic-settings",
     # JS 로 그려지는 사이트만 쓴다. 기본 경로는 정적이다 — .claude/rules/crawling.md
     "playwright",
