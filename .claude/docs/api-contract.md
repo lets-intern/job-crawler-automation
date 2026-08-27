@@ -53,6 +53,16 @@ GET /api/jobs?updated_after=<ISO8601>&limit=100&cursor=<opaque>
       "deadline": "2026-09-30",
       "body": "본문",
       "requirements": "자격요건",
+      "start_date": "2026-09-01",
+      "job_category": "연구/개발",
+      "employment_type": "정규직",
+      "career_level": "신입",
+      "work_location": "경기 수원시",
+      "headcount": "0명",
+      "duties": "주요 업무",
+      "preferred": "우대 조건",
+      "hiring_process": "전형 절차",
+      "etc_info": "기타",
       "source_url": "https://...",
       "normalized_at": "2026-08-21T10:00:00Z"
     }
@@ -61,6 +71,51 @@ GET /api/jobs?updated_after=<ISO8601>&limit=100&cursor=<opaque>
   "has_more": true
 }
 ```
+
+`start_date` 부터 `etc_info` 까지 열 개는 나중에 더한 필드다. **더하는 방향이고 기존 필드는
+그대로 둔다** — 소비 측이 읽던 것이 사라지지 않는다. 특히 `deadline` 은 모집 마감일 그대로이고
+`start_date` 가 그 짝이다. `deadline` 의 뜻은 바뀌지 않았다.
+
+| 필드 | 뜻 |
+|---|---|
+| start_date | 모집 시작일 |
+| job_category | 직군 |
+| employment_type | 고용형태. 정규직 / 인턴 / 기간제 |
+| career_level | 경력 구분. 신입 / 경력 |
+| work_location | 근무지 |
+| headcount | 모집인원 |
+| duties | 주요 업무 |
+| preferred | 우대 조건 |
+| hiring_process | 전형 절차 |
+| etc_info | 기타 |
+
+**근거가 없으면 `null` 이다.** 없는 값을 다른 값으로 채우지 않는다. 빈 값은 "이 공고에는 그
+값이 없다" 는 사실이고, 소비 측은 그 필드를 그리지 않으면 된다.
+
+이 열 필드와 `requirements`·`department` 는 2026-08-26 부터 **수집이 아니라 본문을 나눠서**
+채운다. 사이트마다 칸 매핑을 적는 방식이 640건에서 절반도 채우지 못했기 때문이다
+(`.claude/tasks/todo/prd-llm-classify.md`). 소비 측이 보는 필드 이름과 뜻은 그대로다 —
+바뀐 것은 값이 어디서 오는가뿐이다.
+
+`job_category`·`employment_type`·`career_level` 세 필드는 **정해진 값만 나온다.** 사이트마다
+`Permanent`·`정규직`·`정규` 로 흩어지던 것을 하나로 모은 것이고, 그래서 소비 측이 이 필드로
+거를 수 있다. 목록은 아래와 같고, 늘거나 줄면 이 문서와 구현을 같은 커밋에서 고친다.
+
+| 필드 | 나올 수 있는 값 |
+|---|---|
+| job_category | 개발·IT / 연구개발 / 생산·제조 / 품질·안전 / 건설·플랜트 / 영업 / 마케팅 / 기획·전략 / 경영지원 / 재무·회계 / 법무 / 구매·물류 / 디자인 / 고객서비스 / 기타 |
+| employment_type | 정규직 / 계약직 / 인턴 / 기타 |
+| career_level | 신입 / 경력 / 무관 |
+
+목록에 없는 값은 나가지 않는다. 본문만으로 판단할 수 없으면 `null` 이다.
+
+**예외는 없다. 2026-08-26 이전에 수집된 행에도 같은 목록이 성립한다.** 그때는 이 세 값을
+사이트에서 그대로 받아 적었고 `raw_jobs` 는 append-only 라 그 값이 남아 있지만, 정규화가
+열한 칸을 분류 결과로 덮어 `Permanent` 나 `IT - 구축/운영/최적화` 같은 사이트 표기는
+`normalized_jobs` 에 남지 않는다. 소비 측은 수집 시점을 따질 필요가 없다.
+
+`title`·`company`·`deadline`·`body`·`source_url` 은 수집이 채우고, 그중 앞의 넷은 대부분
+채워진다.
 
 커서 기반이다. 소비 측이 한 번 폴링을 걸러도 다음에 이어서 받는다. 오프셋 기반이면 그 사이 삽입된
 행 때문에 건너뛰는 건이 생긴다.

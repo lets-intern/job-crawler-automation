@@ -1,10 +1,13 @@
-"""여섯 사이트 설정을 2026-08-25 픽스처에 그대로 돌려 본다. 실사이트에 나가지 않는다.
+"""열한 사이트 설정을 저장된 픽스처에 그대로 돌려 본다. 실사이트에 나가지 않는다.
 
-`seeds/site-configs-20260825.json` 이 `crawlers` 행에 들어가는 값이다. 실사이트 요청은 등록
+`seeds/site-configs-20260826.json` 이 `crawlers` 행에 들어가는 값이다. 실사이트 요청은 등록
 직후 한 번뿐이라, 그 전에 설정이 실제 응답에서 무엇을 뽑는지를 여기서 다 본다.
 
 각 사이트에서 확인하는 것은 같다 — 목록에서 측정한 건수가 나오는가, 공고마다 다른 주소가
-만들어지는가, 상세에서 **본문이 비어 있지 않은가**. 마지막 것이 이 Push 의 목적이다.
+만들어지는가, 상세에서 **본문이 비어 있지 않은가**.
+
+칸별로 무엇이 채워지고 무엇이 비는지는 `tests/test_split_body_mapping.py` 가 본다. 여기는
+목록과 본문까지다.
 """
 
 from __future__ import annotations
@@ -21,7 +24,7 @@ from app.selector.api_schema import ApiConfig, validate_api_config
 from app.selector.schema import SelectorSet, validate_selectors
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
-SEEDS = pathlib.Path(__file__).parent.parent / "seeds" / "site-configs-20260825.json"
+SEEDS = pathlib.Path(__file__).parent.parent / "seeds" / "site-configs-20260826.json"
 
 CONFIGS: dict[str, dict[str, Any]] = {
     entry["name"]: entry for entry in json.loads(SEEDS.read_text(encoding="utf-8"))["crawlers"]
@@ -45,8 +48,8 @@ def html(name: str) -> str:
 
 
 def test_every_crawler_config_is_valid() -> None:
-    """저장하기 전에 여섯 개가 다 스키마를 지나는지 본다."""
-    assert len(CONFIGS) == 6
+    """저장하기 전에 열한 개가 다 스키마를 지나는지 본다."""
+    assert len(CONFIGS) == 11
     for name, entry in CONFIGS.items():
         assert entry["list_mode"] in ("static", "api", "playwright"), name
         assert entry["detail_mode"] in ("static", "api", "playwright"), name
@@ -89,7 +92,7 @@ def test_lg_reads_eighty_eight_postings_and_a_body_per_sector() -> None:
     assert len({item.link for item in listing.items}) == 88
     assert listing.items[0].date == "2026.09.13 23:00"
     assert detail.fields["body"].strip()
-    assert detail.fields["requirements"].strip()
+    assert detail.fields["requirements"] == ""
     assert detail.fields["deadline"] == "2026.09.13 23:00"
 
 
@@ -103,7 +106,7 @@ def test_hanwha_reads_a_page_of_twenty_and_a_job_body() -> None:
     assert listing.items[0].company == "한화생명"
     assert listing.items[0].link.endswith("detail?rtSeq=19463")
     assert "LIFEPLUS TV" in detail.fields["body"]
-    assert detail.fields["requirements"].strip()
+    assert detail.fields["requirements"] == ""
     assert detail.fields["deadline"] == "2026.08.25 15:00"
 
 
@@ -118,7 +121,7 @@ def test_samsung_reads_nine_on_the_first_page_and_a_body_per_role() -> None:
     assert "seqno=22878" in listing.items[0].link
     assert "~" in listing.items[0].date
     assert detail.fields["body"].strip()
-    assert detail.fields["requirements"].strip()
+    assert detail.fields["requirements"] == ""
     # 마감일은 목록의 기간에서 온다. 상세에는 적지 않았다
     assert not detail.fields["deadline"]
 
@@ -135,7 +138,7 @@ def test_sk_reads_a_hundred_and_four_and_a_server_rendered_detail() -> None:
     assert len({item.link for item in listing.items}) == 104
     assert listing.items[0].link == "https://www.skcareers.com/Recruit/Detail/R261752"
     assert detail.fields["body"].strip()
-    assert detail.fields["requirements"].strip()
+    assert detail.fields["requirements"] == ""
     assert "August 25, 2026" in detail.fields["deadline"]
 
 
@@ -149,11 +152,12 @@ def test_hyundai_reads_twenty_and_a_plain_text_body() -> None:
     assert len({item.link for item in listing.items}) == 20
     assert listing.items[0].link.endswith("recuYy=2026&recuType=N2&recuCls=295")
     assert detail.fields["body"].strip()
-    assert detail.fields["requirements"].strip()
-    assert detail.fields["department"] == "모빌리티 선행개발"
+    assert detail.fields["requirements"] == ""
+    # 조직·부서도 이제 수집하지 않는다. 본문을 나누는 쪽이 채운다 (1.2)
+    assert detail.fields["department"] == ""
 
 
-def test_lotte_reads_eight_and_fills_the_qualifications() -> None:
+def test_lotte_reads_eight_and_carries_the_qualifications_inside_the_body() -> None:
     selector_set = selectors("롯데그룹")
 
     listing = parse_list(
@@ -165,7 +169,8 @@ def test_lotte_reads_eight_and_fills_the_qualifications() -> None:
 
     assert len(listing.items) == 8
     assert detail.fields["body"].strip()
-    assert "4년제 학사" in detail.fields["requirements"]
+    # 자격요건은 이제 수집이 아니라 본문을 나누는 쪽이 채운다 (1.2)
+    assert "4년제 학사" in detail.fields["body"]
 
 
 # 마감 건너뜀 --------------------

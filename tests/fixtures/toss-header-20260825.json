@@ -1,0 +1,29 @@
+{
+  "eventPages": [
+    {
+      "url": "https://pd-recruit.tossinsu.com/",
+      "label": "토스인슈어런스 Product Designer 집중채용",
+      "exposeControl": {
+        "from": "2026-08-16T09:29:00.000Z",
+        "to": "2026-09-13T14:59:00.000Z"
+      }
+    },
+    {
+      "url": "https://toss.im/career/event/tools-2025",
+      "label": "툴즈 프로덕트 디자이너 대규모 채용",
+      "exposeControl": {
+        "from": "2025-10-29T01:00:00.000Z",
+        "to": "2025-11-12T15:00:00.000Z"
+      }
+    },
+    {
+      "url": "https://toss.im/career/event/ss-md-2025",
+      "label": "신입 Sales Specialist 대규모 채용",
+      "exposeControl": {
+        "from": "2025-10-22T01:00:00.000Z",
+        "to": "2025-11-09T15:00:00.000Z"
+      }
+    }
+  ],
+  "showEvent": true
+}

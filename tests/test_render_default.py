@@ -1,16 +1,18 @@
-"""새 크롤러가 받는 기본 렌더 모드.
+"""새 크롤러가 어느 모드로 저장되는가.
 
 Gemini 도 실사이트도 브라우저도 부르지 않는다. 생성 의존성을 갈아끼우고, 확인하는 것은
-`crawlers.render_mode` 에 무엇이 저장됐는가와 생성이 어느 모드로 불렸는가다.
+`crawlers.list_mode` 에 무엇이 저장됐는가와 생성이 어느 모드로 불렸는가다.
 
 | 확인 | 근거 |
 |---|---|
-| 값을 안 준 등록은 `static` | 렌더는 실행당 브라우저 하나다. 기본으로 켜지 않는다 |
-| `playwright` 를 명시한 등록은 그대로 | 승격은 운영자가 고른다 |
-| 이미 있는 행은 안 바뀐다 | 기본값은 새 등록에만 걸린다. 마이그레이션이 아니다 |
+| 값을 안 준 등록은 생성에 빈 값을 넘긴다 | 등록이 스스로 정한다. 운영자에게 묻지 않는다 |
+| `playwright` 를 명시한 등록은 그대로 | 고른 값을 판정이 덮어쓰지 않는다 |
+| 등록 화면에는 모드 입력이 없다 | 화면과 API 의 기본이 갈리면 안 된다 |
+| 이미 있는 행은 안 바뀐다 | 등록 하나가 다른 크롤러를 끌어내리지 않는다 |
 
-어느 모드가 필요한지 비교하는 것은 테스트 실행 화면이고, 그쪽은
-`tests/test_test_run_mode.py` 가 본다.
+빈 값을 받은 생성이 실제로 정적에서 렌더로 올라가는 것은
+`tests/test_register_escalates.py` 가 본다. 어느 모드가 필요한지 비교하는 테스트 실행 화면은
+`tests/test_test_run_mode.py` 다.
 """
 
 from __future__ import annotations
@@ -127,23 +129,23 @@ def modes(conn: sqlite3.Connection) -> list[str]:
     return [str(row["list_mode"]) for row in conn.execute("SELECT list_mode FROM crawlers")]
 
 
-def test_등록에_모드를_안_주면_정적으로_저장된다(
+def test_등록에_모드를_안_주면_생성이_스스로_정한다(
     client: TestClient, conn: sqlite3.Connection, called_with: list[str]
 ) -> None:
-    """렌더는 실행마다 브라우저 하나를 띄운다. 고르지 않은 등록에 그 비용을 붙이지 않는다."""
+    """빈 값이 그대로 생성에 넘어가야 정적으로 먼저 해 보고 안 되면 렌더로 올릴 수 있다."""
     response = client.post("/api/crawlers", json={"list_url": LIST_URL, "detail_url": DETAIL_URL})
 
     assert response.status_code == 201
+    # 대역은 정적으로 만들었다고 답한다. 저장되는 값은 생성이 실제로 쓴 경로다
     assert response.json()["render_mode"] == "static"
     assert modes(conn) == ["static"]
-    # 셀렉터 생성도 같은 모드로 간다. 정적으로 뽑은 셀렉터는 렌더된 DOM 과 다를 수 있다
-    assert called_with == ["static"]
+    assert called_with == [""]
 
 
-def test_빈_문자열도_기본값으로_읽는다(
+def test_빈_문자열도_안_고른_것으로_읽는다(
     client: TestClient, conn: sqlite3.Connection, called_with: list[str]
 ) -> None:
-    """화면이 값을 못 실어 보낸 경우다. 안 고른 것이므로 기본값이 걸린다."""
+    """화면이 값을 못 실어 보낸 경우다. 안 고른 것이므로 판정에 맡긴다."""
     response = client.post(
         "/api/crawlers",
         json={"list_url": LIST_URL, "detail_url": DETAIL_URL, "render_mode": "  "},
@@ -196,12 +198,12 @@ def test_화면_경로도_같은_기본값을_쓴다(
     assert modes(conn) == ["static"]
 
 
-def test_등록_화면의_기본_선택도_정적이다() -> None:
-    """폼과 저장값이 갈리면 화면에서 고른 것과 저장된 것이 달라진다."""
+def test_등록_화면은_가져오는_방식을_묻지_않는다() -> None:
+    """운영자는 목록 URL 하나만 넣는다. 모드를 고르는 칸이 남아 있으면 그 약속이 깨진다."""
     template = (TEMPLATES / "pages" / "crawlers.html").read_text(encoding="utf-8")
 
-    assert '<input type="radio" name="render_mode" value="static" checked>' in template
-    assert '<input type="radio" name="render_mode" value="playwright" checked>' not in template
+    assert 'name="render_mode"' not in template
+    assert "목록 URL 하나만 넣는다" in template
 
 
 def stub_discoverer() -> None:

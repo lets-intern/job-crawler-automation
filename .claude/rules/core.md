@@ -85,9 +85,13 @@ states the shape.
 `raw_jobs` is append-only and never rewritten by a normalization change. Re-normalization writes
 `normalized_jobs`, never the source it derived from.
 
-Every outbound HTTP request goes through the one shared fetch client. No module calls `requests.get`
-or `httpx.get` directly — that is how rate limits, the User-Agent and retries get bypassed.
+Every request to a crawl target goes through the one shared fetch client. No module fetches a target
+site directly — that is how rate limits, the User-Agent and retries get bypassed.
 `.claude/rules/crawling.md` states why.
+
+Requests to a service we operate ourselves are the one exception: the notification server has no
+robots.txt to honour and no per-host budget we could exceed. `app/notify/` is that exception and the
+only one. A third-party API we did not deploy is a crawl target, not ours.
 
 ## The other rule files
 

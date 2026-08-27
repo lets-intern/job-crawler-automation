@@ -1,0 +1,510 @@
+{
+  "note": "열한 사이트의 크롤러 설정. crawlers 행에 그대로 들어간다. **수집은 여섯 칸만 한다** — 제목·본문·모집 시작일·모집 마감일·회사명·원본 주소. 나머지 열한 칸(직군·근무지·경력 구분·고용형태·모집인원·주요 업무·우대사항·전형 절차·자격요건·조직 부서·기타)은 본문을 읽어 나눈다 (app/classify/). tests/test_site_configs.py 와 tests/test_split_body_mapping.py 가 같은 픽스처에 돌려 본다.",
+  "recorded_at": "2026-08-26",
+  "crawlers": [
+    {
+      "name": "LG",
+      "crawler_id": 16,
+      "list_url": "https://careers.lg.com/apply",
+      "list_mode": "api",
+      "detail_mode": "api",
+      "default_company": "LG",
+      "note": "목록도 상세도 API 다. 본문은 HTML 조각이라 정규화의 html_text 규칙이 편다. 모집 부문(recList)마다 값이 따로 있어 * 로 전부 모은다. 지원방법(submitMethodInfo)과 채용 유형(recruitTypeName)은 갈 칸이 없어 기타로 모았다.",
+      "api_config": {
+        "list": {
+          "url": "https://api.careers.lg.com/rmk/job/retrieveJobNoticesList",
+          "method": "POST",
+          "body": {
+            "lnbSearch": "",
+            "hashTagText": "",
+            "recDate": "POST_START_DATE",
+            "order": "DESC",
+            "careerList": [],
+            "companyCodeList": [],
+            "desireLocList": [],
+            "jobGroupList": []
+          },
+          "items_path": "data.jobNoticeList",
+          "fields": {
+            "title": "jobNoticeName",
+            "date": "recEndDateTime",
+            "company": "companyName"
+          },
+          "id_field": "jobNoticeId",
+          "link_template": "https://careers.lg.com/apply/detail?id={id}",
+          "headers": {},
+          "body_format": "json",
+          "response": "json",
+          "pagination": null,
+          "date_is_deadline": true
+        },
+        "detail": {
+          "url": "https://api.careers.lg.com/rmk/job/retrieveJobNoticesDetail",
+          "method": "POST",
+          "body": {
+            "jobNoticeId": "{id}"
+          },
+          "fields": {
+            "title": "data.jobNoticesDetail.jobNoticesDetail.jobNoticeName",
+            "body": "data.jobNoticesDetail.recList.*.detailContext",
+            "deadline": "data.jobNoticesDetail.jobNoticesDetail.recEndDate",
+            "company": "data.jobNoticesDetail.jobNoticesDetail.companyName",
+            "start_date": "data.jobNoticesDetail.jobNoticesDetail.recStartDate"
+          },
+          "headers": {}
+        }
+      }
+    },
+    {
+      "name": "한화",
+      "crawler_id": 19,
+      "list_url": "https://www.hanwhain.com/portal/apply/recruit",
+      "list_mode": "api",
+      "detail_mode": "api",
+      "default_company": null,
+      "note": "계열사 11곳이 sdNm 으로 온다. 20건씩 4쪽이고 마지막 쪽에서 hasNext 가 false 가 된다. 부서 개념이 없어 department 를 비웠다 — 근무지(ruWorkpl)가 거기 들어가 있던 것이 이번에 고친 버그다. 접수 안내(rtRctPrd)와 문의처(ruInqr)는 기타로 모았다.",
+      "api_config": {
+        "list": {
+          "url": "https://hwadm.hanwhain.com/new-backend/portal/api/rcRecruit/search-rcrt",
+          "method": "POST",
+          "body": {
+            "langCd": "ko",
+            "searchText": "",
+            "sdSeqList": null,
+            "rtNrcrtYn": "",
+            "rtCarrYn": ""
+          },
+          "items_path": "data.list",
+          "fields": {
+            "title": "rtNm",
+            "date": "rtAcptEndDttm",
+            "company": "sdNm"
+          },
+          "id_field": "rtSeq",
+          "link_template": "https://www.hanwhain.com/portal/apply/recruit/detail?rtSeq={id}",
+          "headers": {
+            "referer": "https://www.hanwhain.com/"
+          },
+          "body_format": "json",
+          "response": "json",
+          "pagination": {
+            "param": "page",
+            "start": 0,
+            "max_pages": 10,
+            "has_next": "data.hasNext",
+            "total_pages_selector": "",
+            "total_pages_attribute": ""
+          },
+          "date_is_deadline": true
+        },
+        "detail": {
+          "url": "https://hwadm.hanwhain.com/new-backend/portal/api/rcRecruit/get-rcrt",
+          "method": "POST",
+          "body": {
+            "rtSeq": "{id}"
+          },
+          "fields": {
+            "title": "data.item.rtNm",
+            "body": [
+              "data.item.unitDt.*.ruNm",
+              "data.item.unitDt.*.ruDtlJob",
+              "data.item.rtEct"
+            ],
+            "deadline": "data.item.rtAcptEndDttm",
+            "company": "data.item.sdNm",
+            "start_date": "data.item.rtAcptStrtDttm"
+          },
+          "headers": {
+            "referer": "https://www.hanwhain.com/"
+          }
+        }
+      }
+    },
+    {
+      "name": "삼성",
+      "crawler_id": 14,
+      "list_url": "https://www.samsungcareers.com/hr/",
+      "list_mode": "api",
+      "detail_mode": "api",
+      "default_company": "삼성",
+      "note": "목록은 폼으로 물어보고 HTML 조각으로 온다. 공고 번호는 a[data-value] 에서 천 단위 쉼표를 뺀 값이다. 마감일은 목록의 기간(시작 ~ 마감)에서 온다. 자격요건이 공고 전체(result.qlfctKr)와 직무별(items.*.qlfctKr) 둘로 나뉘어 있어 둘 다 읽는다. 조직 소개(introKr)는 본문에 넣었다 — 세 곳만 주는 값이라 칸을 만들지 않았다.",
+      "api_config": {
+        "list": {
+          "url": "https://www.samsungcareers.com/hr/list.data",
+          "method": "POST",
+          "body": {
+            "currentPageNo": 1,
+            "intNo": 0,
+            "strVal": "",
+            "strTxt": "",
+            "strKey": "",
+            "strCompany": "",
+            "strType": "",
+            "strOrderBy": "",
+            "strEntity": ""
+          },
+          "items_path": "li",
+          "fields": {
+            "title": "h3.title",
+            "date": "span.period",
+            "company": "p.company"
+          },
+          "id_field": "a[data-value]@data-value|digits",
+          "link_template": "https://www.samsungcareers.com/recruit/detail.data?seqno={id}&strCode=",
+          "headers": {
+            "referer": "https://www.samsungcareers.com/hr/"
+          },
+          "body_format": "form",
+          "response": "html",
+          "pagination": {
+            "param": "currentPageNo",
+            "start": 1,
+            "max_pages": 10,
+            "has_next": "",
+            "total_pages_selector": "input.divCnt",
+            "total_pages_attribute": "data-max"
+          },
+          "date_is_deadline": true
+        },
+        "detail": {
+          "url": "https://www.samsungcareers.com/recruit/detail.data?seqno={id}&strCode=",
+          "method": "GET",
+          "body": {},
+          "fields": {
+            "title": "data.result.title",
+            "body": [
+              "data.result.introKr",
+              "data.items.*.titleKr",
+              "data.items.*.taskKr"
+            ],
+            "company": "data.result.cmpNameKr",
+            "start_date": "data.result.startdate"
+          },
+          "headers": {
+            "referer": "https://www.samsungcareers.com/hr/"
+          }
+        }
+      }
+    },
+    {
+      "name": "SK",
+      "crawler_id": 15,
+      "list_url": "https://www.skcareers.com/Recruit",
+      "list_mode": "api",
+      "detail_mode": "static",
+      "default_company": "SK",
+      "note": "목록은 폼으로 물어보고 104건이 한 번에 온다. 상세는 서버가 그린 HTML 이라 셀렉터로 읽는다. 값 상자는 자리(nth-child)가 아니라 이름표(.label)로 찾는다 — 자리로 잡으면 상자 순서가 바뀔 때 조용히 다른 값이 들어온다. 그 버그로 직무가 department 에 들어가 있었다. 마감 시간(23:59)은 지원 기간과 다른 상자라 지금 어느 칸에도 안 들어간다.",
+      "api_config": {
+        "list": {
+          "url": "https://www.skcareers.com/Recruit/GetRecruitList",
+          "method": "POST",
+          "body": {
+            "sort": 2,
+            "searchText": "",
+            "corpCode": "",
+            "jobRole": 0,
+            "recruitType": "",
+            "workingType": "",
+            "workingRegion": ""
+          },
+          "items_path": "list",
+          "fields": {
+            "title": "title",
+            "date": "end",
+            "company": "corpName"
+          },
+          "id_field": "noticeID",
+          "link_template": "https://www.skcareers.com/Recruit/Detail/{id}",
+          "headers": {
+            "referer": "https://www.skcareers.com/Recruit"
+          },
+          "body_format": "form",
+          "response": "json",
+          "pagination": null,
+          "date_is_deadline": true
+        }
+      },
+      "selectors": {
+        "list": {
+          "item": "#RecruitList .list-item",
+          "title": ".title-area .title",
+          "link": "a.list-link",
+          "date": ".title-area .date",
+          "company": ".sub-text .company",
+          "link_template": ""
+        },
+        "detail": {
+          "title": ".box-title",
+          "body": ".detail-content-wrapper",
+          "requirements": "",
+          "deadline": ".box-detail-item:has(.label:-soup-contains(\"지원 기간\")) .value",
+          "department": "",
+          "company": ".box-detail-item:has(.label:-soup-contains(\"회사\")) .value",
+          "start_date": ".box-detail-item:has(.label:-soup-contains(\"지원 기간\")) .value"
+        }
+      }
+    },
+    {
+      "name": "현대자동차",
+      "crawler_id": 17,
+      "list_url": "https://talent.hyundai.com/theme/hall.hc",
+      "list_mode": "api",
+      "detail_mode": "api",
+      "default_company": "현대자동차",
+      "note": "헤더 x-hkmc-service 가 없으면 400 이다. 상세 주소는 recuYy·recuType·recuCls 세 값으로 만든다. 마감일이 20260830 형식이라 정규화 규칙에 %Y%m%d 형식이 있어야 한다. 전형 절차는 procStep1Nm~procStep7Nm 일곱 자리를 모은다 — 한 자리만 읽으면 '지원서 접수' 하나로 끝난다.",
+      "api_config": {
+        "list": {
+          "url": "https://talent.hyundai.com/api/rec/AP-HM-FO-02730?hgrCd=1&lang=ko&secCode=&jdRecuCate=01&secLoad=Y",
+          "method": "GET",
+          "body": {},
+          "items_path": "data.applyList",
+          "fields": {
+            "title": "recuNoticeNm",
+            "date": "appDispEdDt"
+          },
+          "id_field": "recuYy={recuYy}&recuType={recuType}&recuCls={recuCls}",
+          "link_template": "https://talent.hyundai.com/apply/applyView.hc?{id}",
+          "headers": {
+            "accept": "application/json, text/plain, */*",
+            "referer": "https://talent.hyundai.com/theme/hall.hc",
+            "x-hkmc-service": "HM",
+            "x-hkmc-token": "null"
+          },
+          "body_format": "json",
+          "response": "json",
+          "pagination": null,
+          "date_is_deadline": true
+        },
+        "detail": {
+          "url": "https://talent.hyundai.com/api/rec/AP-HM-FO-02800?hgrCd=1&lang=ko&{id}",
+          "method": "GET",
+          "body": {},
+          "fields": {
+            "title": "data.applyInfo.recuNoticeNm",
+            "body": [
+              "data.applyInfo.privJdDtl",
+              "data.applyInfo.aboutTeamNtc",
+              "data.applyInfo.etc"
+            ],
+            "deadline": "data.applyInfo.applyEndDt",
+            "start_date": "data.applyInfo.appDispStDt"
+          },
+          "headers": {
+            "accept": "application/json, text/plain, */*",
+            "referer": "https://talent.hyundai.com/apply/applyView.hc",
+            "x-hkmc-service": "HM",
+            "x-hkmc-token": "null"
+          }
+        }
+      }
+    },
+    {
+      "name": "롯데그룹",
+      "crawler_id": 12,
+      "list_url": "https://recruit.lotte.co.kr/apply/announcement",
+      "list_mode": "static",
+      "detail_mode": "static",
+      "default_company": null,
+      "note": "정적 HTML 한 장이다. 본문(.board-content)이 응시자격부터 문의처까지 다 들고 있어서, 이름표로 잘라낼 수 있는 전형절차와 기타사항만 따로 담고 나머지는 본문에 남긴다. 채용조건 절에 고용형태가 있지만 직급·처우와 한 목록이라 employment_type 으로 잘라내지 않았다.",
+      "selectors": {
+        "list": {
+          "item": "ul.job-card-list > li",
+          "title": ".card-tit a",
+          "link": ".card-tit a",
+          "date": ".card-foot .date",
+          "company": ".cmp-name",
+          "link_template": ""
+        },
+        "detail": {
+          "title": "h4.title",
+          "body": ".board-content",
+          "requirements": "",
+          "deadline": ".date-detail",
+          "department": "",
+          "company": ".board-type",
+          "start_date": ".date-detail"
+        }
+      }
+    },
+    {
+      "name": "두산",
+      "crawler_id": 31,
+      "list_url": "https://career.doosan.com/dsp/sa/RecList.jsp",
+      "list_mode": "static",
+      "detail_mode": "static",
+      "default_company": null,
+      "note": "정적 HTML 이다. 마감일이 tbody > tr:nth-child(4) > td 를 보고 있어 '지원자 개별일정' 을 마감일로 읽고 있었다 — 이름표(th)로 바꿨다. 자회사/BG 가 계열사라 company 로 가고 department 는 비운다. 본문을 div.content 로 넓혔다. dt/dd 와 표가 서로 다른 블록이라 좁게 잡으면 접수방법·문의처·일정이 통째로 사라진다. 끝에 이전글/다음글이 딸려 온다.",
+      "selectors": {
+        "list": {
+          "item": "ul.list-cont > li",
+          "title": "a.list-tit > strong",
+          "link": "a.list-tit",
+          "date": "div.deadline",
+          "company": "div.company",
+          "link_template": "https://career.doosan.com/dsp/sa/RecList.jsp?REC_ID={onclick|arg1}&REC_TYPE_CD={onclick|arg3}&q_REC_TYPE=&REC_MGT_CD={onclick|arg2}&OPEN_YN=&q_CHRG_ID=&q_SCHFIRM_ID=&BA_STATUS_CD=&q_COMP_CD={onclick|arg4}&PRE_URL=REC&MENU_ID=RecList&mode=goDetail"
+        },
+        "detail": {
+          "title": "h2.h2-title",
+          "body": "div.content",
+          "requirements": "",
+          "deadline": "th:-soup-contains(\"채용공고\") + td",
+          "department": "",
+          "company": "dt:-soup-contains(\"자회사/BG\") + dd",
+          "start_date": "th:-soup-contains(\"채용공고\") + td"
+        }
+      }
+    },
+    {
+      "name": "네이버",
+      "crawler_id": 32,
+      "list_url": "https://recruit.navercorp.com/rcrt/list.do",
+      "list_mode": "static",
+      "detail_mode": "static",
+      "default_company": null,
+      "note": "정적 HTML 이다. 모집 부서가 'NAVER' 즉 계열사라 company 로 가고 department 는 비운다. 마감일이 지금까지 비어 있었는데 모집 기간(dd)에서 읽는다. 모집 분야 dd 가 둘인데 첫 번째만 읽힌다.",
+      "selectors": {
+        "list": {
+          "item": ".card_item",
+          "title": ".card_title",
+          "link": "a.card_link",
+          "date": "",
+          "company": ".company_logo .blind",
+          "link_template": "https://recruit.navercorp.com/rcrt/view.do?annoId={onclick|arg1}&sw=&subJobCdArr=&sysCompanyCdArr=&empTypeCdArr=&entTypeCdArr=&workAreaCdArr="
+        },
+        "detail": {
+          "title": "h4.card_title",
+          "body": ".detail_wrap",
+          "requirements": "",
+          "deadline": ".card_info dt:-soup-contains(\"모집 기간\") + dd",
+          "department": "",
+          "company": ".card_info dt:-soup-contains(\"모집 부서\") + dd",
+          "start_date": ".card_info dt:-soup-contains(\"모집 기간\") + dd"
+        }
+      }
+    },
+    {
+      "name": "토스",
+      "crawler_id": 33,
+      "list_url": "https://toss.im/career/jobs",
+      "list_mode": "playwright",
+      "detail_mode": "static",
+      "default_company": null,
+      "note": "목록은 렌더, 상세는 정적이다. 본문 셀렉터 .p-container__inner 가 상단 내비게이션을 먼저 잡고 있었다 — :not(.p-navbar__inner-container) 를 붙였다. 마감일이 blockquote 였는데 그 자리에 있는 것은 대개 현직자 인터뷰 인용문이다 — 264건 중 138건이 인용문을 마감일로 받아 date_parse 에서 통째로 빠졌다. 모집 기간을 이름표로 단 blockquote 만 잡도록 좁혔고, 그 이름표가 없는 공고의 마감일은 빈 칸이다 (264건 중 본문에 모집 기간이 있는 것은 4건뿐이다). 상세 마크업이 공고마다 달라 제목·본문·마감일 말고는 비운다.",
+      "selectors": {
+        "list": {
+          "item": "div.p-container ul a[href*='job-detail']",
+          "title": "p[data-desktop-list-item-title]",
+          "link": "",
+          "date": "",
+          "company": "[data-desktop-addon-root='right-addon']",
+          "link_template": "https://toss.im{href}"
+        },
+        "detail": {
+          "title": "title",
+          "body": ".p-container__inner:not(.p-navbar__inner-container)",
+          "requirements": "",
+          "deadline": "blockquote:has(strong:-soup-contains(\"모집 기간\"))",
+          "department": "",
+          "company": "",
+          "start_date": ""
+        }
+      }
+    },
+    {
+      "name": "카카오",
+      "crawler_id": 30,
+      "list_url": "https://careers.kakao.com/jobs?part=BUSINESS_SERVICES&company=KAKAO&page=1",
+      "list_mode": "api",
+      "detail_mode": "playwright",
+      "default_company": null,
+      "note": "목록은 API, 상세는 렌더다. 상세 문서는 본문이 '◆ 업무내용' 처럼 한 덩어리라 갈라낼 수 없고, 같은 값이 목록 API 에 항목마다 별도 필드로 있다. 그래서 직군·모집인원·주요 업무·자격요건·전형절차·근로제도를 목록에서 읽어 나른다. 상세 문서가 주는 회사·직원유형·근무지·영입마감일은 이름표(dt)로 읽는다. start_date 는 공고 등록일(regDate)이다 — 사이트가 모집 시작일을 따로 적지 않는다.",
+      "api_config": {
+        "list": {
+          "url": "https://careers.kakao.com/public/api/job-list?skillSet=&part=BUSINESS_SERVICES&company=KAKAO&employeeType=&page=1",
+          "method": "GET",
+          "body": {},
+          "items_path": "jobList",
+          "fields": {
+            "title": "jobOfferTitle",
+            "company": "companyName",
+            "start_date": "regDate"
+          },
+          "id_field": "realId",
+          "link_template": "https://careers.kakao.com/jobs/{id}?skillSet=&part=BUSINESS_SERVICES&company=KAKAO&employeeType=&page=1",
+          "headers": {},
+          "body_format": "json",
+          "response": "json",
+          "pagination": null,
+          "date_is_deadline": false
+        }
+      },
+      "selectors": {
+        "list": {
+          "item": "ul.list_jobs > a",
+          "title": "h4.tit_jobs",
+          "link": "",
+          "date": "dd:nth-of-type(1)",
+          "company": "dl.item_subinfo:nth-of-type(1) > dd",
+          "link_template": ""
+        },
+        "detail": {
+          "title": ".tit_jobs",
+          "body": ".cont_board",
+          "requirements": "",
+          "deadline": ".list_info dt:-soup-contains(\"영입마감일\") + dd",
+          "department": "",
+          "company": ".list_info dt:-soup-contains(\"회사정보\") + dd",
+          "start_date": ""
+        }
+      }
+    },
+    {
+      "name": "우아한형제들",
+      "crawler_id": 29,
+      "list_url": "https://career.woowayouths.com/recruitment/",
+      "list_mode": "api",
+      "detail_mode": "playwright",
+      "default_company": null,
+      "note": "목록은 API, 상세는 렌더다. 목록 응답의 careerType·jobGroup·employmentType 은 코드만 있고 표시할 이름이 없어 읽지 않는다. 같은 값이 상세 문서에 이름표(.flag-career/.flag-type/.flag-tag)로 있어 그쪽에서 읽는다. 마감일이 .flag-type 전체를 잡아 '기간제 영입 종료시' 로 들어오고 있었다 — 두 번째 span 만 읽는다.",
+      "api_config": {
+        "list": {
+          "url": "https://career.woowayouths.com/w1/recruits?category=jobGroupCodes%3ABA005010&recruitCampaignSeq=0&jobGroupCodes=BA005010&page=0&size=21&sort=updateDate%2Cdesc",
+          "method": "GET",
+          "body": {},
+          "items_path": "data.list",
+          "fields": {
+            "title": "recruitName",
+            "start_date": "recruitOpenDate"
+          },
+          "id_field": "recruitNumber",
+          "link_template": "https://career.woowayouths.com/recruitment/{id}/detail?category=jobGroupCodes%3ABA005010",
+          "headers": {},
+          "body_format": "json",
+          "response": "json",
+          "pagination": null,
+          "date_is_deadline": false
+        }
+      },
+      "selectors": {
+        "list": {
+          "item": ".recruit-type-list > li:has(a.title p.fr-view)",
+          "title": "a.title p.fr-view",
+          "link": "a.title",
+          "date": ".flag-type",
+          "company": "",
+          "link_template": ""
+        },
+        "detail": {
+          "title": ".recruit-detail-title-inner .title",
+          "body": ".detail-view",
+          "requirements": "",
+          "deadline": ".flag-type span:nth-of-type(2)",
+          "department": "",
+          "company": "",
+          "start_date": ""
+        }
+      }
+    }
+  ],
+  "why_the_mappings_were_removed": "2026-08-26 에 이 파일에 칸 매핑을 가득 적었다가 같은 날 뺐다. 애써 만든 것을 왜 지웠는지 다음 사람이 묻기 때문에 적어 둔다. 매핑 방식은 사이트 11곳 x 칸 16개 = 176번의 판단이었고, 640건 실측에서 절반도 채우지 못했다 — 제목·본문·원본 주소 100%, 회사명 98%, 마감일 71%, 시작일 70%, 나머지 열세 칸은 21~66% 였다. 그리고 176번 중 다섯 곳에서 뜻이 다른 칸에 값이 들어가 있었다: 한화 부서에 근무지, SK 부서에 직무, 네이버 회사에 부서, 두산 마감일에 '지원자 개별일정', 우아한형제들 마감일에 '기간제 영입 종료시'. 사이트가 하나 늘 때마다 판단이 16번 는다. 그래서 수집은 어느 사이트나 확실히 주는 여섯 칸만 하고, 나누는 것은 본문을 읽는 쪽으로 옮겼다 (.claude/tasks/todo/prd-llm-classify.md). 회사명이 여섯에 남은 이유는 하나다 — 본문에 회사명이 글자로 나오는 것이 348건 중 32% 뿐이라 (SK 는 103건 중 1건) 본문에서는 못 뽑는다. 목록 응답에는 companyName·sdNm·corpName 으로 깨끗하게 있다. 이 파일의 지난 모양은 git 이력에 있다."
+}

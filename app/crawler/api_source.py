@@ -32,7 +32,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import replace
 from typing import Any
 
@@ -56,6 +56,7 @@ from app.selector.api_schema import (
     FORM_BODY,
     ID_ATTRIBUTE_MARK,
     ID_PLACEHOLDER,
+    LIST_FIELDS,
     ApiDetailConfig,
     ApiListConfig,
     FieldPath,
@@ -295,6 +296,7 @@ def build_html_items(html: str, config: ApiListConfig) -> ListParseResult:
                 date=values.get("date", ""),
                 company=values.get("company", ""),
                 detail_key=item_id,
+                extra=_extra(values),
             )
         )
 
@@ -403,9 +405,25 @@ def _item(
             date=values.get("date", ""),
             company=values.get("company", ""),
             detail_key=item_id,
+            extra=_extra(values),
         ),
         [],
     )
+
+
+def _extra(values: Mapping[str, str]) -> dict[str, str]:
+    """목록에서 읽은 값 중 상세 칸으로 갈 것들. 목록 자신의 세 값은 빼고 담는다.
+
+    카카오 목록 API 는 직군·근무지·모집인원·주요 업무·전형 절차를 항목마다 담아 주는데 상세
+    문서에는 그것들이 한 덩어리로만 있다. 여기서 싣지 않으면 그 값들은 수집 단계에서 사라지고,
+    매핑하지 않은 값은 저장되지 않으므로 다시 얻을 길이 없다.
+
+    빈 값은 담지 않는다. 상세가 비었을 때만 쓰이는 값이라, 빈 문자열을 담아 두면 "목록도 비었다"
+    와 "목록이 그 값을 안 준다" 가 같은 모양이 된다.
+    """
+    return {
+        name: value for name, value in values.items() if name not in LIST_FIELDS and value.strip()
+    }
 
 
 def _entry_id(entry: Mapping[str, Any], spec: str) -> str:
@@ -508,7 +526,27 @@ def _value(payload: Any, path: FieldPath) -> str:
     parts: list[str] = []
     for one in paths:
         parts.extend(_texts(payload, one))
-    return "\n\n".join(part for part in parts if part.strip())
+    return "\n\n".join(_unique(parts))
+
+
+def _unique(parts: Iterable[str]) -> list[str]:
+    """같은 값이 여러 칸에 들어 있으면 한 번만 적는다.
+
+    `*` 로 배열을 훑으면 칸마다 값을 하나씩 얻는데, 그 값이 칸마다 같은 경우가 있다.
+    한화는 모집 부문이 셋이어도 근무지가 셋 다 `서울` 이라 그대로 이으면 `서울 서울 서울`
+    이 된다. 조직명도 마찬가지다.
+
+    순서는 지킨다. 처음 나온 자리에 남는다.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for part in parts:
+        text = part.strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        out.append(part)
+    return out
 
 
 def _texts(payload: Any, path: str) -> list[str]:

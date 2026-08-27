@@ -144,15 +144,20 @@ async def test_renormalizing_keeps_the_delivery_mark(conn: sqlite3.Connection) -
     assert [row["delivered_at"] for row in delivered] == [DELIVERED_AT] * 4
 
 
-async def test_clearing_the_operator_value_makes_the_company_null(
+async def test_clearing_the_operator_value_falls_back_to_the_crawler_name(
     conn: sqlite3.Connection,
 ) -> None:
-    """운영자가 지우면 회사명이 없는 상태로 돌아간다. 빈 문자열이 아니라 NULL 이다."""
+    """운영자가 지우면 크롤러 이름으로 내려간다. 빈 문자열로 채우지는 않는다 (1.3).
+
+    2026-08-26 이전에는 여기서 NULL 로 돌아갔다. 목록이 회사명을 주지 않는 사이트가 있어서,
+    비워 두는 것보다 상위 기업 이름이라도 있는 편이 낫다고 정했다.
+    """
     await collect(conn)
+    name = conn.execute("SELECT name FROM crawlers WHERE id = 2").fetchone()["name"]
 
     conn.execute("UPDATE crawlers SET default_company = NULL WHERE id = 2")
     renormalize(conn, BackfillProgress())
 
     after = rows_by_workflow(conn, OPERATOR_WORKFLOW)
-    assert [row["company"] for row in after] == [None, None]
-    assert [row["company_source"] for row in after] == [None, None]
+    assert [row["company"] for row in after] == [name, name]
+    assert [row["company_source"] for row in after] == [OPERATOR, OPERATOR]

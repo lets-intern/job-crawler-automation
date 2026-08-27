@@ -56,8 +56,11 @@ from app.crawler.hashing import content_hash
 from app.crawler.parser import ListItem
 from app.normalize.engine import NormalizeError, insert_normalized, load_rules
 from app.normalize.rules import Rule
+from app.notify.message import NewJob
+from app.notify.new_jobs import notify_new_jobs
 from app.selector.api_schema import ApiConfigError, parse_api_config
 from app.selector.schema import (
+    SPLIT_DETAIL_FIELDS,
     DetailSelectors,
     ListSelectors,
     SelectorSchemaError,
@@ -222,6 +225,23 @@ async def run_workflow(
             timeout_seconds=bound,
         )
     _record_outcome(conn, workflow_id, result)
+    # 새 공고가 들어왔으면 알린다. 보내기가 실패해도 실행 결과는 그대로다 —
+    # 알림이 안 갔다고 수집이 실패한 것은 아니다 (`app/notify/new_jobs.py`)
+    await notify_new_jobs(
+        conn,
+        workflow_id=workflow_id,
+        new_count=result.new_count,
+        jobs=[
+            NewJob(
+                company=item.fields["company"],
+                title=item.fields["title"],
+                # 알림에서 눌러 바로 열 자리다
+                url=item.source_url,
+            )
+            for item in result.items
+            if item.state == STORED
+        ],
+    )
     return result
 
 
@@ -543,15 +563,26 @@ def _record(item: ListItem, detail: dict[str, str]) -> dict[str, str]:
 
     상세가 없는 사이트에서는 `title` 과 `deadline` 이 목록에서 온다. 상세를 따라가지 않으니
     그쪽에서 올 값이 없고, 목록에 있는 것을 두고 빈 칸으로 남기면 공고를 알아볼 수 없다.
+
+    상세가 비운 칸은 `item.extra` 가 채운다. 목록 응답이 상세 칸의 값까지 들고 있는 사이트가
+    있어서다 — 카카오 목록 API 는 직군·근무지·모집인원·주요 업무·전형 절차를 항목마다 담아
+    주는데 상세 문서에는 그것들이 한 덩어리로만 있다. 읽지 않으면 그 값들은 여기서 사라지고,
+    매핑하지 않은 값은 저장되지 않으므로 다시 얻을 길이 없다
+    (`.claude/tasks/todo/prd-split-body.md`).
+
+    **순서가 규칙이다.** 상세에서 읽은 값이 늘 이긴다. 목록 값은 상세가 비었을 때만 쓰이고,
+    목록도 그 값을 안 주면 빈 칸이다. 빈 칸을 채우려고 뜻이 다른 값을 옮겨 오지 않는다.
     """
+    carried = item.extra
     return {
         "source_url": item.link,
         "title": detail["title"] or item.title,
-        "body": detail["body"],
-        "requirements": detail["requirements"],
-        "deadline": detail["deadline"] or item.date,
-        "department": detail["department"],
+        "body": detail["body"] or carried.get("body", ""),
+        "requirements": detail["requirements"] or carried.get("requirements", ""),
+        "deadline": detail["deadline"] or carried.get("deadline", "") or item.date,
+        "department": detail["department"] or carried.get("department", ""),
         "company": detail["company"] or item.company,
+        **{name: detail.get(name, "") or carried.get(name, "") for name in SPLIT_DETAIL_FIELDS},
         "list_title": item.title,
         "list_date": item.date,
     }

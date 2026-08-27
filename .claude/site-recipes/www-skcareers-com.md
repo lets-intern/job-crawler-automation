@@ -19,7 +19,7 @@ POST https://www.skcareers.com/Recruit/GetRecruitList
   -> totalCount 와 list. 항목마다 noticeID / title / corpName / start / end
 ```
 
-JSON 본문으로 보내면 답하지 않는다. 요청 전문은 `seeds/site-configs-20260825.json` 의 SK
+JSON 본문으로 보내면 답하지 않는다. 요청 전문은 `seeds/site-configs-20260826.json` 의 SK
 항목에 있고 DB 가 진실이다.
 
 ## 상세는 서버가 그린 HTML 이다
@@ -45,3 +45,21 @@ JSON 본문으로 보내면 답하지 않는다. 요청 전문은 `seeds/site-co
 |---|---|---|---|
 | 2026-08-23 | 마감일이 정규화에서 통째로 빠짐 | `date_parse` 가 한국식 형식만 시도했다 | `%B %d, %Y` 를 규칙에 더하고 재정규화 (`seeds/snapshot/README.md`) |
 | 2026-08-25 | 목록을 렌더에서 API 로 전환 | 목록 API 가 104건을 한 번에 준다. 렌더 경로는 20건만 보고 있었다 | 수동 실행 1회(run 252)에서 83건 적재, 실패 0건 |
+
+## 칸 매핑 (2026-08-26, 수집은 여섯 칸)
+
+**이 사이트는 여섯 칸만 수집한다** — 제목·본문·모집 마감일·모집 시작일·모집 기업, 그리고 원본 주소. 나머지 열한 칸(직군·근무지·경력 구분·고용형태·모집인원·주요 업무·우대사항·전형 절차·자격요건·조직 부서·기타)은 본문을 읽어 나눈다.
+
+`crawlers` 15번 행의 설정에서 그대로 옮겼다. 같은 값이 `seeds/site-configs-20260826.json` 에 있고 `tests/test_split_body_mapping.py` 가 픽스처에 돌려 본다. 문서와 저장된 설정이 갈리지 않는지는 `tests/test_site_recipe_mapping.py` 가 본다.
+
+| 칸 | 어디서 | 자리 |
+|---|---|---|
+| 제목 | 상세 셀렉터 | `.box-title` |
+| 본문 | 상세 셀렉터 | `.detail-content-wrapper` |
+| 모집 마감일 | 상세 셀렉터 | `.box-detail-item:has(.label:-soup-contains("지원 기간")) .value` |
+| 모집 시작일 | 상세 셀렉터 | `.box-detail-item:has(.label:-soup-contains("지원 기간")) .value` |
+| 모집 기업 | 상세 셀렉터 | `.box-detail-item:has(.label:-soup-contains("회사")) .value` |
+
+여기 없는 칸은 이 사이트가 그 값을 주지 않는다는 사실이다. 다른 값으로 채우지 않는다.
+
+2026-08-26 이전에는 이 표에 열여섯 칸이 있었다. 그 매핑을 뺀 이유는 `seeds/site-configs-20260826.json` 의 `why_the_mappings_were_removed` 에 있다 — 사이트 11곳 x 칸 16개 = 176번의 판단이 640건에서 절반도 채우지 못했고, 그중 다섯 곳이 뜻이 다른 칸에 값을 넣고 있었다.

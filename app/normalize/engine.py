@@ -16,14 +16,40 @@
 ## 회사명은 두 출처에서 하나를 고른다
 
 `raw_data_json.company` 가 비어 있지 않으면 그 값을 쓰고 `company_source='parsed'` 다.
-비어 있으면 그 크롤러의 `crawlers.default_company` 를 쓰고 `company_source='operator'` 다.
-둘 다 없으면 둘 다 NULL 이다 — 빈 문자열로 채우지 않는다.
+비어 있으면 그 크롤러의 `crawlers.default_company` 를, 그것도 비어 있으면 **크롤러 이름**을
+쓰고 `company_source='operator'` 다. 크롤러 이름조차 없는 경우에만 둘 다 NULL 이다 —
+빈 문자열로 채우지 않는다.
+
+크롤러 이름까지 내려가는 것은 목록이 회사명을 주지 않는 사이트(토스·우아한형제들)를 위한
+것이다. 비워 두는 것보다 상위 기업 이름이라도 있는 편이 낫다 (2026-08-26 결정).
 
 파싱값이 이기는 이유는 공고 단위가 사이트 단위보다 구체적이기 때문이다. 삼성 채용 사이트
 하나에 삼성SDS 와 삼성전기 공고가 섞여 들어오고, 그 둘을 구분하는 것은 파싱값뿐이다.
 
 고른 값에도 다른 필드와 똑같이 규칙이 적용된다. "삼성전기(주)" 를 "삼성전기" 로 맞추는 것은
 `mapping` 규칙의 일이지 이 해결 단계의 일이 아니다.
+
+## 여섯 칸은 수집이, 열한 칸은 분류가 가진다
+
+수집은 어느 사이트나 확실히 주는 여섯 칸만 한다 — `title` `body` `company` `deadline`
+`start_date` `source_url`. 나머지 열한 칸은 본문을 읽어 나눈 결과가 채운다 (`app/classify/`).
+그 결과는 `job_classifications` 에 따로 남아 있다.
+
+**분류가 있으면 그 열한 칸은 전부 분류 값이다.** 규칙이 만든 값이 있어도 덮고, 분류가 빈 칸을
+냈으면 빈 칸이 된다. 칸의 출처가 하나여야 소비 측이 한 가지 규칙으로 읽는다 (2026-08-26 결정).
+
+빈 칸까지 덮는 것이 핵심이다. 채워진 칸만 덮으면 2026-08-26 이전에 수집된 행에 옛 매핑이 넣어
+둔 값(`IT - 구축/운영/최적화`, `Permanent`)이 남고, 그 순간 판정 칸 셋의 닫힌 목록이
+`.claude/docs/api-contract.md` 가 약속한 대로 성립하지 않는다.
+
+수집이 주는 여섯 칸은 분류가 건드리지 않는다. `deadline` 은 마감 지난 공고를 거르는 데 쓰이고
+`company` 는 계열사를 가르는 값이라 본문 판독으로 바꿀 것이 아니다.
+
+분류가 없으면(아직 돌지 않았으면) 아무것도 하지 않는다. 그 행은 규칙이 만든 값을 그대로
+유지하고, 나중에 분류를 돌리면 다음 정규화에서 넘어간다.
+
+분류가 낸 값에는 규칙을 태우지 않는다. 규칙은 사이트가 준 원문의 모양을 맞추려고 쓴 것이고,
+본문에서 그대로 옮겨 온 값에 걸면 뜻이 달라진다.
 
 ## 규칙 다음에 사람 보정이다
 
@@ -58,6 +84,9 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime
 
 from bs4 import BeautifulSoup
+
+from app.classify.schema import CLASSIFY_FIELDS
+from app.classify.store import read_classification
 
 # 어디서 줄이 바뀌어야 하는지는 HTML 이 정하고, 그 목록은 저기 하나뿐이다. 여기에 같은
 # 목록을 두 벌 두면 한쪽만 늘어나는 날이 오고 그때 어느 쪽이 진실인지 알 수 없다
@@ -99,8 +128,13 @@ OPERATOR = "operator"
 # 규칙이 만드는 필드가 아니라 해결 단계가 정하는 값이다. `NORMALIZED_FIELDS` 에 넣지 않는다.
 COMPANY_SOURCE = "company_source"
 
-# 사람이 고칠 수 있는 필드. `job_field_overrides.field_name` 의 CHECK 제약과 같은 값이어야 한다.
-# 규칙이 만드는 필드와 같은 여섯 개다. `source_url` 은 공고의 신원이라 들어 있지 않다.
+# 사람이 고칠 수 있는 필드. `job_field_overrides.field_name` 의 CHECK 제약과 같은 값이어야
+# 한다. `source_url` 은 공고의 신원이라 들어 있지 않다.
+#
+# 0012 가 그 CHECK 를 열여섯 칸으로 넓혀서 `NORMALIZED_FIELDS` 와 같아졌다. 두 목록을 하나로
+# 합치지 않는 것은 뜻이 다르기 때문이다 — 이쪽은 "사람이 고쳐도 되는 칸" 이고, 언젠가
+# 고치면 안 되는 칸이 생기면 여기서만 빠진다. 늘릴 때는 마이그레이션과 같은 커밋에서 늘린다.
+# 코드만 넓히면 DB 가 거절하고, 그 실패는 운영자가 저장을 누른 뒤에야 드러난다.
 OVERRIDABLE_FIELDS: tuple[str, ...] = NORMALIZED_FIELDS
 
 
@@ -159,6 +193,7 @@ def normalize_fields(
     raw: Mapping[str, object],
     rules: Sequence[Rule],
     default_company: str | None = None,
+    classification: Mapping[str, str] | None = None,
 ) -> dict[str, str | None]:
     """원문 필드에서 `normalized_jobs` 의 값들을 만든다. 값이 없는 필드는 None 이다.
 
@@ -185,14 +220,41 @@ def normalize_fields(
                 break
         result[field_name] = value or None
     result[COMPANY_SOURCE] = source if result["company"] else None
-    return result
+    return apply_classification(result, classification)
+
+
+def apply_classification(
+    fields: dict[str, str | None], classification: Mapping[str, str] | None
+) -> dict[str, str | None]:
+    """열한 칸을 분류 결과로 바꾼다. 규칙이 만든 값이 있어도 덮고, 빈 칸이면 비운다.
+
+    분류가 없으면(아직 돌지 않았으면) 아무것도 하지 않는다. 그 공고는 규칙이 만든 값을 그대로
+    가진 채로 남고, 나중에 분류를 돌리면 재정규화 없이도 다음 정규화에서 넘어간다.
+
+    수집이 주는 여섯 칸은 `CLASSIFY_FIELDS` 에 없으므로 여기를 지나가지 않는다.
+    """
+    if not classification:
+        return fields
+    for name in CLASSIFY_FIELDS:
+        fields[name] = classification.get(name, "").strip() or None
+    return fields
 
 
 def read_default_company(conn: sqlite3.Connection, raw_job_id: int) -> str | None:
-    """그 건을 수집한 크롤러에 운영자가 적어 둔 회사명. 없으면 None 이다. 읽기 전용이다."""
+    """공고가 회사명을 주지 않을 때 쓸 값. 없으면 None 이다. 읽기 전용이다.
+
+    운영자가 크롤러에 적어 둔 `crawlers.default_company` 가 먼저고, 그것도 비어 있으면
+    **크롤러 이름**을 쓴다. 토스·우아한형제들은 목록이 회사명을 주지 않는데, 비워 두는 것보다
+    상위 기업 이름이라도 있는 편이 낫다 (2026-08-26 결정).
+
+    크롤러 이름을 쓴 것도 `company_source` 는 `operator` 다. 그 열이 가르는 것은 "사이트가
+    준 값인가, 우리가 채운 값인가" 이고 둘 다 뒤쪽이다. 어느 쪽으로 채웠는지는 `crawlers`
+    행을 보면 안다 — 값이 둘로 갈린다고 출처를 셋으로 늘리면 소비 측이 읽던 두 값에 모르는
+    값이 하나 는다 (`.claude/docs/api-contract.md`).
+    """
     row = conn.execute(
         """
-        SELECT c.default_company AS default_company
+        SELECT c.default_company AS default_company, c.name AS name
           FROM raw_jobs r
           JOIN workflows w ON w.id = r.workflow_id
           JOIN crawlers c ON c.id = w.crawler_id
@@ -202,8 +264,11 @@ def read_default_company(conn: sqlite3.Connection, raw_job_id: int) -> str | Non
     ).fetchone()
     if row is None:
         return None
-    value = row["default_company"]
-    return str(value) if value is not None else None
+    for column in ("default_company", "name"):
+        value = row[column]
+        if value is not None and str(value).strip():
+            return str(value)
+    return None
 
 
 def read_raw(conn: sqlite3.Connection, raw_job_id: int) -> tuple[str, dict[str, object]]:
@@ -270,7 +335,12 @@ def normalized_values(
     각자 조립하면 한쪽에서만 보정이 빠지고, 그 차이는 재정규화를 돌린 뒤에야 드러난다.
     """
     source_url, data = read_raw(conn, raw_job_id)
-    fields = normalize_fields(data, rules, read_default_company(conn, raw_job_id))
+    fields = normalize_fields(
+        data,
+        rules,
+        read_default_company(conn, raw_job_id),
+        read_classification(conn, raw_job_id),
+    )
     return source_url, apply_overrides(fields, read_overrides(conn, raw_job_id))
 
 
@@ -280,24 +350,17 @@ def insert_normalized(conn: sqlite3.Connection, raw_job_id: int, rules: Sequence
     `delivered_at` 은 쓰지 않는다. 제공 API 경로만 쓴다 (`.claude/rules/data-safety.md`).
     """
     source_url, fields = normalized_values(conn, raw_job_id, rules)
+    # 컬럼 이름은 이 모듈의 상수에서만 온다. 밖에서 오는 값이 들어오지 않는다. 손으로 적은
+    # 목록을 두면 칸이 늘 때마다 여기와 `NORMALIZED_FIELDS` 가 갈리고, 갈린 순간 새 칸은
+    # 조용히 NULL 로만 남는다
+    columns = (*NORMALIZED_FIELDS, COMPANY_SOURCE)
     cursor = conn.execute(
-        """
+        f"""
         INSERT INTO normalized_jobs
-               (raw_job_id, company, company_source, title, department, deadline, body,
-                requirements, source_url)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+               (raw_job_id, source_url, {", ".join(columns)})
+        VALUES (?, ?, {", ".join("?" for _ in columns)})
         """,
-        (
-            raw_job_id,
-            fields["company"],
-            fields[COMPANY_SOURCE],
-            fields["title"],
-            fields["department"],
-            fields["deadline"],
-            fields["body"],
-            fields["requirements"],
-            source_url,
-        ),
+        (raw_job_id, source_url, *(fields[name] for name in columns)),
     )
     return int(cursor.lastrowid or 0)
 

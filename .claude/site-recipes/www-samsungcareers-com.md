@@ -64,7 +64,7 @@ GET https://www.samsungcareers.com/recruit/detail.data?seqno=<번호>&strCode=
 
 목록은 폼 본문으로 물어보고 HTML 조각을 받는다. 그 조각을 CSS 셀렉터로 읽는 설정이
 `crawlers.api_config_json` 에 들어간다 — `items_path` 가 항목 셀렉터, `fields` 가 항목 안의
-셀렉터, `id_field` 가 `<셀렉터>@<속성>` 이다 (`seeds/site-configs-20260825.json`).
+셀렉터, `id_field` 가 `<셀렉터>@<속성>` 이다 (`seeds/site-configs-20260826.json`).
 
 **공고 번호는 `a[data-value]` 에서 천 단위 쉼표를 뺀 값이다.** `id_field` 끝에 `|digits` 를
 붙여 숫자만 남긴다. 숫자 표기에 기대는 자리이므로 사이트가 표기를 바꾸면 여기가 먼저 깨진다.
@@ -80,3 +80,20 @@ GET https://www.samsungcareers.com/recruit/detail.data?seqno=<번호>&strCode=
 첫 실행(run 249)은 54초에 16건을 적재했고 실패 0건, 본문이 빈 행 0건이다. 계열사 12곳이
 `p.company` 에서 온다 — 삼성전자 DX/DS, 삼성디스플레이, 삼성SDI, 삼성전기, 삼성SDS,
 삼성바이오로직스, 삼성바이오에피스, 삼성중공업, 삼성E&A, 삼성물산 건설부문, 삼성물산 상사부문.
+
+## 칸 매핑 (2026-08-26, 수집은 여섯 칸)
+
+**이 사이트는 여섯 칸만 수집한다** — 제목·본문·모집 마감일·모집 시작일·모집 기업, 그리고 원본 주소. 나머지 열한 칸(직군·근무지·경력 구분·고용형태·모집인원·주요 업무·우대사항·전형 절차·자격요건·조직 부서·기타)은 본문을 읽어 나눈다.
+
+`crawlers` 14번 행의 설정에서 그대로 옮겼다. 같은 값이 `seeds/site-configs-20260826.json` 에 있고 `tests/test_split_body_mapping.py` 가 픽스처에 돌려 본다. 문서와 저장된 설정이 갈리지 않는지는 `tests/test_site_recipe_mapping.py` 가 본다.
+
+| 칸 | 어디서 | 자리 |
+|---|---|---|
+| 제목 | 상세 API | `data.result.title` |
+| 본문 | 상세 API | `data.result.introKr`<br>`data.items.*.titleKr`<br>`data.items.*.taskKr` |
+| 모집 시작일 | 상세 API | `data.result.startdate` |
+| 모집 기업 | 상세 API | `data.result.cmpNameKr` |
+
+여기 없는 칸은 이 사이트가 그 값을 주지 않는다는 사실이다. 이 사이트가 주지 않는 것: 모집 마감일. 다른 값으로 채우지 않는다.
+
+2026-08-26 이전에는 이 표에 열여섯 칸이 있었다. 그 매핑을 뺀 이유는 `seeds/site-configs-20260826.json` 의 `why_the_mappings_were_removed` 에 있다 — 사이트 11곳 x 칸 16개 = 176번의 판단이 640건에서 절반도 채우지 못했고, 그중 다섯 곳이 뜻이 다른 칸에 값을 넣고 있었다.

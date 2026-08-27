@@ -244,3 +244,50 @@ def test_selectors_saved_before_the_template_existed_still_read_href() -> None:
     result = parse_list(PYTHONORG_HTML, selectors.list, "https://www.python.org/jobs/")
     assert result.matched > 1
     assert result.items[0].link.startswith("https://www.python.org/jobs/")
+
+
+def test_onclick_인자를_자리표시자로_읽는다() -> None:
+    """두산·네이버는 공고 번호가 속성값 전체가 아니라 `onclick` 인자에 들어 있다."""
+    node = items(
+        '<li><a class="tit" href="javascript:void(0);"'
+        " onclick=\"goDetail('1000361539', 'C_REC_MGT_04')\">제목</a></li>",
+        ListSelectors(item="li", title="a", link="a.tit", date=""),
+    )[0]
+    selectors = ListSelectors(
+        item="li",
+        title="a",
+        link="a.tit",
+        date="",
+        link_template=(
+            "https://career.doosan.com/dsp/sa/RecList.jsp"
+            "?REC_ID={onclick|arg1}&REC_MGT_CD={onclick|arg2}&mode=goDetail"
+        ),
+    )
+
+    result = resolve_link(node, selectors)
+
+    assert result.ok is True
+    assert result.url == (
+        "https://career.doosan.com/dsp/sa/RecList.jsp"
+        "?REC_ID=1000361539&REC_MGT_CD=C_REC_MGT_04&mode=goDetail"
+    )
+
+
+def test_없는_인자를_요구하면_그_항목은_실패다() -> None:
+    """반쯤 채워진 주소를 만들지 않는다. 그것으로 요청하면 엉뚱한 공고를 가져온다."""
+    node = items(
+        '<li><a class="tit" onclick="show(\'30005276\')">제목</a></li>',
+        ListSelectors(item="li", title="a", link="a.tit", date=""),
+    )[0]
+    selectors = ListSelectors(
+        item="li",
+        title="a",
+        link="a.tit",
+        date="",
+        link_template="https://example.test/view?id={onclick|arg2}",
+    )
+
+    result = resolve_link(node, selectors)
+
+    assert result.ok is False
+    assert "onclick|arg2" in result.reason

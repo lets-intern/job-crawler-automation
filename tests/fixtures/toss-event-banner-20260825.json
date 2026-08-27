@@ -1,0 +1,39 @@
+{
+  "header": {
+    "text": "특별 채용 이벤트"
+  },
+  "items": [
+    {
+      "title": "토스인슈어런스 집중채용",
+      "subTitle": "프로덕트 디자이너",
+      "link": "https://pd-recruit.tossinsu.com/",
+      "desktop": {
+        "bottomText": "8.17(월) - 9.13(일)"
+      },
+      "mobile": {
+        "iconSrc": "https://static.toss.im/2d-icons/mono/png/4x/icon-paper-plane-mono.png"
+      },
+      "backgroundImage": "linear-gradient(135deg, #60a8ff 0%, #2070ff 40%, #0050f0 70%, #4090ff 100%)",
+      "exposeControl": {
+        "from": "2026-08-16T09:29:00.000Z",
+        "to": "2026-09-13T14:59:00.000Z"
+      }
+    },
+    {
+      "desktop": {
+        "bottomText": "3.16 (월) - 3.31 (화)"
+      },
+      "mobile": {
+        "iconSrc": "https://static.toss.im/icons/svg/icon-graph-up.svg"
+      },
+      "title": "토스증권 전직군",
+      "subTitle": "경력직 대규모 채용",
+      "link": "https://recruit.tossinvest.com/2026-03?gh_src=e169b3903us&utm_source=toss_careerpage&utm_medium=2603tosssecurities",
+      "exposeControl": {
+        "from": "2026-03-16T15:00:00.000Z",
+        "to": "2026-03-31T14:59:00.000Z"
+      },
+      "backgroundImage": "linear-gradient(135deg, #3050A0 0%, #102878 40%, #001050 70%, #4060B0 100%)"
+    }
+  ]
+}

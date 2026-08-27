@@ -100,7 +100,7 @@ API 가 막히면 렌더 경로로 되돌릴 때 출발점이 된다.
 (`tests/fixtures/lg-detail-20260825.json`)는 6칸이었고, 그때까지의 설정은 첫 칸만 읽고 있었다.
 나머지 다섯 부문의 본문·자격요건·조직명이 수집 단계에서 사라지고 있었다는 뜻이다.
 
-경로에 `*` 를 써서 배열 전체를 모은다. 설정은 `seeds/site-configs-20260825.json` 의 LG 항목이고
+경로에 `*` 를 써서 배열 전체를 모은다. 설정은 `seeds/site-configs-20260826.json` 의 LG 항목이고
 DB 가 진실이다. 이미 적재된 행은 다시 쓰지 않는다 — `raw_jobs` 는 append-only 라 새 공고부터
 온전한 본문이 들어온다.
 
@@ -109,3 +109,21 @@ DB 가 진실이다. 이미 적재된 행은 다시 쓰지 않는다 — `raw_jo
 `list.date_is_deadline` 을 참으로 적었다. 목록의 `recEndDateTime` 이 그 공고의 마감일이므로,
 마감이 지난 공고는 상세를 열지 않고 건너뛴다. 2026-08-25 실행(run 253)에서 88건 중 1건이
 마감으로 걸렀고 나머지는 이미 아는 공고라 상세 요청이 한 번도 나가지 않았다.
+
+## 칸 매핑 (2026-08-26, 수집은 여섯 칸)
+
+**이 사이트는 여섯 칸만 수집한다** — 제목·본문·모집 마감일·모집 시작일·모집 기업, 그리고 원본 주소. 나머지 열한 칸(직군·근무지·경력 구분·고용형태·모집인원·주요 업무·우대사항·전형 절차·자격요건·조직 부서·기타)은 본문을 읽어 나눈다.
+
+`crawlers` 16번 행의 설정에서 그대로 옮겼다. 같은 값이 `seeds/site-configs-20260826.json` 에 있고 `tests/test_split_body_mapping.py` 가 픽스처에 돌려 본다. 문서와 저장된 설정이 갈리지 않는지는 `tests/test_site_recipe_mapping.py` 가 본다.
+
+| 칸 | 어디서 | 자리 |
+|---|---|---|
+| 제목 | 상세 API | `data.jobNoticesDetail.jobNoticesDetail.jobNoticeName` |
+| 본문 | 상세 API | `data.jobNoticesDetail.recList.*.detailContext` |
+| 모집 마감일 | 상세 API | `data.jobNoticesDetail.jobNoticesDetail.recEndDate` |
+| 모집 시작일 | 상세 API | `data.jobNoticesDetail.jobNoticesDetail.recStartDate` |
+| 모집 기업 | 상세 API | `data.jobNoticesDetail.jobNoticesDetail.companyName` |
+
+여기 없는 칸은 이 사이트가 그 값을 주지 않는다는 사실이다. 다른 값으로 채우지 않는다.
+
+2026-08-26 이전에는 이 표에 열여섯 칸이 있었다. 그 매핑을 뺀 이유는 `seeds/site-configs-20260826.json` 의 `why_the_mappings_were_removed` 에 있다 — 사이트 11곳 x 칸 16개 = 176번의 판단이 640건에서 절반도 채우지 못했고, 그중 다섯 곳이 뜻이 다른 칸에 값을 넣고 있었다.

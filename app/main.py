@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from app import db
 from app.api import (
     auth,
+    classify,
     crawlers,
     jobs,
     review,
@@ -18,6 +19,7 @@ from app.api import (
     settings,
     ui,
     ui_crawlers,
+    ui_notify,
     ui_rules,
     ui_rules_preview,
     ui_runs,
@@ -71,6 +73,7 @@ app.include_router(jobs.router)
 app.include_router(workflows.router)
 app.include_router(settings.router)
 app.include_router(rules.router)
+app.include_router(classify.router)
 # 화면. API 라우터 뒤에 붙인다 — `/api/...` 가 먼저 잡힌다
 app.include_router(ui.router)
 app.include_router(ui_crawlers.router)
@@ -82,6 +85,7 @@ app.include_router(ui_rules_preview.router)
 app.include_router(review_filter.router)
 app.include_router(review.router)
 app.include_router(ui_settings.router)
+app.include_router(ui_notify.router)
 # 조각 요청의 실패는 200 과 오류 조각으로 나간다. HTMX 가 4xx·5xx 를 갈아 끼우지 않아
 # 그대로 두면 화면이 조용해진다. `/api/...` 의 상태 코드는 건드리지 않는다
 ui.install_ui_error_handlers(app)

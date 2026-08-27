@@ -174,10 +174,55 @@ def test_item_shape_matches_contract(client: TestClient, conn: sqlite3.Connectio
         "deadline",
         "body",
         "requirements",
+        # 0011 이 더한 열 칸. 더하는 방향이라 위의 기존 필드는 그대로다
+        "start_date",
+        "job_category",
+        "employment_type",
+        "career_level",
+        "work_location",
+        "headcount",
+        "duties",
+        "preferred",
+        "hiring_process",
+        "etc_info",
         "source_url",
         "normalized_at",
     }
     assert item["normalized_at"] == "2026-08-21T10:00:00Z"
+
+
+# 0011 이 더한 칸. 사이트가 주는 것만 채우고 나머지는 NULL 로 둔다
+SPLIT_BODY_FIELDS = (
+    "start_date",
+    "job_category",
+    "employment_type",
+    "career_level",
+    "work_location",
+    "headcount",
+    "duties",
+    "preferred",
+    "hiring_process",
+    "etc_info",
+)
+
+
+def test_new_columns_go_out_filled_or_null(client: TestClient, conn: sqlite3.Connection) -> None:
+    """채워진 칸은 값 그대로, 사이트가 주지 않은 칸은 `null` 로 나간다."""
+    seed(conn, 1)
+    conn.execute(
+        "UPDATE normalized_jobs SET work_location = ?, start_date = ?",
+        ("경기 수원시", "2026-09-01"),
+    )
+
+    item = client.get("/api/jobs").json()["items"][0]
+
+    assert item["work_location"] == "경기 수원시"
+    assert item["start_date"] == "2026-09-01"
+    assert [
+        item[name] for name in SPLIT_BODY_FIELDS if name not in ("work_location", "start_date")
+    ] == [None] * 8
+    # 더하는 방향이다. 기존 필드의 값과 뜻은 그대로다
+    assert item["deadline"] == "2026-09-30"
 
 
 def test_broken_cursor_is_rejected(client: TestClient, conn: sqlite3.Connection) -> None:

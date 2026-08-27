@@ -46,12 +46,18 @@ from app.api.review_filter import (
     DEADLINE_STATES,
     DEFAULT_SORT,
     DELIVERY_STATES,
+    DUP_CRITERIA,
+    DUP_GROUP_PREVIEW,
+    DUP_LABELS,
+    DUP_NOTES,
     EMPTY_CHOICES,
     EMPTY_LABELS,
     FIELD_LABELS,
     SORT_LABELS,
     JobFilter,
     count,
+    dup_columns,
+    dup_groups,
     empty_counts,
     filter_sql,
     order_clause,
@@ -71,12 +77,21 @@ DEFAULT_PAGE_SIZE = 20
 PAGE_WINDOW = 2
 
 # 여러 줄로 들어오는 필드. 한 줄 입력으로 고치면 줄바꿈이 사라진다
-LONG_FIELDS: frozenset[str] = frozenset({"body", "requirements"})
+LONG_FIELDS: frozenset[str] = frozenset(
+    {
+        "body",
+        "requirements",
+        "duties",
+        "preferred",
+        "hiring_process",
+        "etc_info",
+    }
+)
 
 # 모달을 닫으라고 화면에 알리는 이벤트 이름. `base.html` 의 여닫는 스크립트가 이것을 듣는다
 MODAL_DONE_EVENT = "app-modal-done"
 
-_BASE = """
+_COLUMNS = """
     SELECT n.id            AS id,
            n.raw_job_id    AS raw_job_id,
            n.company       AS company,
@@ -86,6 +101,16 @@ _BASE = """
            n.deadline      AS deadline,
            n.body          AS body,
            n.requirements  AS requirements,
+           n.start_date    AS start_date,
+           n.job_category  AS job_category,
+           n.employment_type AS employment_type,
+           n.career_level  AS career_level,
+           n.work_location AS work_location,
+           n.headcount     AS headcount,
+           n.duties        AS duties,
+           n.preferred     AS preferred,
+           n.hiring_process AS hiring_process,
+           n.etc_info      AS etc_info,
            n.source_url    AS source_url,
            n.normalized_at AS normalized_at,
            n.delivered_at  AS delivered_at,
@@ -93,10 +118,15 @@ _BASE = """
            r.content_hash  AS content_hash,
            r.workflow_id   AS workflow_id,
            w.name          AS workflow_name
+"""
+
+_FROM = """
       FROM normalized_jobs n
       JOIN raw_jobs r ON r.id = n.raw_job_id
       JOIN workflows w ON w.id = r.workflow_id
 """
+
+_BASE = f"{_COLUMNS}{_FROM}"
 
 
 def _page_url(criteria: dict[str, str], page: int) -> str:
@@ -272,9 +302,14 @@ def review_table_fragment(
     current = min(max(page, 1), total_pages)
 
     rows = conn.execute(
-        f"{_BASE}{where}{order_clause(sort, order)} LIMIT ? OFFSET ?",
+        f"{_COLUMNS}{dup_columns(picked.dup)}{_FROM}{where}"
+        f"{order_clause(sort, order, picked.dup)} LIMIT ? OFFSET ?",
         [*params, size, (current - 1) * size],
     ).fetchall()
+    # 묶음 번호는 목록과 같은 순서로 매긴 것을 행에 되붙인다. 표에 `3번 묶음 5건` 이라고
+    # 적혀야 페이지가 갈려도 짝이 어디 있는지 찾을 수 있다
+    groups = dup_groups(conn, picked)
+    group_numbers = {group["key"]: group["number"] for group in groups}
     overrides = _read_overrides(conn, [int(row["raw_job_id"]) for row in rows])
     listed = [
         {
@@ -284,6 +319,8 @@ def review_table_fragment(
                 for field in OVERRIDABLE_FIELDS
             ],
             "override_count": len(overrides.get(int(row["raw_job_id"]), {})),
+            "dup_group": group_numbers.get(str(row["dup_key"])) if picked.dup else None,
+            "dup_size": int(row["dup_size"]) if picked.dup else 0,
         }
         for row in rows
     ]
@@ -303,6 +340,13 @@ def review_table_fragment(
         empties=empty_counts(conn, picked),
         empty_picked=picked.empty,
         empty_labels=EMPTY_LABELS,
+        dup_picked=picked.dup,
+        dup_label=DUP_LABELS.get(picked.dup, ""),
+        dup_note=DUP_NOTES.get(picked.dup, ""),
+        dup_groups=groups[:DUP_GROUP_PREVIEW],
+        dup_group_count=len(groups),
+        # 여분은 묶음마다 한 건씩 남기고 센 수다. 지울 수 있는 최대치이지 지울 건수가 아니다
+        dup_extra=total - len(groups),
         total=total,
         page=current,
         page_size=size,
@@ -344,6 +388,9 @@ def review_filters_fragment(
         delivery_states=DELIVERY_STATES,
         empty_choices=EMPTY_CHOICES,
         empty_labels=EMPTY_LABELS,
+        dup_criteria=DUP_CRITERIA,
+        dup_labels=DUP_LABELS,
+        dup_notes=DUP_NOTES,
         sort_labels=SORT_LABELS,
         default_sort=DEFAULT_SORT,
     )

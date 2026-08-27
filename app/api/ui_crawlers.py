@@ -188,25 +188,26 @@ async def create_crawler_fragment(
     detail_url: Annotated[str, Form()] = "",
     name: Annotated[str, Form()] = "",
     default_company: Annotated[str, Form()] = "",
-    render_mode: Annotated[str, Form()] = crawlers.DEFAULT_RENDER_MODE,
 ) -> HTMLResponse:
     """생성 요청. 성공하면 결과 요약과 편집기가, 실패하면 사유가 결과 영역에 들어간다.
+
+    **화면은 가져오는 방식을 묻지 않는다.** 정적으로 목록이 나오면 정적으로, 안 나오면 렌더로
+    등록이 스스로 정하고, 무엇을 보고 그렇게 정했는지는 결과의 근거 문장에 적힌다
+    (`app/api/crawlers.py` 의 `get_generator`, `app/selector/discovery.py`).
+
+    정해진 경로는 제안이라 표에서 운영자가 바꿀 수 있고, 바꾼 값을 판정이 다시 덮어쓰지
+    않는다 (`switch_collect_modes_fragment`).
 
     `detail_url` 은 선택이다. 상세를 JS 로 그려 주소가 따로 없는 사이트가 있고, 비우면 목록
     페이지만 보고 만든다. 그때 상세 셀렉터는 실패가 아니라 건너뜀으로 표시된다.
 
     `default_company` 는 선택이다. 비워 두면 회사명은 공고에서 뽑은 값만 쓰인다.
-
-    `render_mode` 는 기본이 정적이다. 셀렉터도 고른 모드로 가져온 HTML 에서 뽑는다 — JS 로
-    그려지는 사이트는 정적 HTML 에 목록 자체가 없어서, 정적으로 생성한 셀렉터는 처음부터
-    맞을 수가 없다. 어느 쪽이 필요한지는 테스트 실행 화면에서 두 모드를 비교해 정한다.
     """
     payload = crawlers.CrawlerCreate(
         list_url=list_url,
         detail_url=detail_url,
         name=name,
         default_company=default_company,
-        render_mode=render_mode,
     )
     try:
         created = await crawlers.create_crawler(payload, conn, generate, discover)
@@ -312,6 +313,34 @@ def _repair_notice(result: crawlers.RepairOut) -> str:
         parts.append("모델이 바꾼 셀렉터가 없다.")
     parts.append("아직 저장하지 않았다. 반영하려면 아래에서 셀렉터 저장을 누른다.")
     return " ".join(parts)
+
+
+@router.put("/ui/crawlers/{crawler_id}/name", response_class=HTMLResponse)
+def rename_crawler_fragment(
+    request: Request,
+    crawler_id: int,
+    name: Annotated[str, Form()],
+    conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
+) -> HTMLResponse:
+    """표에서 고친 이름을 저장한다.
+
+    등록이 이름을 안 받으면 리스트 URL 의 호스트가 그대로 이름이 된다. 그 행을 다시 등록하면
+    경로 판정이 다시 돌아 브라우저와 모델을 쓰므로, 이름만 고치는 길이 여기다
+    (`app/api/crawlers.py` 의 `update_name`).
+    """
+    try:
+        saved = crawlers.update_name(crawler_id, crawlers.NameUpdate(name=name), conn)
+    except HTTPException as exc:
+        return _result(request, conn=conn, error=error_detail(exc))
+
+    return _result(
+        request,
+        conn=conn,
+        notice=(
+            f"크롤러 {saved.id} 의 이름을 {saved.name} 로 저장했다. "
+            "이미 만들어진 워크플로우의 이름은 그대로다."
+        ),
+    )
 
 
 @router.put("/ui/crawlers/{crawler_id}/collect-modes", response_class=HTMLResponse)

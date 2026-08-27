@@ -37,6 +37,7 @@ import json
 import logging
 import sqlite3
 from collections.abc import Awaitable, Callable, Iterator
+from dataclasses import replace
 from typing import Annotated, Any, Protocol
 from urllib.parse import urlsplit
 
@@ -49,16 +50,25 @@ from app.crawler.failures import SUCCESS
 from app.crawler.fetcher import FetchError, FetchPolicy, RobotsDisallowedError, get_fetcher
 from app.crawler.playwright import PLAYWRIGHT, RENDER_MODES, STATIC, Renderer, open_source
 from app.crawler.runner import TEST, RunTarget, collect_selectors, run_once
-from app.selector.api_schema import ApiConfigError, parse_api_config
+from app.llm.log import SELECTOR_GENERATE, SELECTOR_REPAIR, record_call
+from app.selector.api_schema import (
+    ApiConfig,
+    ApiConfigError,
+    parse_api_config,
+    validate_api_config,
+)
+from app.selector.detail_path import DOCUMENT
 from app.selector.discovery import Discovery, discover_detail_path
 from app.selector.generator import (
     GenerationResult,
     SelectorGenerationError,
+    Usage,
     generate_for_urls,
     generate_from_html,
 )
 from app.selector.repair import RepairOutcome, SelectorRepairError, repair_for_urls
 from app.selector.schema import SelectorSchemaError, SelectorSet, validate_selectors
+from app.selector.verify import VerificationReport
 
 logger = logging.getLogger(__name__)
 
@@ -104,8 +114,10 @@ class CrawlerCreate(BaseModel):
     name: str = ""
     # 회사명이 페이지에 없는 사이트를 위한 운영자 입력. 없으면 비운다
     default_company: str = ""
-    # 기본값은 정적이다. 렌더가 필요한 사이트는 테스트 실행 화면에서 확인하고 올린다
-    render_mode: str = DEFAULT_RENDER_MODE
+    # 비우는 것이 기본이고, 그때는 등록이 스스로 정한다 — 정적으로 목록이 나오면 정적,
+    # 안 나오면 렌더다. 값을 주면 그 모드로만 만들고 판정이 그것을 덮어쓰지 않는다.
+    # 등록 화면은 이 값을 보내지 않는다 (`app/api/ui_crawlers.py`)
+    render_mode: str = ""
 
 
 class RenderModeUpdate(BaseModel):
@@ -119,6 +131,12 @@ class CollectModesUpdate(BaseModel):
 
     list_mode: str
     detail_mode: str
+
+
+class NameUpdate(BaseModel):
+    """크롤러 이름만 바꾼다. 등록할 때 정한 이름이 URL 이면 사람이 읽지 못한다."""
+
+    name: str
 
 
 class CompanyUpdate(BaseModel):
@@ -181,6 +199,13 @@ class CollectModesOut(BaseModel):
     detail_mode: str
 
 
+class NameOut(BaseModel):
+    """이름 수정 결과. 저장된 값을 그대로 돌려준다."""
+
+    id: int
+    name: str
+
+
 class CompanyOut(BaseModel):
     """회사명 수정 결과. 저장된 값을 그대로 돌려준다."""
 
@@ -202,6 +227,14 @@ class SelectorsOut(BaseModel):
     id: int
     status: str
     selectors: SelectorSet
+
+
+class ApiConfigOut(BaseModel):
+    """API 설정 수동 보정 결과. `status` 는 보정으로 바뀌지 않는다."""
+
+    id: int
+    status: str
+    api_config: ApiConfig
 
 
 class SelectorChangeOut(BaseModel):
@@ -315,19 +348,62 @@ def get_crawl_fetcher() -> FetchPolicy:
 
 
 def get_generator() -> GenerateFn:
-    """기본 생성 경로. 테스트는 이 의존성을 갈아끼운다."""
+    """기본 생성 경로. 테스트는 이 의존성을 갈아끼운다.
+
+    `render_mode` 가 비어 있으면 등록이 스스로 정한다. 정적으로 먼저 만들어 보고, 정적
+    HTML 에 목록이 아예 없으면 렌더한 HTML 로 한 번 더 만든다. **운영자에게 모드를 묻지
+    않는다** — 목록 URL 하나로 등록이 끝나야 하고, 정적으로 되는 사이트에 브라우저 값을
+    붙이지도 않는다 (`.claude/rules/crawling.md` 의 "정적이 먼저").
+
+    값을 주면 그 모드로만 만든다. 운영자가 고른 것을 판정이 덮어쓰지 않는다.
+    """
 
     async def generate(list_url: str, detail_url: str, render_mode: str) -> GenerationResult:
-        # 렌더 모드면 브라우저가 이 블록 안에서만 산다. 생성이 끝나면 닫힌다
-        async with open_source(render_mode, get_fetcher()) as source:
-            if not detail_url.strip():
-                # 상세 페이지 주소가 없는 사이트다. 없는 주소를 지어내 가져오지 않는다.
-                # 목록만 보고 만들고, 상세 셀렉터는 볼 HTML 이 없어 판정되지 않는다
-                list_html = (await source.fetch(list_url)).text
-                return await generate_from_html(list_html, "", list_url=list_url)
-            return await generate_for_urls(list_url, detail_url, source=source)
+        if render_mode:
+            return replace(
+                await _generate(list_url, detail_url, render_mode), render_mode=render_mode
+            )
+
+        static_result = await _generate(list_url, detail_url, STATIC)
+        if not static_result.verification.list_missing:
+            return replace(static_result, render_mode=STATIC)
+
+        logger.info("정적 HTML 에 목록이 없어 렌더로 다시 만든다 url=%s", list_url)
+        try:
+            rendered = await _generate(list_url, detail_url, PLAYWRIGHT)
+        except FetchError as exc:
+            # 브라우저가 없거나 렌더가 실패했다. 정적 결과를 그대로 올려 무엇이 안 됐는지
+            # 운영자가 보게 한다 — 여기서 예외를 던지면 사유가 렌더 실패로 바뀐다
+            logger.warning("렌더 생성도 실패했다 url=%s: %s", list_url, exc)
+            return replace(
+                static_result,
+                render_mode=STATIC,
+                notes=[*static_result.notes, f"렌더로 다시 만들지도 못했다: {exc}"],
+            )
+
+        if rendered.verification.list_missing:
+            return replace(rendered, render_mode=PLAYWRIGHT)
+        return replace(
+            rendered,
+            render_mode=PLAYWRIGHT,
+            notes=[
+                *rendered.notes,
+                "정적 HTML 에는 목록이 없어 렌더한 HTML 로 셀렉터를 만들었다",
+            ],
+        )
 
     return generate
+
+
+async def _generate(list_url: str, detail_url: str, render_mode: str) -> GenerationResult:
+    """한 경로로 한 번 만든다. 렌더 모드면 브라우저가 이 블록 안에서만 산다."""
+    async with open_source(render_mode, get_fetcher()) as source:
+        if not detail_url.strip():
+            # 상세 페이지 주소가 없는 사이트다. 없는 주소를 지어내 가져오지 않는다.
+            # 목록만 보고 만들고, 상세 셀렉터는 볼 HTML 이 없어 판정되지 않는다
+            list_html = (await source.fetch(list_url)).text
+            return await generate_from_html(list_html, "", list_url=list_url)
+        return await generate_for_urls(list_url, detail_url, source=source)
 
 
 def get_repairer() -> RepairFn:
@@ -402,9 +478,10 @@ async def create_crawler(
     generate: Annotated[GenerateFn, Depends(get_generator)],
     discover: Annotated[DiscoverFn, Depends(get_discoverer)],
 ) -> CrawlerOut:
-    render_mode = _validated_render_mode(payload.render_mode)
+    # 비우면 등록이 스스로 정한다. 값을 주면 그 모드로만 만들고 판정이 덮어쓰지 않는다
+    requested = _requested_render_mode(payload.render_mode)
     try:
-        result = await generate(payload.list_url, payload.detail_url, render_mode)
+        result = await generate(payload.list_url, payload.detail_url, requested)
     except RobotsDisallowedError as exc:
         # robots 가 막은 URL 은 등록 자체를 거절한다 (`.claude/rules/crawling.md`).
         raise HTTPException(
@@ -421,19 +498,24 @@ async def create_crawler(
         ) from exc
 
     if result.verification.list_missing:
-        # 정적 HTML 에 목록이 없다. 셀렉터를 손으로 고쳐도 잡을 노드가 없으므로 행을 남기지
-        # 않는다. 다음 수단은 렌더 모드 승격이지 셀렉터 재생성이 아니다.
+        # 목록이 없다. 셀렉터를 손으로 고쳐도 잡을 노드가 없으므로 행을 남기지 않는다.
+        # 렌더까지 해 보고도 없었는지는 `result.render_mode` 가 말해 준다 — 다음 수단이
+        # 다르기 때문에 사유 문장에서 갈라 적는다
         failed = ", ".join(result.verification.failed_list_fields)
+        tried = (
+            "정적으로도 렌더로도 목록을 찾지 못했다. 주소가 목록 페이지가 맞는지, 로그인이나 "
+            "검색 조건이 있어야 목록이 나오는 사이트인지 확인한다"
+            if result.render_mode == PLAYWRIGHT
+            else "목록을 찾지 못했다"
+        )
         raise HTTPException(
             status_code=422,
             detail={
                 "reason": "list_not_found",
-                "message": (
-                    f"정적 HTML 에서 목록을 찾지 못했다. 목록 필드 {failed} 가 모두 0개 매칭이다. "
-                    "JS 로 목록을 그리는 사이트일 수 있으니 렌더 모드 승격을 검토한다"
-                ),
+                "message": f"{tried}. 목록 필드 {failed} 가 모두 0개 매칭이다",
                 "failed_fields": result.verification.failed,
                 "matches": result.verification.summary(),
+                "notes": result.notes,
             },
         )
 
@@ -458,22 +540,50 @@ async def create_crawler(
 
     # 셀렉터가 있어야 목록 항목을 잡을 수 있으므로 생성 다음이다. 정적으로 상세 주소까지
     # 나오면 브라우저는 뜨지 않는다 (`app/selector/discovery.py`)
-    discovery = await _discover_path(discover, payload.list_url, result.selectors, render_mode)
-    # 판정에 성공했을 때만 그 경로를 저장한다. 실패하면 운영자가 고른 모드 그대로 두고,
+    discovery = await _discover_path(
+        discover, payload.list_url, result.selectors, result.render_mode
+    )
+    # 판정에 성공했을 때만 그 경로를 저장한다. 실패하면 셀렉터를 만든 경로 그대로 두고,
     # 무엇이 안 됐는지는 화면에 적힌다.
     #
     # 운영자가 렌더를 고른 등록은 렌더로 남는다. 정적으로도 목록이 잡히더라도 판정이 그 선택을
     # 내려앉히지 않는다 — 고른 값을 자동 판정이 덮어쓰지 않는다는 규칙이 등록 순간에도 같다
     # (`.claude/tasks/todo/prd-fill-body.md` 5절).
-    discovered_list = discovery.list_mode if discovery.ok else render_mode
-    list_mode = PLAYWRIGHT if render_mode == PLAYWRIGHT else discovered_list
-    detail_mode = (discovery.detail_mode or discovered_list) if discovery.ok else render_mode
+    #
+    # 목록 API 는 상세 판정이 실패해도 살린다. 그것은 이미 `httpx` 로 다시 불러 확인한
+    # 사실이고, 상세로 가는 길을 못 찾았다는 것과 별개다 (`app/selector/list_api.py`).
+    # 셀렉터를 만든 경로. 운영자가 고른 값이 있으면 생성이 그것으로 돌았다
+    generated_mode = requested or result.render_mode
+    discovered_list = (
+        discovery.list_mode if (discovery.ok or discovery.list_adopted) else generated_mode
+    )
+    list_mode = PLAYWRIGHT if requested == PLAYWRIGHT else discovered_list
+    detail_mode = (discovery.detail_mode or discovered_list) if discovery.ok else generated_mode
     api_config_json = _discovered_api_config(discovery)
+
+    # 상세 URL 없이 등록했는데 판정이 상세 문서 주소를 알아냈으면, 그 페이지를 보고 상세
+    # 셀렉터를 만든다. 여기까지 와야 목록 URL 하나로 등록이 끝난다 — 상세 셀렉터가 비어 있는
+    # 크롤러는 첫 실행에서 본문을 못 읽는다
+    sample_detail_url = payload.detail_url.strip() or _discovered_detail_url(discovery)
+    if not payload.detail_url.strip() and sample_detail_url:
+        result = await _fill_detail(
+            generate,
+            result,
+            list_url=payload.list_url,
+            detail_url=sample_detail_url,
+            render_mode=discovery.detail_mode or generated_mode,
+        )
+
+    # 항목이 `href` 를 안 들고 있어 판정이 상세 주소 형식을 알아냈으면 그것을 셀렉터에 얹는다.
+    # 확인된 것만 온다 (`app/selector/link_probe.py`)
+    selectors = _with_link(result.selectors, discovery)
 
     name = payload.name.strip() or urlsplit(payload.list_url).netloc
     # 안 적었으면 NULL 이다. 빈 문자열로 넣으면 "회사명이 있다" 와 구분되지 않는다
     default_company = payload.default_company.strip() or None
-    detail_url = payload.detail_url.strip() or None
+    # 판정이 찾아낸 상세 주소도 저장한다. 나중에 AI 수정이 상세 셀렉터를 고치려면 볼 페이지가
+    # 있어야 하고, 그 주소는 이미 열어서 확인한 것이다
+    detail_url = sample_detail_url or None
     cursor = conn.execute(
         """
         INSERT INTO crawlers
@@ -485,7 +595,7 @@ async def create_crawler(
             name,
             payload.list_url,
             detail_url,
-            result.selectors.to_json(),
+            selectors.to_json(),
             default_company,
             list_mode,
             detail_mode,
@@ -495,6 +605,11 @@ async def create_crawler(
     crawler_id = int(cursor.lastrowid or 0)
 
     matches = result.verification.summary()
+    resolved_links = _link_matches(discovery)
+    if resolved_links is not None:
+        # 생성 시점 판정은 `list.link` 를 실패로 적었다. 그 뒤 판정이 주소 형식을 알아내
+        # 항목에서 실제로 주소가 나왔으므로 그 수로 바꿔 적는다
+        matches["list.link"] = resolved_links
     unverified = _skipped_detail_fields(matches, detail_url)
     # 모델이 "사이트에 그 항목이 없다"고 답해 셀렉터가 비어 있는 필드. 매칭 0개지만 고칠
     # 셀렉터가 없어 실패가 아니다 (`app/selector/verify.py`)
@@ -512,18 +627,31 @@ async def create_crawler(
             f"모델이 사이트에 없다고 답해 셀렉터가 비어 있는 필드가 있다: {', '.join(absent)}. "
             "매칭 0개지만 고칠 셀렉터가 없으므로 실패가 아니라 건너뜀이다"
         )
+    if discovery.link is not None:
+        notes.append(
+            f"항목에 상세 주소가 없어 판정이 형식을 알아내 `list.link` 와 `link_template` 을 "
+            f"채웠다: {discovery.link.template}"
+        )
+
+    # 생성 1회가 행 1개다. 상세 셀렉터를 위해 두 번 불렀으면 그 둘을 합친 값이 들어간다
+    # (`_added`). 남기지 못해도 등록은 그대로 간다 (`app/llm/log.py`)
+    record_call(conn, feature=SELECTOR_GENERATE, usage=result.usage)
 
     return CrawlerOut(
         id=crawler_id,
         name=name,
         status="draft",
         default_company=default_company,
-        render_mode=render_mode,
+        render_mode=generated_mode,
         detail_url=detail_url,
-        selectors=result.selectors,
+        selectors=selectors,
         matches=matches,
         # 건너뛴 필드는 실패에서 뺀다. 고칠 곳을 알려 주는 목록에 확인 못 한 것을 섞지 않는다
-        failed_fields=[name for name in result.verification.failed if name not in skipped],
+        failed_fields=[
+            name
+            for name in result.verification.failed
+            if name not in skipped and matches.get(name, 0) == 0
+        ],
         skipped_fields=skipped,
         notes=notes,
         usage=UsageOut(**vars(result.usage)),
@@ -535,15 +663,105 @@ async def create_crawler(
     )
 
 
-def _discovered_api_config(discovery: Discovery) -> str | None:
-    """알아낸 상세 API 설정. 문서를 그대로 여는 경로면 저장할 설정이 없다.
+def _discovered_detail_url(discovery: Discovery) -> str:
+    """판정이 알아낸 상세 문서 주소. 없으면 빈 문자열이다.
 
-    설정 없이 `detail_mode = api` 만 저장하면 등록만 성공하고 이후 실행이 전부 실패한다.
-    둘은 같이 저장되거나 같이 저장되지 않는다.
+    API 로 가져오는 상세는 사람이 볼 페이지가 아니라 셀렉터를 만들 대상이 아니다.
     """
-    if not discovery.ok or discovery.detail is None or discovery.detail.api is None:
+    if not discovery.ok or discovery.detail is None or discovery.detail.kind != DOCUMENT:
+        return ""
+    return discovery.detail.url
+
+
+async def _fill_detail(
+    generate: GenerateFn,
+    result: GenerationResult,
+    *,
+    list_url: str,
+    detail_url: str,
+    render_mode: str,
+) -> GenerationResult:
+    """알아낸 상세 페이지로 상세 셀렉터만 다시 만든다. 목록 쪽은 이미 만든 것을 쓴다.
+
+    실패해도 등록은 계속된다. 상세 셀렉터가 비어 있는 크롤러는 쓸모가 적지만, 목록까지
+    버리면 운영자가 손으로 고칠 대상마저 없어진다 (`.claude/rules/llm.md`).
+    """
+    try:
+        second = await generate(list_url, detail_url, render_mode)
+    except (FetchError, SelectorGenerationError) as exc:
+        logger.warning("상세 셀렉터를 만들지 못했다 url=%s: %s", detail_url, exc)
+        return replace(
+            result,
+            notes=[
+                *result.notes,
+                f"알아낸 상세 주소 {detail_url} 로 상세 셀렉터를 만들지 못했다: {exc}",
+            ],
+        )
+
+    fields = [one for one in result.verification.fields if one.name.startswith("list.")]
+    fields += [one for one in second.verification.fields if one.name.startswith("detail.")]
+    extra = [note for note in second.notes if note not in result.notes]
+    return replace(
+        result,
+        selectors=result.selectors.model_copy(update={"detail": second.selectors.detail}),
+        verification=VerificationReport(fields=fields),
+        usage=_added(result.usage, second.usage),
+        notes=[
+            *result.notes,
+            *extra,
+            f"상세 URL 을 판정이 찾아 그 페이지로 상세 셀렉터를 만들었다: {detail_url}",
+        ],
+    )
+
+
+def _added(first: Usage, second: Usage) -> Usage:
+    """두 번 부른 생성의 비용을 합친다. 비용 질문에 답하려면 둘 다 세야 한다."""
+    return Usage(
+        model=first.model,
+        input_tokens=first.input_tokens + second.input_tokens,
+        output_tokens=first.output_tokens + second.output_tokens,
+        total_tokens=first.total_tokens + second.total_tokens,
+        latency_ms=first.latency_ms + second.latency_ms,
+    )
+
+
+def _with_link(selectors: SelectorSet, discovery: Discovery) -> SelectorSet:
+    """판정이 알아낸 상세 주소 형식을 셀렉터에 얹는다. 없으면 그대로 둔다.
+
+    모델은 상세 URL 형식을 이 HTML 만으로 알 수 없어 `link_template` 을 비워 둔다
+    (`app/selector/generator.py`). 그 자리를 채우는 것은 클릭으로 알아내고 두 건을 실제로
+    열어 확인한 형식뿐이다 — 확인되지 않은 형식은 여기까지 오지 않는다.
+    """
+    if discovery.link is None:
+        return selectors
+    return selectors.model_copy(update={"list": discovery.link.selectors(selectors.list)})
+
+
+def _link_matches(discovery: Discovery) -> int | None:
+    """알아낸 주소 형식으로 주소가 나온 항목 수. 형식이 없으면 None 이다."""
+    return discovery.link.resolved if discovery.link is not None else None
+
+
+def _discovered_api_config(discovery: Discovery) -> str | None:
+    """알아낸 목록·상세 API 설정. 문서를 그대로 여는 경로면 저장할 설정이 없다.
+
+    설정 없이 모드만 `api` 로 저장하면 등록만 성공하고 이후 실행이 전부 실패한다. 모드와
+    설정은 같이 저장되거나 같이 저장되지 않는다.
+
+    목록과 상세는 따로 정해진다. 목록만 API 인 크롤러(카카오·우아한형제들)와 상세만 API 인
+    크롤러(삼성)가 둘 다 정상적인 조합이다 (`app/crawler/collect.py`).
+    """
+    list_config = (
+        discovery.list.config() if discovery.list is not None and discovery.list.ok else None
+    )
+    detail_config = (
+        discovery.detail.api.detail
+        if discovery.ok and discovery.detail is not None and discovery.detail.api is not None
+        else None
+    )
+    if list_config is None and detail_config is None:
         return None
-    return discovery.detail.api.to_json()
+    return ApiConfig(list=list_config, detail=detail_config).to_json()
 
 
 def _skipped_detail_fields(matches: dict[str, int], detail_url: str | None) -> list[str]:
@@ -555,6 +773,16 @@ def _skipped_detail_fields(matches: dict[str, int], detail_url: str | None) -> l
     if detail_url:
         return []
     return [name for name in matches if name.startswith("detail.")]
+
+
+def _requested_render_mode(value: str) -> str:
+    """운영자가 고른 모드. 비어 있으면 빈 문자열이고, 그때는 등록이 스스로 정한다.
+
+    `_validated_render_mode` 와 갈라 두는 이유는 "안 골랐다" 와 "정적을 골랐다" 가 다른
+    뜻이 됐기 때문이다. 앞은 판정에 맡기는 것이고 뒤는 판정이 덮어쓰지 않는 선택이다.
+    """
+    mode = value.strip()
+    return _validated_render_mode(mode) if mode else ""
 
 
 def _validated_render_mode(value: str) -> str:
@@ -638,6 +866,42 @@ def _validated_collect_mode(value: str, field: str) -> str:
             },
         )
     return mode
+
+
+@router.put("/{crawler_id}/name", response_model=NameOut)
+def update_name(
+    crawler_id: int,
+    payload: NameUpdate,
+    conn: Annotated[sqlite3.Connection, Depends(get_connection)],
+) -> NameOut:
+    """크롤러 이름을 고친다.
+
+    등록이 이름을 안 받으면 리스트 URL 의 호스트를 그대로 쓴다(`create_crawler`). 그래서
+    `career.doosan.com` 같은 행이 남고, 화면과 워크플로우 이름이 전부 그 값을 읽는다.
+    다시 등록하면 판정이 다시 돌아 브라우저와 모델을 쓰므로, 이름만 바꾸는 길을 둔다.
+
+    빈 이름은 거절한다. `crawlers.name` 은 NOT NULL 이고, 목록에서 그 행을 알아보는 유일한
+    값이다 — 지울 수 있는 `default_company` 와 다르다.
+
+    이미 만들어진 워크플로우의 이름은 따라오지 않는다. 워크플로우는 만들 때 이름을 복사해
+    자기 행에 들고 있고(`app/api/workflows.py`), 그 값을 여기서 덮으면 운영자가 워크플로우에
+    따로 붙여 둔 이름이 사라진다.
+    """
+    row = conn.execute("SELECT id FROM crawlers WHERE id = ?", (crawler_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail={"message": f"크롤러 {crawler_id} 가 없다"})
+
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "reason": "empty_name",
+                "message": "이름은 비울 수 없다. 목록에서 이 크롤러를 알아볼 값이 없어진다",
+            },
+        )
+    conn.execute("UPDATE crawlers SET name = ? WHERE id = ?", (name, crawler_id))
+    return NameOut(id=crawler_id, name=name)
 
 
 @router.put("/{crawler_id}/company", response_model=CompanyOut)
@@ -745,6 +1009,38 @@ def update_selectors(
     return SelectorsOut(id=crawler_id, status=row["status"], selectors=selectors)
 
 
+@router.put("/{crawler_id}/api-config", response_model=ApiConfigOut)
+def update_api_config(
+    crawler_id: int,
+    payload: dict[str, Any],
+    conn: Annotated[sqlite3.Connection, Depends(get_connection)],
+) -> ApiConfigOut:
+    """운영자가 손으로 고친 API 설정을 그대로 저장한다. `update_selectors` 의 API 판이다.
+
+    지금까지 `api_config_json` 을 쓰는 경로는 등록 한 곳뿐이었다. 그래서 매핑을 고치려면
+    다시 등록하거나 DB 를 직접 고치는 수밖에 없었고, 둘 다 나쁘다 — 다시 등록하면 경로
+    판정이 다시 돌아 브라우저와 모델을 쓰고, 직접 고치면 스키마 검증을 지나지 않는다.
+
+    저장하기 전에 `validate_api_config` 를 지난다. 읽는 쪽(`app/crawler/api_source.py`)은
+    설정이 이미 검증됐다고 믿고 있어서, 검증을 건너뛴 값이 들어가면 실행 중에야 깨진다.
+    """
+    row = conn.execute("SELECT status FROM crawlers WHERE id = ?", (crawler_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail={"message": f"크롤러 {crawler_id} 가 없다"})
+
+    try:
+        config = validate_api_config(payload)
+    except ApiConfigError as exc:
+        raise HTTPException(
+            status_code=422, detail={"reason": exc.reason, "message": str(exc)}
+        ) from exc
+
+    conn.execute(
+        "UPDATE crawlers SET api_config_json = ? WHERE id = ?", (config.to_json(), crawler_id)
+    )
+    return ApiConfigOut(id=crawler_id, status=str(row["status"]), api_config=config)
+
+
 @router.post("/{crawler_id}/repair", response_model=RepairOut)
 async def repair_selectors(
     crawler_id: int,
@@ -818,6 +1114,8 @@ async def repair_selectors(
         raise HTTPException(
             status_code=status, detail={"reason": exc.reason, "message": str(exc)}
         ) from exc
+
+    record_call(conn, feature=SELECTOR_REPAIR, usage=outcome.usage)
 
     after_matches = outcome.after.summary()
     unverified = _skipped_detail_fields(after_matches, detail_url or None)

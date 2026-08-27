@@ -4,7 +4,8 @@
 
 - 파싱값이 있으면 파싱값이 이기고 `company_source='parsed'` 다
 - 파싱값이 없으면 운영자값을 쓰고 `company_source='operator'` 다
-- 둘 다 없으면 `company` 와 `company_source` 가 모두 NULL 이다
+- 운영자값도 없으면 크롤러 이름을 쓰고 `company_source='operator'` 다 (1.3)
+- 그 셋이 다 없으면 `company` 와 `company_source` 가 모두 NULL 이다
 - 계열사 두 건이 섞인 목록에서 두 건이 서로 다른 회사명을 받는다
 
 픽스처로 돈다. 실사이트에 나가지 않는다.
@@ -17,8 +18,16 @@ import pathlib
 import sqlite3
 from typing import Any
 
+from app import db
 from app.crawler.runner import run_workflow
-from app.normalize.engine import COMPANY_SOURCE, OPERATOR, PARSED, normalize_fields, resolve_company
+from app.normalize.engine import (
+    COMPANY_SOURCE,
+    OPERATOR,
+    PARSED,
+    normalize_fields,
+    read_default_company,
+    resolve_company,
+)
 from app.normalize.rules import build_rule
 from tests.test_company_selector import (
     WITH_COMPANY,
@@ -88,15 +97,26 @@ async def test_operator_value_fills_a_site_without_a_company(tmp_path: pathlib.P
         conn.close()
 
 
-async def test_no_company_anywhere_stays_null(tmp_path: pathlib.Path) -> None:
-    """빈 문자열로 채우지 않는다. 빈 문자열은 "회사명이 있다" 와 구분되지 않는다."""
+async def test_the_crawler_name_fills_it_when_neither_source_has_one(
+    tmp_path: pathlib.Path,
+) -> None:
+    """2026-08-26 결정. 비워 두는 것보다 상위 기업 이름이라도 있는 편이 낫다 (1.3).
+
+    `crawlers.name` 은 NOT NULL 이라, 워크플로우가 수집한 공고의 회사명은 이제 비지 않는다.
+    사이트가 준 값인지 우리가 채운 값인지는 `company_source` 가 그대로 가른다.
+    """
     conn = make_conn(tmp_path / "jobs.db", WITHOUT_COMPANY)
     try:
         await run_workflow(conn, 1, fetcher=stub_fetcher(), limit=2)
 
-        assert companies(conn) == [(None, None), (None, None)]
+        assert companies(conn) == [("그룹 채용", OPERATOR), ("그룹 채용", OPERATOR)]
     finally:
         conn.close()
+
+
+def test_nothing_at_all_still_stays_null() -> None:
+    """빈 문자열로 채우지 않는다. 빈 문자열은 "회사명이 있다" 와 구분되지 않는다."""
+    assert resolve_company({"company": ""}, None) == ("", None)
 
 
 async def test_rules_apply_to_the_resolved_company(tmp_path: pathlib.Path) -> None:
@@ -120,3 +140,57 @@ def test_a_rule_that_empties_the_company_clears_the_source() -> None:
 
     assert fields["company"] is None
     assert fields[COMPANY_SOURCE] is None
+
+
+def test_the_crawler_name_fills_the_company_when_nothing_else_does(
+    tmp_path: pathlib.Path,
+) -> None:
+    """목록이 회사명을 주지 않는 사이트(토스·우아한형제들)를 위한 자리다 (1.3.V)."""
+    conn = _seeded(tmp_path, name="토스", default_company=None, parsed="")
+
+    assert read_default_company(conn, 1) == "토스"
+    fields = normalize_fields(_raw(""), [], read_default_company(conn, 1))
+    assert fields["company"] == "토스"
+    assert fields[COMPANY_SOURCE] == OPERATOR
+
+
+def test_what_the_operator_wrote_beats_the_crawler_name(tmp_path: pathlib.Path) -> None:
+    conn = _seeded(tmp_path, name="토스", default_company="비바리퍼블리카", parsed="")
+
+    assert read_default_company(conn, 1) == "비바리퍼블리카"
+
+
+def test_what_the_site_gave_beats_both(tmp_path: pathlib.Path) -> None:
+    """계열사 구분은 파싱값만 할 수 있다. 크롤러 이름이 그것을 덮으면 안 된다."""
+    conn = _seeded(tmp_path, name="삼성", default_company="삼성전자", parsed="삼성SDS")
+
+    fields = normalize_fields(_raw("삼성SDS"), [], read_default_company(conn, 1))
+    assert fields["company"] == "삼성SDS"
+    assert fields[COMPANY_SOURCE] == PARSED
+
+
+def _raw(company: str) -> dict[str, str]:
+    return {"title": "공고", "body": "본문", "company": company}
+
+
+def _seeded(
+    tmp_path: pathlib.Path, *, name: str, default_company: str | None, parsed: str
+) -> sqlite3.Connection:
+    conn = db.connect(tmp_path / "jobs.db")
+    db.migrate_up(conn)
+    conn.execute(
+        """
+        INSERT INTO crawlers (id, name, list_url, status, default_company)
+        VALUES (1, ?, 'https://x', 'promoted', ?)
+        """,
+        (name, default_company),
+    )
+    conn.execute("INSERT INTO workflows (id, crawler_id, name) VALUES (1, 1, ?)", (name,))
+    conn.execute(
+        """
+        INSERT INTO raw_jobs (workflow_id, source_url, raw_data_json, content_hash)
+        VALUES (1, 'https://x/1', ?, 'hash1')
+        """,
+        (json.dumps(_raw(parsed), ensure_ascii=False),),
+    )
+    return conn

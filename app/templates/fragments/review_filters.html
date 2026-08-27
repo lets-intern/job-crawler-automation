@@ -67,6 +67,24 @@
         보정까지 얹은 값이 비었거나 공백뿐인 공고를 고른다. 필드별 건수는 표 위에 있다
       </span>
     </p>
+    {# 같은 공고가 두 번 들어왔는지 보는 자리. 무엇을 중복으로 볼지가 상황마다 달라 기준을
+       고르게 둔다. 걸린 묶음과 건수는 표 위에 나온다.
+
+       자동으로 지우는 길은 두지 않는다 — 삼성전자 DX부문과 삼성SDI가 각각 올린 같은 제목의
+       공고는 다른 공고고, 그것을 중복으로 지우면 진짜 공고가 사라진다 #}
+    <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
+      <label for="review-dup">중복</label>
+      <select id="review-dup" name="dup">
+        <option value="">안 걸림</option>
+        {% for value in dup_criteria %}
+        <option value="{{ value }}">{{ dup_labels[value] }}</option>
+        {% endfor %}
+      </select>
+      <span class="text-sm text-slate-600">
+        같은 값이 두 번 이상 나온 공고를 묶음째 고른다. 여분만이 아니라 짝도 함께 나온다 —
+        어느 쪽을 남길지는 표에서 골라 정한다
+      </span>
+    </p>
     <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
       <label for="review-crawled-from">수집 시각</label>
       <input id="review-crawled-from" name="crawled_from" type="date">

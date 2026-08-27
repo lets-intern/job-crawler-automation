@@ -98,7 +98,7 @@ GET https://talent.hyundai.com/api/rec/AP-HM-FO-02800?hgrCd=1&lang=ko&recuYy=202
 
 상세 주소는 한 값이 아니라 `recuYy`·`recuType`·`recuCls` 세 값으로 만든다. `id_field` 에
 `{키}` 자리를 쓴 템플릿을 넣어 세 값을 이어 붙인 것이 id 가 된다
-(`seeds/site-configs-20260825.json`).
+(`seeds/site-configs-20260826.json`).
 
 본문은 `privJdDtl`(주요 업무)·`aboutTeamNtc`(조직 소개)·`etc`(기타)를 모으고, 자격요건은
 `privMustReq`(필수)와 `prefReq`(우대)를 모은다.
@@ -113,3 +113,20 @@ API 가 주는 마감일은 `applyEndDt = 20260830` 이다. `deadline` 의 `date
 `raw_jobs` 에는 값이 그대로 남으므로 규칙에 `%Y%m%d` 를 더한 뒤 재정규화하면 복구된다.
 2026-08-25 기준 20건이 전부 이미 아는 공고라 새로 적재된 행은 없고, **다음에 올라오는 새 공고가
 이 문제를 처음 만난다.**
+
+## 칸 매핑 (2026-08-26, 수집은 여섯 칸)
+
+**이 사이트는 여섯 칸만 수집한다** — 제목·본문·모집 마감일·모집 시작일·모집 기업, 그리고 원본 주소. 나머지 열한 칸(직군·근무지·경력 구분·고용형태·모집인원·주요 업무·우대사항·전형 절차·자격요건·조직 부서·기타)은 본문을 읽어 나눈다.
+
+`crawlers` 17번 행의 설정에서 그대로 옮겼다. 같은 값이 `seeds/site-configs-20260826.json` 에 있고 `tests/test_split_body_mapping.py` 가 픽스처에 돌려 본다. 문서와 저장된 설정이 갈리지 않는지는 `tests/test_site_recipe_mapping.py` 가 본다.
+
+| 칸 | 어디서 | 자리 |
+|---|---|---|
+| 제목 | 상세 API | `data.applyInfo.recuNoticeNm` |
+| 본문 | 상세 API | `data.applyInfo.privJdDtl`<br>`data.applyInfo.aboutTeamNtc`<br>`data.applyInfo.etc` |
+| 모집 마감일 | 상세 API | `data.applyInfo.applyEndDt` |
+| 모집 시작일 | 상세 API | `data.applyInfo.appDispStDt` |
+
+여기 없는 칸은 이 사이트가 그 값을 주지 않는다는 사실이다. 이 사이트가 주지 않는 것: 모집 기업. 다른 값으로 채우지 않는다.
+
+2026-08-26 이전에는 이 표에 열여섯 칸이 있었다. 그 매핑을 뺀 이유는 `seeds/site-configs-20260826.json` 의 `why_the_mappings_were_removed` 에 있다 — 사이트 11곳 x 칸 16개 = 176번의 판단이 640건에서 절반도 채우지 못했고, 그중 다섯 곳이 뜻이 다른 칸에 값을 넣고 있었다.

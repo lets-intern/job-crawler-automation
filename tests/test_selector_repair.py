@@ -271,7 +271,7 @@ async def test_two_broken_responses_stop_at_two_calls() -> None:
 
 
 async def test_usage_and_model_are_logged(caplog: pytest.LogCaptureFixture) -> None:
-    with caplog.at_level(logging.INFO, logger="app.selector.generator"):
+    with caplog.at_level(logging.INFO, logger="app.llm.gemini"):
         outcome, _ = await repair()
 
     assert outcome.usage.model == "gemini-3.5-flash"

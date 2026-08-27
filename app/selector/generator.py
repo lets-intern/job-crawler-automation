@@ -8,22 +8,28 @@
 - 생성마다 모델 ID, 입출력 토큰 수, 지연을 로그로 남긴다
 - API 키는 환경변수에서만 읽고 어디에도 남기지 않는다
 
+호출 자체는 `app/llm/gemini.py` 가 한다. 본문 분류(`app/classify/`)가 같은 경로를 쓰기
+때문이고, 이 파일은 셀렉터 생성에만 있는 것 — 프롬프트, 응답 스키마, 자체 검증 — 만 갖는다.
+
 페이지를 가져오는 것은 공용 fetch 클라이언트다 (`.claude/rules/crawling.md`).
 """
 
 from __future__ import annotations
 
 import logging
-import time
 from dataclasses import dataclass, field
 from typing import Any
 
 from google import genai
-from google.genai import errors as genai_errors
 
 from app.config import Settings, get_settings
 from app.crawler.fetcher import PageSource, get_fetcher
+from app.crawler.playwright import STATIC
+from app.llm.gemini import LlmCallError, Usage
+from app.llm.gemini import build_client as build_gemini_client
+from app.llm.gemini import call_model as call_gemini
 from app.selector.cleaner import CleanedHtml, clean_html
+from app.selector.narrow import Narrowing, narrow_item_selector
 from app.selector.schema import (
     SelectorSchemaError,
     SelectorSet,
@@ -58,6 +64,17 @@ script, style, 주석은 이미 걷어냈고 반복되는 목록 항목은 앞�
 - detail.title 과 detail.body 는 반드시 채운다.
 - detail.requirements, detail.deadline, detail.department 는 페이지에 해당 항목이 없으면
   빈 문자열로 둔다. 아무 요소나 억지로 고르지 않는다.
+- detail.start_date(모집 시작일), detail.job_category(직군), detail.employment_type(정규직
+  /인턴/기간제), detail.career_level(신입/경력), detail.work_location(근무지),
+  detail.headcount(모집인원), detail.duties(주요 업무), detail.preferred(우대 조건),
+  detail.hiring_process(전형 절차), detail.etc_info(기타) 도 같다. **그 값만 따로 담은
+  요소가 있을 때만** 채우고, 본문 안에 문장으로 섞여 있을 뿐이면 빈 문자열로 둔다.
+  본문 전체를 가리키는 셀렉터를 이 자리에 넣지 않는다 — 그러면 같은 본문이 칸마다 반복된다.
+- list.date 도 마찬가지다. 항목 안에 게시일이나 모집 기간이 보이지 않으면 빈 문자열로 둔다.
+  날짜가 아닌 값을 날짜 자리에 넣지 않는다.
+- 클래스명이 `css-1d3w5wq` 처럼 자동 생성된 해시로 보이면 고르지 않는다. 그런 이름은 페이지나
+  배포마다 바뀌어 다음 실행에서 0개 매칭이 된다. 의미 있는 클래스명이나 구조(태그, 부모-자식
+  관계)로 대신 잡는다.
 - list.company 와 detail.company 는 그 공고를 낸 회사 이름이 적힌 요소다. 사이트 하나에
   여러 계열사 공고가 섞이는 경우가 있어서 공고마다 다른 값이 나올 수 있다.
 - 회사 이름이 페이지에 없으면 list.company 와 detail.company 를 빈 문자열로 둔다.
@@ -89,17 +106,6 @@ class SelectorGenerationError(RuntimeError):
 
 
 @dataclass(frozen=True)
-class Usage:
-    """호출 1회의 비용. 이 숫자가 없으면 나중에 비용 질문에 답할 수 없다."""
-
-    model: str
-    input_tokens: int
-    output_tokens: int
-    total_tokens: int
-    latency_ms: int
-
-
-@dataclass(frozen=True)
 class GenerationResult:
     """생성 결과. `verification.failed` 가 비어 있어야 성공이다.
 
@@ -113,6 +119,10 @@ class GenerationResult:
     attempts: int
     verification: VerificationReport
     notes: list[str] = field(default_factory=list)
+    # 이 셀렉터를 어느 경로로 가져온 HTML 에서 만들었는가. `static` 또는 `playwright` 이고,
+    # 채우는 것은 HTML 을 가져온 쪽이다 (`app/api/crawlers.py` 의 `get_generator`).
+    # 판정이 경로를 알아내지 못했을 때 되돌아갈 값이 이것이다
+    render_mode: str = STATIC
 
     @property
     def ok(self) -> bool:
@@ -187,6 +197,10 @@ async def generate_from_html(
             last_error = exc
             continue
 
+        # 항목 셀렉터가 공고가 아닌 반복까지 잡았으면 제목이 있는 쪽으로 좁힌다. 넓히지는
+        # 않는다 (`app/selector/narrow.py`)
+        narrowing = narrow_item_selector(selectors, list_html)
+        selectors = narrowing.selectors
         # 방금 가져온 그 HTML 에 즉시 적용한다. 정제 전 원본이라 샘플링으로 덜어낸 항목도 본다.
         report = verify_selectors(selectors, list_html, detail_html)
         logger.info(
@@ -200,7 +214,7 @@ async def generate_from_html(
             usage=usage,
             attempts=attempt,
             verification=report,
-            notes=_notes(cleaned_list, cleaned_detail),
+            notes=_notes(cleaned_list, cleaned_detail, narrowing),
         )
 
     assert last_error is not None  # 루프는 최소 한 번 돈다
@@ -209,6 +223,8 @@ async def generate_from_html(
         # 모양은 맞는데 필드가 비어 있다. 통째로 버리면 운영자가 손으로 고칠 대상조차 없다.
         # 빈 채로 draft 에 저장하고 어느 자리가 비었는지 알린다 (`.claude/rules/llm.md`).
         selectors, empty_fields = parse_selectors_allowing_empty(last_text)
+        narrowing = narrow_item_selector(selectors, list_html)
+        selectors = narrowing.selectors
         report = verify_selectors(selectors, list_html, detail_html)
         logger.warning(
             "셀렉터 생성 필드 누락 model=%s attempts=%d 빈 필드=%s",
@@ -222,7 +238,7 @@ async def generate_from_html(
             attempts=MAX_ATTEMPTS,
             verification=report,
             notes=[
-                *_notes(cleaned_list, cleaned_detail),
+                *_notes(cleaned_list, cleaned_detail, narrowing),
                 f"모델이 채우지 못한 필드: {', '.join(empty_fields)}. 손으로 채운다",
             ],
         )
@@ -234,12 +250,12 @@ async def generate_from_html(
 
 def build_client(settings: Settings | None = None) -> genai.Client:
     """API 키는 환경변수에서만 온다. 소스에도 로그에도 남기지 않는다."""
-    resolved = settings or get_settings()
-    if not resolved.gemini_api_key:
+    try:
+        return build_gemini_client(settings)
+    except LlmCallError as exc:
         raise SelectorGenerationError(
-            "no_api_key", "GEMINI_API_KEY 가 비어 있다. 서버 문제가 아니라 셀렉터 생성만 막힌다"
-        )
-    return genai.Client(api_key=resolved.gemini_api_key)
+            exc.reason, "GEMINI_API_KEY 가 비어 있다. 서버 문제가 아니라 셀렉터 생성만 막힌다"
+        ) from exc
 
 
 def build_prompt(
@@ -257,78 +273,38 @@ def build_prompt(
 
 
 async def call_model(
-    client: Any, model: str, prompt: str, attempt: int, kind: str = "생성"
+    client: Any, model: str, prompt: str, attempt: int, kind: str = "셀렉터 생성"
 ) -> tuple[str, Usage]:
-    """호출 1회. 모델 ID·토큰·지연을 남긴다.
+    """셀렉터용 호출 1회. 스키마와 시스템 지시만 이 파일 것이고 나머지는 공용이다.
 
     생성과 고치기가 같은 함수를 쓴다. 두 번째 API 경로를 만들면 로그도 재시도 규칙도 두 벌이
     되고, 한쪽만 고쳐진 채로 남는다. `kind` 는 로그에서 둘을 가르는 이름일 뿐이다.
     """
-    started = time.monotonic()
     try:
-        response = await client.aio.models.generate_content(
-            model=model,
-            contents=prompt,
-            config={
-                "system_instruction": _SYSTEM_INSTRUCTION,
-                "response_mime_type": "application/json",
-                "response_schema": SelectorSet,
-                "temperature": 0.0,
-            },
+        return await call_gemini(
+            client,
+            model,
+            prompt,
+            attempt,
+            kind,
+            response_schema=SelectorSet,
+            system_instruction=_SYSTEM_INSTRUCTION,
         )
-    except genai_errors.APIError as exc:
-        # 운영자에게 보이는 문구에는 코드와 메시지만 옮긴다. 키는 헤더로만 나가므로 여기 없다.
-        raise SelectorGenerationError(
-            "api_error", f"Gemini 호출 실패({exc.code}): {exc.message}"
-        ) from exc
-
-    latency_ms = int((time.monotonic() - started) * 1000)
-    usage = _usage(model, response, latency_ms)
-    logger.info(
-        "셀렉터 %s model=%s attempt=%d input_tokens=%d output_tokens=%d "
-        "total_tokens=%d latency_ms=%d finish_reason=%s",
-        kind,
-        usage.model,
-        attempt,
-        usage.input_tokens,
-        usage.output_tokens,
-        usage.total_tokens,
-        usage.latency_ms,
-        _finish_reason(response),
-    )
-    return _text(response), usage
+    except LlmCallError as exc:
+        raise SelectorGenerationError(exc.reason, str(exc)) from exc
 
 
-def _usage(model: str, response: Any, latency_ms: int) -> Usage:
-    meta = getattr(response, "usage_metadata", None)
-    return Usage(
-        model=model,
-        input_tokens=_count(meta, "prompt_token_count"),
-        output_tokens=_count(meta, "candidates_token_count"),
-        total_tokens=_count(meta, "total_token_count"),
-        latency_ms=latency_ms,
-    )
+def _notes(
+    cleaned_list: CleanedHtml, cleaned_detail: CleanedHtml, narrowing: Narrowing | None = None
+) -> list[str]:
+    """입력을 좁혔거나 잘랐으면 응답에 남긴다 (`.claude/rules/llm.md`).
 
-
-def _count(meta: Any, name: str) -> int:
-    value = getattr(meta, name, None)
-    return int(value) if value is not None else 0
-
-
-def _finish_reason(response: Any) -> str:
-    candidates = getattr(response, "candidates", None) or []
-    if not candidates:
-        return "없음"
-    return str(getattr(candidates[0], "finish_reason", "없음"))
-
-
-def _text(response: Any) -> str:
-    """본문을 꺼낸다. 막히거나 잘린 응답은 빈 문자열로 와서 `unparsable` 이 된다."""
-    return getattr(response, "text", None) or ""
-
-
-def _notes(cleaned_list: CleanedHtml, cleaned_detail: CleanedHtml) -> list[str]:
-    """입력을 좁혔거나 잘랐으면 응답에 남긴다 (`.claude/rules/llm.md`)."""
-    return [f"목록: {note}" for note in cleaned_list.notes()] + [
+    항목 셀렉터를 좁힌 것도 같이 적는다. 모델이 낸 것과 저장되는 것이 다르면 그 사실이
+    운영자에게 보여야 한다.
+    """
+    notes = [f"목록: {note}" for note in cleaned_list.notes()] + [
         f"상세: {note}" for note in cleaned_detail.notes()
     ]
+    if narrowing is not None and narrowing.note:
+        notes.append(narrowing.note)
+    return notes

@@ -163,7 +163,7 @@ async def test_usage_is_logged_with_model_tokens_and_latency(
 ) -> None:
     client = FakeClient(VALID_RESPONSE)
 
-    with caplog.at_level(logging.INFO, logger="app.selector.generator"):
+    with caplog.at_level(logging.INFO, logger="app.llm.gemini"):
         result = await generate_from_html(
             LIST_HTML, DETAIL_HTML, settings=settings_with_key(), client=client
         )

@@ -4,9 +4,14 @@ Applies to any code that fetches an external page, and to the scheduler and retr
 
 ## One fetch client
 
-All outbound requests go through `app/crawler/fetcher.py`. It owns the User-Agent, the per-host
-delay, the timeout, the retry count and the robots.txt check. Nothing else calls `httpx`,
-`requests` or a Playwright navigation directly.
+All requests to a crawl target go through `app/crawler/fetcher.py`. It owns the User-Agent, the
+per-host delay, the timeout, the retry count and the robots.txt check. Nothing else calls `httpx`,
+`requests` or a Playwright navigation directly at a site we crawl.
+
+A service we operate ourselves is not a crawl target. `app/notify/` posts to our own notification
+server, where a robots check asks a question nobody answers and a politeness delay protects nobody.
+It uses `httpx` directly and that is the only place allowed to. Anything we did not deploy — a
+third-party API included — goes through the client.
 
 A second call path is not a shortcut, it is a site getting hammered at an unthrottled rate under our
 name. Once one module bypasses the client, no rate limit in the repository is true any more.

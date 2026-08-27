@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from app import db
+from app.normalize.rules import NORMALIZED_FIELDS
 
 # .claude/docs/data-model.md 의 컬럼. 문서에 없는 컬럼은 늘리지 않는다
 EXPECTED_COLUMNS = {
@@ -72,6 +73,17 @@ EXPECTED_COLUMNS = {
         "source_url",
         "normalized_at",
         "delivered_at",
+        # 0011 이 더한 열 칸. 넷 이상의 사이트가 주는 것만 골랐다
+        "start_date",
+        "job_category",
+        "employment_type",
+        "career_level",
+        "work_location",
+        "headcount",
+        "duties",
+        "preferred",
+        "hiring_process",
+        "etc_info",
     },
     "normalization_rules": {
         "id",
@@ -127,6 +139,11 @@ ALL_VERSIONS = [
     "0008",
     "0009",
     "0010",
+    "0011",
+    "0012",
+    "0013",
+    "0014",
+    "0015",
 ]
 
 
@@ -712,3 +729,152 @@ def test_error_class_down_keeps_the_run_and_clears_only_the_new_reason(
     ).fetchone()
     assert (row["id"], row["error_class"]) == (1, None)
     assert (row["error_message"], row["fail_count"]) == ("본문이 비었다", 1)
+
+
+# 0011 이 더한 칸. `migrations/0011_split_body_columns.sql` 의 표와 같은 목록이어야 한다
+SPLIT_BODY_COLUMNS = [
+    "start_date",
+    "job_category",
+    "employment_type",
+    "career_level",
+    "work_location",
+    "headcount",
+    "duties",
+    "preferred",
+    "hiring_process",
+    "etc_info",
+]
+
+# 0011 이 건드리지 않는 칸. 소비 측이 읽던 것이라 이름도 뜻도 그대로다
+KEPT_COLUMNS = "company, title, department, deadline, body, requirements, source_url"
+
+
+def _at_0010(connection: sqlite3.Connection) -> None:
+    """0011 직전 상태로 만든다. `normalized_jobs` 가 아직 여섯 칸인 스키마다."""
+    db.migrate_up(connection)
+    db.migrate_down(connection, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0011"))
+    assert "start_date" not in _columns(connection, "normalized_jobs")
+
+
+def _seed_normalized(connection: sqlite3.Connection) -> None:
+    """정규화된 공고 한 행. 여섯 칸에 값이 다 들어 있다."""
+    _seed_raw_job(connection)
+    connection.execute(
+        """
+        INSERT INTO normalized_jobs
+               (raw_job_id, company, title, department, deadline, body, requirements,
+                source_url)
+        VALUES (1, '한화생명', '마케팅 기획', '', '2026-08-25', '본문', '자격요건',
+                'https://example.test/1')
+        """
+    )
+
+
+def test_split_body_only_adds_columns_and_keeps_the_existing_values(
+    conn: sqlite3.Connection,
+) -> None:
+    """0011 은 더하기만 한다. 적용 전 공고의 여섯 칸이 글자 하나까지 그대로 남는다."""
+    _at_0010(conn)
+    _seed_normalized(conn)
+    before = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
+
+    db.migrate_up(conn)
+
+    after = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
+    assert [tuple(row) for row in after] == [tuple(row) for row in before]
+    assert set(SPLIT_BODY_COLUMNS) <= _columns(conn, "normalized_jobs")
+
+
+def test_split_body_leaves_the_new_columns_empty(conn: sqlite3.Connection) -> None:
+    """사이트가 주지 않는 칸은 빈 칸이다. 기본값으로 채우지 않는다."""
+    _at_0010(conn)
+    _seed_normalized(conn)
+
+    db.migrate_up(conn)
+
+    row = conn.execute(f"SELECT {', '.join(SPLIT_BODY_COLUMNS)} FROM normalized_jobs").fetchone()
+    assert [row[name] for name in SPLIT_BODY_COLUMNS] == [None] * len(SPLIT_BODY_COLUMNS)
+
+
+def test_split_body_down_drops_only_the_ten_it_added(conn: sqlite3.Connection) -> None:
+    """역적용은 더한 열 칸만 지운다. 공고와 여섯 칸의 값은 그대로다."""
+    db.migrate_up(conn)
+    _seed_normalized(conn)
+    conn.execute("UPDATE normalized_jobs SET work_location = '서울', headcount = '0명'")
+    before = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
+
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0011"))
+
+    after = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
+    assert [tuple(row) for row in after] == [tuple(row) for row in before]
+    assert not set(SPLIT_BODY_COLUMNS) & _columns(conn, "normalized_jobs")
+
+
+def test_the_override_check_covers_the_new_columns(conn: sqlite3.Connection) -> None:
+    """0012 가 넓혔다. 새 칸에 자동으로 뽑은 값이 틀렸을 때 사람이 고칠 수 있어야 한다."""
+    db.migrate_up(conn)
+    _seed_raw_job(conn)
+
+    for field in NORMALIZED_FIELDS:
+        conn.execute(
+            "INSERT INTO job_field_overrides (raw_job_id, field_name, value) VALUES (1, ?, ?)",
+            (field, "사람이 고친 값"),
+        )
+
+    stored = conn.execute("SELECT count(*) AS n FROM job_field_overrides").fetchone()
+    assert stored["n"] == len(NORMALIZED_FIELDS)
+
+
+def test_the_override_check_still_refuses_a_column_that_is_not_normalized(
+    conn: sqlite3.Connection,
+) -> None:
+    """넓어진 것은 `normalized_jobs` 의 칸까지다. `source_url` 은 공고의 신원이라 못 고친다."""
+    db.migrate_up(conn)
+    _seed_raw_job(conn)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO job_field_overrides (raw_job_id, field_name, value) VALUES (1, ?, ?)",
+            ("source_url", "https://example.test/other"),
+        )
+
+
+def test_the_override_migration_keeps_the_rows_it_did_not_add(conn: sqlite3.Connection) -> None:
+    """표를 다시 만드는 마이그레이션이다. 있던 보정이 id 까지 그대로 넘어와야 한다."""
+    db.migrate_up(conn)
+    db.migrate_down(conn, steps=1)
+    _seed_raw_job(conn)
+    conn.execute(
+        "INSERT INTO job_field_overrides (raw_job_id, field_name, value) VALUES (1, ?, ?)",
+        ("title", "사람이 고친 제목"),
+    )
+    before = conn.execute("SELECT id, created_at FROM job_field_overrides").fetchone()
+
+    db.migrate_up(conn)
+
+    after = conn.execute(
+        "SELECT id, field_name, value, created_at FROM job_field_overrides"
+    ).fetchall()
+    assert len(after) == 1
+    assert after[0]["id"] == before["id"]
+    assert after[0]["value"] == "사람이 고친 제목"
+    assert after[0]["created_at"] == before["created_at"]
+
+
+def test_the_override_down_drops_the_corrections_the_old_check_cannot_hold(
+    conn: sqlite3.Connection,
+) -> None:
+    """되돌리면 새 칸의 보정은 사라진다. 옛 CHECK 에 담을 자리가 없다."""
+    db.migrate_up(conn)
+    _seed_raw_job(conn)
+    conn.executemany(
+        "INSERT INTO job_field_overrides (raw_job_id, field_name, value) VALUES (1, ?, ?)",
+        [("title", "사람이 고친 제목"), ("work_location", "서울")],
+    )
+
+    # 0012 까지 되돌린다. 뒤에 붙은 마이그레이션 수만큼 걸음이 늘어난다
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0012"))
+
+    rows = conn.execute("SELECT field_name FROM job_field_overrides").fetchall()
+    assert [row["field_name"] for row in rows] == ["title"]
+    assert conn.execute("SELECT count(*) AS n FROM raw_jobs").fetchone()["n"] == 1

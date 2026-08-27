@@ -14,9 +14,9 @@ DB 에 넣어도 되는 모양인지 판정한다.
 | `unknown_field` | 스키마에 없는 필드명이 왔다 |
 | `missing_field` | 필수 필드가 없거나 값이 비어 있다 |
 
-`company` 와 `list.link_template` 은 키가 없어도, 빈 문자열이어도 통과한다 — 그래서 이 필드들이
-생기기 전에 저장된 셀렉터 JSON 이 그대로 통과한다. 나머지 필드는 그대로 필수라, 값이 비어도
-되는 상세 필드조차 키는 있어야 한다.
+`company`, `list.link_template`, 그리고 `SPLIT_DETAIL_FIELDS` 의 열 개는 키가 없어도, 빈
+문자열이어도 통과한다 — 그래서 이 필드들이 생기기 전에 저장된 셀렉터 JSON 이 그대로 통과한다.
+나머지 필드는 그대로 필수라, 값이 비어도 되는 상세 필드조차 키는 있어야 한다.
 
 `unparsable` 만 1회 재생성 대상이다. 나머지는 모양이 아니라 내용의 문제라 다시 물어도 같은
 답이 온다.
@@ -34,9 +34,30 @@ from pydantic import BaseModel
 # `link` 가 여기 있는 것은 링크가 없어도 된다는 뜻이 아니다. 상세로 가는 a 태그가 없는
 # 사이트에서 모델이 아무 요소나 대신 고르지 않고 비워 두게 하려는 것이고, 비어 있으면
 # 자체 검증이 `list.link` 를 실패로 적는다 (`app/selector/verify.py`).
-OPTIONAL_LIST_FIELDS: frozenset[str] = frozenset({"company", "link", "link_template"})
+#
+# `date` 는 목록에 날짜를 안 적는 사이트가 있어서다. 네이버 목록은 모집 기간이 `dd.info_text`
+# 다섯 개 중 하나로만 있어 모델이 두 번 다 비워 냈고, 그 빈 값 하나 때문에 테스트 실행이
+# `invalid_selectors` 로 거절돼 크롤러를 아예 돌릴 수 없었다. 없는 것을 지어내는 것보다
+# 비워 두는 편이 낫고, 마감일은 상세에서 온다
+OPTIONAL_LIST_FIELDS: frozenset[str] = frozenset({"company", "link", "link_template", "date"})
+# 0011 이 `normalized_jobs` 에 더한 열 칸을 상세에서 읽는 자리. 사이트가 그 값을 나눠서 줄
+# 때만 채우고, 없으면 빈 문자열이다 — 없는 값을 다른 요소로 채우지 않는다
+# (`migrations/0011_split_body_columns.sql`).
+SPLIT_DETAIL_FIELDS: tuple[str, ...] = (
+    "start_date",
+    "job_category",
+    "employment_type",
+    "career_level",
+    "work_location",
+    "headcount",
+    "duties",
+    "preferred",
+    "hiring_process",
+    "etc_info",
+)
+
 OPTIONAL_DETAIL_FIELDS: frozenset[str] = frozenset(
-    {"requirements", "deadline", "department", "company"}
+    {"requirements", "deadline", "department", "company", *SPLIT_DETAIL_FIELDS}
 )
 OPTIONAL_FIELDS: dict[str, frozenset[str]] = {
     "list": OPTIONAL_LIST_FIELDS,
@@ -45,7 +66,7 @@ OPTIONAL_FIELDS: dict[str, frozenset[str]] = {
 
 # 키가 아예 없어도 되는 필드. 스키마에 나중에 더해진 것이라 그 전에 저장된 셀렉터 JSON 에는
 # 키 자체가 없다. 나머지 필드는 값이 비어도 키는 있어야 한다.
-OMITTABLE_FIELDS: frozenset[str] = frozenset({"company", "link_template"})
+OMITTABLE_FIELDS: frozenset[str] = frozenset({"company", "link_template", *SPLIT_DETAIL_FIELDS})
 
 # 아래 모델은 Gemini 의 response_schema 로 그대로 나간다. `extra="forbid"` 를 걸면
 # `additionalProperties: false` 로 변환되는데 Gemini 가 그 필드를 모르고 400 을 낸다.
@@ -69,7 +90,11 @@ class ListSelectors(BaseModel):
 
 
 class DetailSelectors(BaseModel):
-    """상세 페이지. 사이트에 없는 항목은 빈 문자열로 온다."""
+    """상세 페이지. 사이트에 없는 항목은 빈 문자열로 온다.
+
+    `start_date` 아래 열 개는 0011 이 `normalized_jobs` 에 더한 칸을 읽는 자리다. 전부
+    기본값이 있어서, 이 필드들이 생기기 전에 저장된 셀렉터 JSON 이 키 없이도 그대로 통과한다.
+    """
 
     title: str
     body: str
@@ -77,6 +102,17 @@ class DetailSelectors(BaseModel):
     deadline: str
     department: str
     company: str = ""
+    # 모집 마감일(`deadline`)의 짝이다. 그 칸을 대신하지 않는다
+    start_date: str = ""
+    job_category: str = ""
+    employment_type: str = ""
+    career_level: str = ""
+    work_location: str = ""
+    headcount: str = ""
+    duties: str = ""
+    preferred: str = ""
+    hiring_process: str = ""
+    etc_info: str = ""
 
 
 class SelectorSet(BaseModel):

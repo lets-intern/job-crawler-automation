@@ -33,6 +33,7 @@ from fastapi.testclient import TestClient
 from app import db
 from app.api import crawlers as crawlers_api
 from app.main import app
+from app.normalize.engine import OVERRIDABLE_FIELDS
 
 LIST_URL = "https://www.python.org/jobs/"
 LONG_BODY = "본문 첫 줄\n" + ("이 자리는 표 칸 폭에 들어가지 않는 긴 본문이다. " * 20)
@@ -175,14 +176,10 @@ def test_두_필드를_한_번에_저장하면_보정이_둘_쌓인다(
     assert override_of(conn, "body") is None
     # 파생값에는 손으로 쓰지 않는다
     assert normalized_row(conn) == before
-    # 표의 값 칸 여섯, 보정 개수, 전달 칸만 갈린다. 표 전체는 다시 그리지 않는다
+    # 표의 값 칸 전부와 보정 개수·전달 칸만 갈린다. 표 전체는 다시 그리지 않는다.
+    # 칸 목록을 여기 베껴 적지 않는다 — 0012 가 열여섯으로 넓혔고 또 늘어날 수 있다
     assert oob_ids(response.text) == [
-        "review-cell-7-company",
-        "review-cell-7-title",
-        "review-cell-7-department",
-        "review-cell-7-deadline",
-        "review-cell-7-body",
-        "review-cell-7-requirements",
+        *(f"review-cell-7-{field}" for field in OVERRIDABLE_FIELDS),
         "review-override-count-7",
         "review-delivery-7",
     ]

@@ -127,3 +127,29 @@ def test_a_wildcard_over_something_that_is_not_a_list_reads_as_empty() -> None:
     fields = build_detail({"name": "제목", "text": "본문", "orgs": {"name": "조직"}}, config).fields
 
     assert fields["department"] == ""
+
+
+def _one(payload: Any, path: Any) -> str:
+    """필드 하나만 매핑해 그 값이 어떻게 합쳐지는지 본다."""
+    config = ApiDetailConfig(
+        url="https://x.test/d",
+        method="POST",
+        body={"id": "{id}"},
+        # `title` 은 필수라 같이 준다. 보려는 것은 `body` 가 어떻게 합쳐지는가다
+        fields={"title": "item.t", "body": path},
+    )
+    return build_detail(payload, config).fields["body"]
+
+
+def test_같은_값이_칸마다_있으면_한_번만_적는다() -> None:
+    """한화는 모집 부문이 셋이어도 근무지가 셋 다 `서울` 이라 이으면 `서울 서울 서울` 이 된다."""
+    payload = {"item": {"t": "제목", "unitDt": [{"w": "서울"}, {"w": "서울"}, {"w": "서울"}]}}
+
+    assert _one(payload, "item.unitDt.*.w") == "서울"
+
+
+def test_다른_값은_순서대로_다_적는다() -> None:
+    """줄이는 것은 같은 값뿐이다. 부문마다 다른 근무지는 그대로 남는다."""
+    payload = {"item": {"t": "제목", "unitDt": [{"w": "서울"}, {"w": "용인"}, {"w": "서울"}]}}
+
+    assert _one(payload, "item.unitDt.*.w") == "서울\n\n용인"
