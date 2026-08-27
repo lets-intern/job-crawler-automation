@@ -1,9 +1,30 @@
 """환경변수 로딩. 이름은 `.env.example` 이 문서화한다."""
 
 from functools import lru_cache
+from typing import Any
 
-from pydantic import Field
+from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# 빈 문자열을 값으로 받으면 안 되는 칸. compose 는 변수를 넣지 않아도 `""` 를 채워 넘긴다.
+#
+# 모델 ID 나 제공자 이름이 `""` 로 들어오면 없는 모델을 부르거나 없는 제공자를 찾게 되고,
+# 증상은 401 이나 404 로 나타나 원인이 설정이라는 것이 보이지 않는다. `ADMIN_PASSWORD` 와
+# `CRAWL_USER_AGENT` 에서 같은 것에 두 번 걸렸다
+_BLANK_FALLS_BACK = (
+    "gemini_model",
+    "qwen_model",
+    "qwen_base_url",
+    "claude_model",
+    "gpt_model",
+    "selector_generate_provider",
+    "selector_repair_provider",
+    "classify_provider",
+)
+
+# 앞뒤 공백만 걷어낸다. 비어 있는 것은 "키가 없다" 가 맞는 값이라 그대로 둔다.
+# 공백만 든 키는 `if not key` 를 통과해 버려서, 걷어내지 않으면 401 로만 나타난다
+_KEYS = ("gemini_api_key", "qwen_api_key", "claude_api_key", "gpt_api_key")
 
 
 class Settings(BaseSettings):
@@ -34,6 +55,16 @@ class Settings(BaseSettings):
 
     gpt_api_key: str = ""
     gpt_model: str = "gpt-5.6-luna"
+
+    # 기능마다 어느 제공자를 쓰는가. 셋의 성격이 달라서 한 제공자로 다 하지 않는다 —
+    # 셀렉터 생성은 등록할 때 한 번이고, 분류는 공고마다 한 번이라 비용의 대부분이 거기다.
+    # 싼 제공자를 분류에 두고 정확한 제공자를 생성에 두는 선택이 가능해야 한다.
+    #
+    # 이름은 `app/llm/providers.py` 의 `PROVIDERS` 열쇠다. 없는 이름을 넣으면 그 기능이
+    # `unknown_provider` 로 서고, 조용히 다른 제공자로 넘어가지 않는다
+    selector_generate_provider: str = "gemini"
+    selector_repair_provider: str = "gemini"
+    classify_provider: str = "gemini"
 
     # 저장
     database_path: str = "./data/jobs.db"
@@ -66,6 +97,19 @@ class Settings(BaseSettings):
     # (`app/settings.py`). 초기값으로 들어갈 값이라 여기서 범위를 지킨다
     max_concurrent_runs: int = Field(default=3, ge=1)
     run_timeout_seconds: int = 600
+
+    @field_validator(*_BLANK_FALLS_BACK, mode="before")
+    @classmethod
+    def _blank_is_not_a_value(cls, value: Any, info: ValidationInfo) -> Any:
+        """빈 값은 "설정하지 않았다" 로 본다. 기본값으로 되돌린다."""
+        if isinstance(value, str) and not value.strip():
+            return cls.model_fields[str(info.field_name)].default
+        return value
+
+    @field_validator(*_KEYS, mode="before")
+    @classmethod
+    def _keys_lose_their_whitespace(cls, value: Any) -> Any:
+        return value.strip() if isinstance(value, str) else value
 
 
 @lru_cache
