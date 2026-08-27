@@ -16,7 +16,6 @@ import logging
 import sqlite3
 
 from app.llm.base import Usage
-from app.llm.gemini import PROVIDER
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +38,9 @@ def record_call(
     """호출 하나를 남긴다. 실패해도 예외를 올리지 않고 0 을 돌려준다.
 
     실패한 호출도 남긴다. 토큰을 쓰고 실패하는 경우가 있어서 빼고 세면 합이 실제와 어긋난다.
+
+    제공자 이름은 `usage` 가 들고 온다. 여기서 설정을 다시 읽어 알아내면 호출과 기록 사이에
+    설정이 바뀌었을 때 기록이 거짓이 된다 (`app/llm/base.py`).
     """
     try:
         cursor = conn.execute(
@@ -49,7 +51,7 @@ def record_call(
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                PROVIDER,
+                usage.provider,
                 usage.model,
                 feature,
                 usage.input_tokens,

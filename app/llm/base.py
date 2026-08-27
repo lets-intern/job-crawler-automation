@@ -41,8 +41,14 @@ class LlmCallError(RuntimeError):
 
 @dataclass(frozen=True)
 class Usage:
-    """호출 1회의 비용. 이 숫자가 없으면 나중에 비용 질문에 답할 수 없다."""
+    """호출 1회의 비용. 이 숫자가 없으면 나중에 비용 질문에 답할 수 없다.
 
+    `provider` 가 여기 있는 것은 **답한 제공자만이 이 값을 안다**는 이유 하나다. 기록하는
+    쪽에서 설정을 다시 읽어 알아내면, 호출과 기록 사이에 설정이 바뀌었을 때 기록이 거짓이
+    된다. 넷 중 어디에 돈이 나갔는지를 세는 칸이라 틀리면 세는 의미가 없다.
+    """
+
+    provider: str
     model: str
     input_tokens: int
     output_tokens: int
@@ -108,7 +114,6 @@ class Provider:
 def log_usage(
     log: logging.Logger,
     kind: str,
-    provider: str,
     attempt: int,
     usage: Usage,
     finish_reason: str,
@@ -123,7 +128,7 @@ def log_usage(
         "total_tokens=%d latency_ms=%d finish_reason=%s",
         kind,
         usage.model,
-        provider,
+        usage.provider,
         attempt,
         usage.input_tokens,
         usage.output_tokens,

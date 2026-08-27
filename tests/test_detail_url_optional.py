@@ -133,6 +133,7 @@ def called_with() -> list[tuple[str, str]]:
         return GenerationResult(
             selectors=validate_selectors(SELECTORS),
             usage=Usage(
+                provider="gemini",
                 model="gemini-3.5-flash",
                 input_tokens=8000,
                 output_tokens=120,
@@ -238,6 +239,7 @@ async def test_상세_URL_이_없으면_목록만_가져온다(monkeypatch: pyte
         return GenerationResult(
             selectors=validate_selectors(SELECTORS),
             usage=Usage(
+                provider="gemini",
                 model="gemini-3.5-flash",
                 input_tokens=1,
                 output_tokens=1,

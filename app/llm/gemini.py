@@ -69,7 +69,7 @@ async def call_model(
 
     latency_ms = int((time.monotonic() - started) * 1000)
     usage = _usage(model, response, latency_ms)
-    log_usage(logger, kind, PROVIDER, attempt, usage, _finish_reason(response))
+    log_usage(logger, kind, attempt, usage, _finish_reason(response))
     return _text(response), usage
 
 
@@ -87,6 +87,7 @@ GEMINI = Provider(
 def _usage(model: str, response: Any, latency_ms: int) -> Usage:
     meta = getattr(response, "usage_metadata", None)
     return Usage(
+        provider=PROVIDER,
         model=model,
         input_tokens=_count(meta, "prompt_token_count"),
         output_tokens=_count(meta, "candidates_token_count"),

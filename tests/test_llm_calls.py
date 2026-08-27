@@ -3,8 +3,11 @@
 셀렉터 생성만 있을 때는 로그 줄 하나로 충분했다. 본문 분류는 공고마다 하나씩 붙어서, 남기지
 않으면 "이번 달에 얼마나 썼나" 에 답할 길이 없다 (`migrations/0013_llm_calls.sql`).
 
-여기서 보는 것은 셋이다 — 호출 하나가 행 하나로 남는가, 실패한 호출도 남는가, 그리고
-**기록이 실패해도 호출이 실패로 바뀌지 않는가.**
+여기서 보는 것은 넷이다 — 호출 하나가 행 하나로 남는가, 실패한 호출도 남는가,
+**기록이 실패해도 호출이 실패로 바뀌지 않는가**, 그리고 **어느 제공자에 돈이 나갔는지 남는가.**
+
+마지막이 제공자가 넷이 된 뒤에 생긴 것이다. 예전에는 `app/llm/log.py` 가 gemini 라는 상수를
+가져다 박고 있어서, 다른 제공자로 부른 호출도 gemini 로 적혔다.
 """
 
 from __future__ import annotations
@@ -17,7 +20,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import db
-from app.llm.gemini import PROVIDER, Usage
+from app.llm.base import Usage
 from app.llm.log import CLASSIFY, SELECTOR_GENERATE, record_call, totals
 from tests.test_api_crawlers import (  # noqa: F401  (fixture 를 그대로 쓴다)
     DETAIL_URL,
@@ -31,6 +34,7 @@ from tests.test_api_crawlers import (  # noqa: F401  (fixture 를 그대로 쓴�
 )
 
 USAGE_ONE = Usage(
+    provider="gemini",
     model="gemini-3.5-flash",
     input_tokens=4321,
     output_tokens=120,
@@ -38,6 +42,7 @@ USAGE_ONE = Usage(
     latency_ms=5100,
 )
 USAGE_TWO = Usage(
+    provider="gemini",
     model="gemini-3.5-flash",
     input_tokens=1000,
     output_tokens=50,
@@ -62,7 +67,7 @@ def test_one_call_is_one_row_with_provider_model_feature_tokens_and_latency(
     record_call(logged, feature=CLASSIFY, usage=USAGE_ONE)
 
     row = logged.execute("SELECT * FROM llm_calls").fetchone()
-    assert row["provider"] == PROVIDER
+    assert row["provider"] == "gemini"
     assert row["model"] == "gemini-3.5-flash"
     assert row["feature"] == CLASSIFY
     assert row["input_tokens"] == 4321
@@ -103,6 +108,48 @@ def test_the_totals_add_up_to_what_was_recorded(logged: sqlite3.Connection) -> N
     assert only_classify["input_tokens"] == 4321 + 1000
     assert only_classify["output_tokens"] == 120 + 50
     assert only_classify["latency_ms"] == 5100 + 900
+
+
+ON_QWEN = Usage(
+    provider="qwen",
+    model="qwen3.8-flash",
+    input_tokens=3000,
+    output_tokens=90,
+    total_tokens=3090,
+    latency_ms=2200,
+)
+
+
+def test_the_provider_that_answered_is_the_one_that_gets_recorded(
+    logged: sqlite3.Connection,
+) -> None:
+    """제공자별로 갈라 세어야 "어느 제공자에 돈이 나갔나" 에 답할 수 있다.
+
+    상수를 박고 있을 때는 둘을 넣어도 한쪽 이름으로만 쌓였다.
+    """
+    record_call(logged, feature=CLASSIFY, usage=USAGE_ONE)
+    record_call(logged, feature=CLASSIFY, usage=ON_QWEN)
+    record_call(logged, feature=CLASSIFY, usage=ON_QWEN)
+
+    counted = dict(
+        logged.execute("SELECT provider, count(*) FROM llm_calls GROUP BY provider").fetchall()
+    )
+
+    assert counted == {"gemini": 1, "qwen": 2}
+
+
+def test_each_provider_keeps_its_own_model_and_tokens(logged: sqlite3.Connection) -> None:
+    """제공자마다 모델도 단가도 다르다. 한 칸에 섞이면 비용을 나눌 수 없다."""
+    record_call(logged, feature=CLASSIFY, usage=USAGE_ONE)
+    record_call(logged, feature=CLASSIFY, usage=ON_QWEN)
+
+    rows = {
+        row["provider"]: (row["model"], row["total_tokens"])
+        for row in logged.execute("SELECT provider, model, total_tokens FROM llm_calls")
+    }
+
+    assert rows["gemini"] == ("gemini-3.5-flash", 4441)
+    assert rows["qwen"] == ("qwen3.8-flash", 3090)
 
 
 def test_a_failure_to_record_does_not_become_a_failure_to_classify(

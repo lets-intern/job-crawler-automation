@@ -90,8 +90,8 @@ def _caller(name: str, label: str) -> Any:
             raise LlmCallError("api_error", f"{label} 호출 실패({code}): {exc}") from exc
 
         latency_ms = int((time.monotonic() - started) * 1000)
-        usage = _usage(model, response, latency_ms)
-        log_usage(logger, kind, name, attempt, usage, _finish_reason(response))
+        usage = _usage(name, model, response, latency_ms)
+        log_usage(logger, kind, attempt, usage, _finish_reason(response))
         return _text(response), usage
 
     return call_model
@@ -139,9 +139,10 @@ GPT_PROVIDER = entry(
 )
 
 
-def _usage(model: str, response: Any, latency_ms: int) -> Usage:
+def _usage(name: str, model: str, response: Any, latency_ms: int) -> Usage:
     meta = getattr(response, "usage", None)
     return Usage(
+        provider=name,
         model=model,
         input_tokens=_count(meta, "prompt_tokens"),
         output_tokens=_count(meta, "completion_tokens"),

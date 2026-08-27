@@ -71,6 +71,7 @@ def result_for(html: str) -> GenerationResult:
     return GenerationResult(
         selectors=validate_selectors(SELECTORS),
         usage=Usage(
+            provider="gemini",
             model="gemini-3.5-flash",
             input_tokens=10,
             output_tokens=10,

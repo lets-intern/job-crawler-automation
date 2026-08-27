@@ -717,6 +717,7 @@ async def _fill_detail(
 def _added(first: Usage, second: Usage) -> Usage:
     """두 번 부른 생성의 비용을 합친다. 비용 질문에 답하려면 둘 다 세야 한다."""
     return Usage(
+        provider=first.provider,
         model=first.model,
         input_tokens=first.input_tokens + second.input_tokens,
         output_tokens=first.output_tokens + second.output_tokens,

@@ -73,7 +73,12 @@ class Recorder:
     ) -> tuple[str, Usage]:
         self.calls.append({"model": model, "kind": kind, "client": client})
         return _answer(response_schema, kind), Usage(
-            model=model, input_tokens=10, output_tokens=2, total_tokens=12, latency_ms=1
+            provider=self.name,
+            model=model,
+            input_tokens=10,
+            output_tokens=2,
+            total_tokens=12,
+            latency_ms=1,
         )
 
 

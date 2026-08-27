@@ -173,9 +173,9 @@ async def classify_ids(
     resolved = settings or get_settings()
 
     try:
-        # 모델 이름을 여기서 먼저 읽는다. 실패한 호출도 기록해야 하는데, 그때는 응답이
-        # 없어 어느 모델이 실패했는지 알 길이 이것뿐이다
-        model = chosen(resolved)[1]
+        # 제공자와 모델을 여기서 먼저 읽는다. 실패한 호출도 기록해야 하는데, 그때는
+        # 응답이 없어 누가 무엇으로 실패했는지 알 길이 이것뿐이다
+        provider, model = chosen(resolved)
         resolved_client = client or _client(resolved)
         rules = load_rules(conn)
     except (ClassifyError, NormalizeError) as exc:
@@ -197,7 +197,7 @@ async def classify_ids(
                 body, settings=resolved, client=resolved_client, on_call=counted
             )
         except ClassifyError as exc:
-            _note_failed_call(conn, model, exc)
+            _note_failed_call(conn, provider.name, model, exc)
             progress.note(f"raw_jobs {raw_job_id}: {exc}")
             continue
 
@@ -243,7 +243,9 @@ def _client(settings: Settings) -> Any:
     return build_client(settings)
 
 
-def _note_failed_call(conn: sqlite3.Connection, model: str, exc: ClassifyError) -> None:
+def _note_failed_call(
+    conn: sqlite3.Connection, provider: str, model: str, exc: ClassifyError
+) -> None:
     """응답을 받지 못한 호출도 남긴다. 토큰은 알 수 없어 0 이다.
 
     `empty_body` 는 모델을 부르지 않은 것이라 남기지 않는다 — 부르지 않은 호출을 기록하면
@@ -254,7 +256,14 @@ def _note_failed_call(conn: sqlite3.Connection, model: str, exc: ClassifyError) 
     record_call(
         conn,
         feature=CLASSIFY,
-        usage=Usage(model=model, input_tokens=0, output_tokens=0, total_tokens=0, latency_ms=0),
+        usage=Usage(
+            provider=provider,
+            model=model,
+            input_tokens=0,
+            output_tokens=0,
+            total_tokens=0,
+            latency_ms=0,
+        ),
         ok=False,
         error=f"{exc.reason}: {exc}",
     )
