@@ -1,7 +1,7 @@
 """본문을 얻지 못한 공고는 `raw_jobs` 에 넣지 않는다 (2.1).
 
 목록에서 읽은 값만 넣고 성공으로 넘기던 경로가 본문 없는 행 86건을 만들었다
-(`.claude/tasks/todo/prd-fill-body.md`). 그 경로를 막았는지 본다.
+(`.claude/tasks/done/fill-body/prd-fill-body.md`). 그 경로를 막았는지 본다.
 
 실사이트에 나가지 않는다. 목록은 저장된 python.org 픽스처이고, 상세는 본문만 비운 스텁이
 돌려준다. DB 는 임시 파일에 마이그레이션을 올려 쓴다.

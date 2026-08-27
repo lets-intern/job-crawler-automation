@@ -1,6 +1,6 @@
 # Tasks: job-crawler - Push 9
 
-> PRD: `.claude/tasks/todo/prd-job-crawler.md`
+> PRD: `.claude/tasks/done/job-crawler/prd-job-crawler.md`
 > Push 범위: 화면 스타일링과 UX — Tailwind 를 넣고, 기다림·실패·빈 상태가 화면에 드러나게 만든다
 > 상태: 진행 중
 
@@ -85,7 +85,7 @@ Tailwind 가 프로덕션용으로 권하지 않는 방식이라는 것은 알�
     - [x] 9.5 부분 갱신 회귀 확인
         - Push 6 의 결과보고서에 있는 부분 갱신 표를 그대로 다시 확인한다
         - 조각 id 와 `hx-target` 이 어긋나면 갱신이 조용히 죽는다. 스타일 작업에서 가장 깨지기 쉬운 지점이다
-        - [x] 9.5.V 검증: `.claude/tasks/todo/result-job-crawler-push6.md` 의 부분 갱신 표 9개 항목을 하나씩 실행해
+        - [x] 9.5.V 검증: `.claude/tasks/done/job-crawler/result-job-crawler-push6.md` 의 부분 갱신 표 9개 항목을 하나씩 실행해
           같은 영역이 갱신되는지 확인. 하나라도 어긋나면 수정 하위 작업을 추가한다
 
     - [x] 9.6 기다리는 동안 무슨 일이 일어나는지 보이게

@@ -38,6 +38,7 @@ FIXED: dict[str, Any] = json.loads(json.dumps(BROKEN))
 FIXED["list"]["item"] = "ul.job-card-list > li.job-card"
 
 USAGE = Usage(
+    provider="gemini",
     model="gemini-3.5-flash",
     input_tokens=8123,
     output_tokens=142,

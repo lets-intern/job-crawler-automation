@@ -1,6 +1,6 @@
 # Tasks: job-crawler - Push 3
 
-> PRD: `.claude/tasks/todo/prd-job-crawler.md`
+> PRD: `.claude/tasks/done/job-crawler/prd-job-crawler.md`
 > Push 범위: 크롤링 실행 — 파서, 실패 분류, 재시도, 1회 실행과 `crawl_runs` 기록, 테스트 실행 API
 > 상태: 완료
 

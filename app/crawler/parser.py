@@ -89,7 +89,7 @@ class ListItem:
     # 카카오 목록 API 는 직군·근무지·모집인원·주요 업무·전형 절차를 항목마다 담아 주는데
     # 상세 문서에는 그것들이 한 덩어리로만 있다. 여기 싣지 않으면 그 값들은 수집 단계에서
     # 사라지고, 매핑하지 않은 값은 저장되지 않으므로 다시 얻을 길이 없다
-    # (`.claude/tasks/todo/prd-split-body.md`).
+    # (`.claude/tasks/memos/보류/split-body/prd-split-body.md`).
     #
     # 상세에서 읽은 값이 있으면 그쪽이 이긴다. 이것은 상세가 비었을 때만 쓰는 값이다
     # (`app/crawler/runner.py` 의 `_record`).

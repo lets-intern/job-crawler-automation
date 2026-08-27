@@ -1,6 +1,6 @@
 # Tasks: job-crawler - Push 8
 
-> PRD: `.claude/tasks/todo/prd-job-crawler.md`
+> PRD: `.claude/tasks/done/job-crawler/prd-job-crawler.md`
 > Push 범위: 제공 API — 커서 기반 조회, 전달 확인, `delivered_at` 쓰기 경로 격리
 > 상태: 진행 중
 

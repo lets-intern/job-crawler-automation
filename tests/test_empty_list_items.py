@@ -75,6 +75,7 @@ CONTAINER_AS_ITEM: dict[str, Any] = {
 }
 
 USAGE = Usage(
+    provider="gemini",
     model="gemini-3.5-flash",
     input_tokens=8112,
     output_tokens=141,

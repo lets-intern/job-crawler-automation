@@ -1,6 +1,6 @@
 # Tasks: job-crawler - Push 2
 
-> PRD: `.claude/tasks/todo/prd-job-crawler.md`
+> PRD: `.claude/tasks/done/job-crawler/prd-job-crawler.md`
 > Push 범위: 셀렉터 생성 — HTML 정제, LLM 호출, 셀렉터 JSON 스키마 검증, 크롤러 등록
 > 상태: 완료
 

@@ -8,8 +8,9 @@
 - 생성마다 모델 ID, 입출력 토큰 수, 지연을 로그로 남긴다
 - API 키는 환경변수에서만 읽고 어디에도 남기지 않는다
 
-호출 자체는 `app/llm/gemini.py` 가 한다. 본문 분류(`app/classify/`)가 같은 경로를 쓰기
-때문이고, 이 파일은 셀렉터 생성에만 있는 것 — 프롬프트, 응답 스키마, 자체 검증 — 만 갖는다.
+호출 자체는 고른 제공자 항목이 한다 (`app/llm/`). 이 파일은 셀렉터 생성에만 있는 것 —
+프롬프트, 응답 스키마, 자체 검증 — 만 갖고, **어느 제공자인지 모른다.** 기능마다 다른
+제공자를 고를 수 있고 그 선택은 설정이 정한다 (`app/llm/providers.py`).
 
 페이지를 가져오는 것은 공용 fetch 클라이언트다 (`.claude/rules/crawling.md`).
 """
@@ -20,14 +21,12 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from google import genai
-
 from app.config import Settings, get_settings
 from app.crawler.fetcher import PageSource, get_fetcher
 from app.crawler.playwright import STATIC
-from app.llm.gemini import LlmCallError, Usage
-from app.llm.gemini import build_client as build_gemini_client
-from app.llm.gemini import call_model as call_gemini
+from app.llm.base import LlmCallError, Provider, Usage
+from app.llm.log import SELECTOR_GENERATE
+from app.llm.providers import for_feature
 from app.selector.cleaner import CleanedHtml, clean_html
 from app.selector.narrow import Narrowing, narrow_item_selector
 from app.selector.schema import (
@@ -167,8 +166,8 @@ async def generate_from_html(
 ) -> GenerationResult:
     """이미 가져온 HTML 로 생성한다. 저장된 픽스처로 돌릴 수 있는 경로다."""
     resolved = settings or get_settings()
+    provider, model = _chosen(SELECTOR_GENERATE, resolved)
     resolved_client = client or build_client(resolved)
-    model = resolved.gemini_model
 
     cleaned_list = clean_html(list_html)
     cleaned_detail = clean_html(detail_html)
@@ -177,7 +176,7 @@ async def generate_from_html(
     last_error: SelectorSchemaError | None = None
     last_text: str | None = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
-        text, usage = await call_model(resolved_client, model, prompt, attempt)
+        text, usage = await call_model(resolved_client, model, prompt, attempt, provider=provider)
         last_text = text
         try:
             selectors = parse_selectors(text)
@@ -248,14 +247,32 @@ async def generate_from_html(
     ) from last_error
 
 
-def build_client(settings: Settings | None = None) -> genai.Client:
-    """API 키는 환경변수에서만 온다. 소스에도 로그에도 남기지 않는다."""
+def build_client(settings: Settings | None = None) -> Any:
+    """셀렉터 생성이 쓰는 제공자의 클라이언트."""
+    return build_client_for(SELECTOR_GENERATE, settings)
+
+
+def build_client_for(feature: str, settings: Settings | None = None) -> Any:
+    """그 기능이 고른 제공자의 클라이언트. API 키는 설정에서만 온다.
+
+    생성과 고치기가 서로 다른 제공자를 고를 수 있어서 기능을 받는다. 어느 제공자인지는
+    여기서 알 필요가 없다 — 이름을 항목으로 바꾸는 일은 `app/llm/providers.py` 가 한다.
+    """
+    resolved = settings or get_settings()
     try:
-        return build_gemini_client(settings)
+        provider, _ = for_feature(feature, resolved)
+        return provider.build_client(resolved)
     except LlmCallError as exc:
         raise SelectorGenerationError(
-            exc.reason, "GEMINI_API_KEY 가 비어 있다. 서버 문제가 아니라 셀렉터 생성만 막힌다"
+            exc.reason, f"{exc}. 서버 문제가 아니라 셀렉터 생성만 막힌다"
         ) from exc
+
+
+def _chosen(feature: str, settings: Settings) -> tuple[Provider, str]:
+    try:
+        return for_feature(feature, settings)
+    except LlmCallError as exc:
+        raise SelectorGenerationError(exc.reason, str(exc)) from exc
 
 
 def build_prompt(
@@ -273,7 +290,13 @@ def build_prompt(
 
 
 async def call_model(
-    client: Any, model: str, prompt: str, attempt: int, kind: str = "셀렉터 생성"
+    client: Any,
+    model: str,
+    prompt: str,
+    attempt: int,
+    kind: str = "셀렉터 생성",
+    *,
+    provider: Provider,
 ) -> tuple[str, Usage]:
     """셀렉터용 호출 1회. 스키마와 시스템 지시만 이 파일 것이고 나머지는 공용이다.
 
@@ -281,7 +304,7 @@ async def call_model(
     되고, 한쪽만 고쳐진 채로 남는다. `kind` 는 로그에서 둘을 가르는 이름일 뿐이다.
     """
     try:
-        return await call_gemini(
+        return await provider.call_model(
             client,
             model,
             prompt,

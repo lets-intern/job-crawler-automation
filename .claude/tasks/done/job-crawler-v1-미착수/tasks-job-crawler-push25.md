@@ -1,6 +1,6 @@
 # Tasks: job-crawler - Push 25
 
-> PRD: `.claude/tasks/todo/prd-job-crawler.md`
+> PRD: `.claude/tasks/done/job-crawler/prd-job-crawler.md`
 > Push 범위: 세 가지 수집 방식을 화면에서 보고 고치게 한다
 > 상태: 대기
 

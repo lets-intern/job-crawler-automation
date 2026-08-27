@@ -1,6 +1,6 @@
 # Tasks: 본문 채우기 - Push 5
 
-> PRD: `.claude/tasks/todo/prd-fill-body.md`
+> PRD: `.claude/tasks/done/fill-body/prd-fill-body.md`
 > Push 범위: 어떤 방식으로 도는지와 무엇이 실패했는지를 화면에 보인다 (화면)
 > 상태: 완료 (2026-08-25)
 

@@ -67,6 +67,7 @@ from app.selector.schema import (
     SelectorSet,
     validate_selectors,
 )
+from app.settings import FIRST_RUN_LIMIT, read_int
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +203,10 @@ async def run_workflow(
         return result
 
     bound = timeout_seconds if timeout_seconds is not None else get_settings().run_timeout_seconds
+    # 첫 실행만 항목 수를 막는다. 부르는 쪽이 값을 줬으면 그것이 이긴다 — 화면의 1회 실행과
+    # 테스트가 자기 상한을 들고 온다
+    if limit is None:
+        limit = first_run_limit(conn, workflow_id)
     # 목록과 상세를 무엇으로 가져올지는 crawlers 의 두 열이 정한다. 브라우저가 필요한 쪽이
     # 있으면 이 블록에서만 산다 (`app/crawler/collect.py`)
     async with open_collectors(
@@ -211,6 +216,9 @@ async def run_workflow(
         selectors=selectors,
         fetcher=fetcher or get_fetcher(),
         api_config=api_config,
+        # 쪽을 넘기는 목록에서 아는 공고만 있는 쪽을 만나면 거기서 멈춘다. 목록이 새것부터
+        # 오므로 그 뒤는 더 옛것이다 (`app/crawler/api_source.py`)
+        known=lambda link: _is_known(conn, workflow_id, "source_url", link),
     ) as collectors:
         result = await run_once(
             conn,
@@ -302,6 +310,30 @@ def _record_outcome(conn: sqlite3.Connection, workflow_id: int, result: RunResul
     logger.warning(
         "workflow %s: 연속 %s회 실패로 자동 중지한다 (임계치 %s)", workflow_id, streak, threshold
     )
+
+
+def first_run_limit(conn: sqlite3.Connection, workflow_id: int) -> int | None:
+    """이 실행이 첫 실행이면 담을 항목 수의 상한. 아니면 `None` 이다.
+
+    등록하면 목록에 걸린 과거 공고가 통째로 들어온다. 2026-08-26 에 열두 곳을 등록하며 670건이
+    그렇게 들어왔고 그 뒤 실행은 신규 0~1건이다. 저장량과 분류 토큰이 튀는 자리가 평소 수집이
+    아니라 이 첫 실행이라, 막을 곳도 여기 하나다.
+
+    **두 번째 실행부터는 걸지 않는다.** 상한이 계속 있으면 목록이 상한보다 길게 밀린 날에
+    뒤쪽 공고를 영영 못 본다 — 목록에서 밀려난 공고는 다시 올라오지 않는다.
+
+    실패한 실행도 첫 실행으로 세지 않는다. 셀렉터가 틀려 0건으로 끝난 뒤 고쳐서 다시 도는
+    것이 흔한데, 그때 상한이 풀려 있으면 백필을 막으려던 것이 그대로 새어 나간다.
+    """
+    limit = read_int(conn, FIRST_RUN_LIMIT)
+    if limit <= 0:
+        return None
+
+    row = conn.execute(
+        "SELECT 1 FROM crawl_runs WHERE workflow_id = ? AND new_count > 0 LIMIT 1",
+        (workflow_id,),
+    ).fetchone()
+    return None if row is not None else limit
 
 
 def consecutive_failures(conn: sqlite3.Connection, workflow_id: int, limit: int) -> int:
@@ -459,7 +491,7 @@ async def _collect(
 
     본문을 얻지 못한 공고는 적재하지 않고 실패로 낸다. 목록에서 읽은 값만 넣고 성공으로
     넘기면 `body` 가 빈 행이 쌓이고, 소비 측은 그것을 본문이 없는 공고로 받는다
-    (`.claude/tasks/todo/prd-fill-body.md`).
+    (`.claude/tasks/done/fill-body/prd-fill-body.md`).
 
     실패는 둘로 갈린다. 상세로 갈 길이 없는 것은 `detail_unreachable` 이고 상세를 열었는데
     읽을 것이 없는 것은 `detail_empty` 다 — 앞은 경로를 다시 찾아야 하고 뒤는 본문 셀렉터만
@@ -568,7 +600,7 @@ def _record(item: ListItem, detail: dict[str, str]) -> dict[str, str]:
     있어서다 — 카카오 목록 API 는 직군·근무지·모집인원·주요 업무·전형 절차를 항목마다 담아
     주는데 상세 문서에는 그것들이 한 덩어리로만 있다. 읽지 않으면 그 값들은 여기서 사라지고,
     매핑하지 않은 값은 저장되지 않으므로 다시 얻을 길이 없다
-    (`.claude/tasks/todo/prd-split-body.md`).
+    (`.claude/tasks/memos/보류/split-body/prd-split-body.md`).
 
     **순서가 규칙이다.** 상세에서 읽은 값이 늘 이긴다. 목록 값은 상세가 비었을 때만 쓰이고,
     목록도 그 값을 안 주면 빈 칸이다. 빈 칸을 채우려고 뜻이 다른 값을 옮겨 오지 않는다.

@@ -1,6 +1,6 @@
 # Tasks: 본문 채우기 - Push 2
 
-> PRD: `.claude/tasks/todo/prd-fill-body.md`
+> PRD: `.claude/tasks/done/fill-body/prd-fill-body.md`
 > Push 범위: 본문을 못 얻은 공고를 저장하지 않고, 마감·중복은 상세를 열지 않는다 (실행)
 > 상태: 완료
 

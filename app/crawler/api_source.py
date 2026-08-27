@@ -32,7 +32,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import replace
 from typing import Any
 
@@ -83,23 +83,40 @@ class _Missing:
 MISSING = _Missing()
 
 
-async def fetch_list(client: FetchPolicy, config: ApiListConfig) -> ListParseResult:
-    """목록 API 를 부르고 항목을 만든다. 쪽 넘김 설정이 있으면 끝까지 넘긴다."""
+async def fetch_list(
+    client: FetchPolicy,
+    config: ApiListConfig,
+    *,
+    known: Callable[[str], bool] | None = None,
+) -> ListParseResult:
+    """목록 API 를 부르고 항목을 만든다. 쪽 넘김 설정이 있으면 끝까지 넘긴다.
+
+    `known` 은 "이 주소는 이미 담은 공고인가" 다. 주면 아는 공고만 있는 쪽에서 멈춘다.
+    """
     if config.pagination is None:
         result = await _send(client, config.url, config.method, dict(config.body), config)
         return _read_page(result, config)
-    return await _fetch_pages(client, config)
+    return await _fetch_pages(client, config, known=known)
 
 
-async def _fetch_pages(client: FetchPolicy, config: ApiListConfig) -> ListParseResult:
+async def _fetch_pages(
+    client: FetchPolicy,
+    config: ApiListConfig,
+    *,
+    known: Callable[[str], bool] | None = None,
+) -> ListParseResult:
     """쪽을 넘겨 가며 전부 모은다. 한화 68건(20씩 4쪽)과 삼성 16건(2쪽)이 이 경로다.
 
     쪽 사이에도 호스트 딜레이가 그대로 걸린다. 요청이 전부 공용 fetch 클라이언트를 지나기
     때문이고, 그래서 여기서 따로 기다리지 않는다 (`.claude/rules/crawling.md`).
 
-    멈추는 조건은 셋이다 — 사이트가 다음 쪽이 없다고 말했거나, 항목이 0건인 쪽이 나왔거나,
-    `max_pages` 에 닿았거나. 마지막 것이 없으면 끝나지 않는 `hasNext` 하나로 사이트를 영원히
-    때리게 된다.
+    멈추는 조건은 넷이다 — 사이트가 다음 쪽이 없다고 말했거나, 항목이 0건인 쪽이 나왔거나,
+    **쪽이 통째로 아는 공고였거나**, `max_pages` 에 닿았거나. 마지막 것이 없으면 끝나지 않는
+    `hasNext` 하나로 사이트를 영원히 때리게 된다.
+
+    아는 공고로 멈추는 것은 목록이 새것부터 오기 때문이다. 한 쪽이 전부 아는 공고면 그 뒤는
+    더 옛것이라 볼 이유가 없다. **한 건이 아니라 쪽 전체로 보는 것은 상단 고정 공고 때문이다**
+    — 공지가 위에 박혀 있으면 첫 건은 늘 아는 공고이고, 그것으로 멈추면 새 공고를 영영 못 본다.
 
     첫 쪽이 0건인 것은 끝이 아니라 실패다. 목록을 못 읽은 실행과 공고가 없는 사이트를 같은
     결과로 남기지 않는다.
@@ -130,6 +147,14 @@ async def _fetch_pages(client: FetchPolicy, config: ApiListConfig) -> ListParseR
         for item in page.items:
             items.append(replace(item, index=len(items)))
         matched += page.matched
+
+        if known is not None and page.items and all(known(item.link) for item in page.items):
+            logger.info(
+                "목록 %s쪽이 전부 아는 공고라 여기서 멈춘다 url=%s. 그 뒤는 더 옛것이다",
+                number,
+                config.url,
+            )
+            break
 
         if not _has_more(result, config, page_count=turn + 1):
             break

@@ -1,6 +1,6 @@
 # Tasks: job-crawler - Push 28
 
-> PRD: `.claude/tasks/todo/prd-job-crawler.md`
+> PRD: `.claude/tasks/done/job-crawler/prd-job-crawler.md`
 > Push 범위: 운영 화면의 짜임새를 고른다 (데이터 조회·검수 제외)
 > 상태: 완료
 

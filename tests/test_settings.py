@@ -93,8 +93,9 @@ def test_모르는_키는_읽지도_쓰지도_않는다(conn: sqlite3.Connection
         settings.write_int(conn, "crawl_delay_seconds", 5)
 
 
-def test_키는_동시_실행_상한_하나다() -> None:
-    assert settings.KEYS == (MAX_CONCURRENT_RUNS,)
+def test_키는_둘이다() -> None:
+    """2026-08-27 에 `first_run_limit` 이 들어왔다. 등록 시 백필을 막는 값이다."""
+    assert settings.KEYS == (MAX_CONCURRENT_RUNS, settings.FIRST_RUN_LIMIT)
 
 
 def test_손으로_넣은_깨진_값은_그대로_알린다(conn: sqlite3.Connection) -> None:
@@ -112,7 +113,9 @@ def test_조회_API_는_현재_값을_돌려준다(client: TestClient, conn: sql
     response = client.get("/api/settings")
 
     assert response.status_code == 200
-    assert response.json() == {MAX_CONCURRENT_RUNS: 4}
+    assert response.json()[MAX_CONCURRENT_RUNS] == 4
+    # 키가 늘어도 이 시험이 깨지지 않게 한 칸만 본다. 키 목록은 위 시험이 잠근다
+    assert set(response.json()) == set(settings.KEYS)
 
 
 def test_변경_API_는_다음_조회부터_새_값을_준다(

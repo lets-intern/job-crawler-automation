@@ -1,6 +1,6 @@
 # Tasks: job-crawler - Push 19
 
-> PRD: `.claude/tasks/todo/prd-job-crawler.md`
+> PRD: `.claude/tasks/done/job-crawler/prd-job-crawler.md`
 > Push 범위: 운영 설정에서 SQLite 파일을 올려 기존 데이터에 더한다
 > 상태: 완료
 

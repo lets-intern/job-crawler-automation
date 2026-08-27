@@ -1,7 +1,7 @@
 # 결과보고서: 본문 없는 공고를 없앤다
 
 > 완료일: 2026-08-25
-> PRD: `.claude/tasks/todo/prd-fill-body.md`
+> PRD: `.claude/tasks/done/fill-body/prd-fill-body.md`
 > 브랜치: `feat/fill-body` (기준 `feat/ocr-crawling`)
 
 ## 목표와 결과

@@ -1,6 +1,6 @@
 # Tasks: 본문 채우기 - Push 3
 
-> PRD: `.claude/tasks/todo/prd-fill-body.md`
+> PRD: `.claude/tasks/done/fill-body/prd-fill-body.md`
 > Push 범위: 등록할 때 클릭해서 상세로 가는 길을 스스로 알아낸다 (셀렉터·경로 발견)
 > 상태: 완료
 

@@ -1,6 +1,6 @@
 # Tasks: job-crawler - Push 30
 
-> PRD: `.claude/tasks/todo/prd-job-crawler.md`
+> PRD: `.claude/tasks/done/job-crawler/prd-job-crawler.md`
 > Push 범위: 데이터 조회와 데이터 검수를 하나로 합치고, 값이 빈 공고를 찾을 수 있게 한다
 > 상태: 완료
 

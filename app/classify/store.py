@@ -23,10 +23,15 @@ _BODY = "json_extract(r.raw_data_json, '$.body')"
 
 
 def pending_ids(conn: sqlite3.Connection, limit: int | None = None) -> list[int]:
-    """본문이 있고 아직 분류되지 않은 공고. 오래된 것부터다. 읽기 전용이다.
+    """본문이 있고 아직 분류되지 않은 공고. **최근 수집한 것부터다.** 읽기 전용이다.
 
     `limit` 은 한 번에 도는 건수의 상한이다. 640건을 한 번에 돌리면 멈출 수가 없다
-    (`.claude/tasks/todo/prd-llm-classify.md`).
+    (`.claude/tasks/memos/보류/llm-classify/prd-llm-classify.md`).
+
+    2026-08-27 에 오래된 것부터에서 최근 것부터로 뒤집었다. 크레딧이 끊겨 313건이 밀려 있는데
+    오래된 것부터 돌면 **오늘 들어온 공고가 맨 뒤에 선다.** 소비 측이 지금 필요한 것은 오늘
+    올라온 공고이고, 밀린 것은 급하지 않다. 신규가 하루 0~1건이라 이 순서로도 밀린 것은
+    결국 다 돈다.
     """
     bound = "" if limit is None else " LIMIT ?"
     params: tuple[int, ...] = () if limit is None else (limit,)
@@ -37,7 +42,7 @@ def pending_ids(conn: sqlite3.Connection, limit: int | None = None) -> list[int]
           LEFT JOIN job_classifications c ON c.raw_job_id = r.id
          WHERE c.raw_job_id IS NULL
            AND coalesce({_BODY}, '') <> ''
-         ORDER BY r.id{bound}
+         ORDER BY r.id DESC{bound}
         """,
         params,
     ).fetchall()

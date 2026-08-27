@@ -1,6 +1,6 @@
 # Tasks: job-crawler - Push 1
 
-> PRD: `.claude/tasks/todo/prd-job-crawler.md`
+> PRD: `.claude/tasks/done/job-crawler/prd-job-crawler.md`
 > Push 범위: 기반 — 프로젝트 뼈대, 설정, SQLite 스키마와 마이그레이션, 공용 fetch 클라이언트, 컨테이너 구성
 > 상태: 진행 중
 

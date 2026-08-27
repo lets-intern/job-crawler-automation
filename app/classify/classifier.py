@@ -1,7 +1,7 @@
 """본문 하나를 열한 칸으로 나눈다.
 
 수집은 어느 사이트나 확실히 주는 여섯 칸만 한다. 나머지를 나누는 것은 본문을 읽는 이쪽 일이다
-(`.claude/tasks/todo/prd-llm-classify.md`).
+(`.claude/tasks/memos/보류/llm-classify/prd-llm-classify.md`).
 
 ## 칸이 두 가지다
 
@@ -25,7 +25,8 @@
 
 **깨진 응답만 1회 다시 묻는다.** 스키마에 없는 칸을 지어낸 응답은 다시 물어도 같은 답이 온다.
 
-호출 자체와 비용 기록은 `app/llm/gemini.py` 가 한다. 셀렉터 생성과 같은 경로다.
+호출 자체와 비용 기록은 고른 제공자 항목이 한다 (`app/llm/`). 셀렉터 생성과 같은 경로이고,
+**이 파일은 어느 제공자인지 모른다** — 그 선택은 설정이 정한다 (`app/llm/providers.py`).
 """
 
 from __future__ import annotations
@@ -45,9 +46,9 @@ from app.classify.schema import (
     parse_classification,
 )
 from app.config import Settings, get_settings
-from app.llm.gemini import LlmCallError, Usage
-from app.llm.gemini import build_client as build_gemini_client
-from app.llm.gemini import call_model as call_gemini
+from app.llm.base import LlmCallError, Provider, Usage
+from app.llm.log import CLASSIFY
+from app.llm.providers import for_feature
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +124,7 @@ class ClassifyError(RuntimeError):
     | `empty_body` | 나눌 본문이 없다. 모델을 부르지 않는다 |
 
     어느 것도 수집을 실패로 만들지 않는다. 본문은 `raw_jobs` 에 그대로 있고 나중에 다시
-    돌릴 수 있다 (`.claude/tasks/todo/prd-llm-classify.md`).
+    돌릴 수 있다 (`.claude/tasks/memos/보류/llm-classify/prd-llm-classify.md`).
     """
 
     def __init__(self, reason: str, message: str) -> None:
@@ -156,13 +157,25 @@ class ClassificationResult:
 
 
 def build_client(settings: Settings | None = None) -> Any:
-    """API 키는 환경변수에서만 온다. 소스에도 로그에도 남기지 않는다."""
+    """분류가 고른 제공자의 클라이언트. API 키는 설정에서만 온다.
+
+    **키가 없으면 여기서 선다.** 다른 제공자로 넘어가지 않는다 — 조용히 넘어가면 비용
+    기록이 거짓말이 된다 (`.claude/rules/llm.md`).
+    """
+    resolved = settings or get_settings()
     try:
-        return build_gemini_client(settings)
+        provider, _ = for_feature(CLASSIFY, resolved)
+        return provider.build_client(resolved)
     except LlmCallError as exc:
-        raise ClassifyError(
-            exc.reason, "GEMINI_API_KEY 가 비어 있다. 서버 문제가 아니라 분류만 막힌다"
-        ) from exc
+        raise ClassifyError(exc.reason, f"{exc}. 서버 문제가 아니라 분류만 막힌다") from exc
+
+
+def chosen(settings: Settings) -> tuple[Provider, str]:
+    """분류가 쓰는 제공자와 모델. 실패한 호출을 기록할 때도 모델 이름이 필요하다."""
+    try:
+        return for_feature(CLASSIFY, settings)
+    except LlmCallError as exc:
+        raise ClassifyError(exc.reason, str(exc)) from exc
 
 
 def build_prompt(body: str) -> tuple[str, list[str]]:
@@ -198,13 +211,13 @@ async def classify_body(
         raise ClassifyError("empty_body", "본문이 비어 있어 나눌 것이 없다")
 
     resolved = settings or get_settings()
+    provider, model = chosen(resolved)
     resolved_client = client or build_client(resolved)
-    model = resolved.gemini_model
     prompt, notes = build_prompt(body)
 
     last_error: ClassifySchemaError | None = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
-        text, usage = await _call(resolved_client, model, prompt, attempt)
+        text, usage = await _call(resolved_client, model, prompt, attempt, provider)
         if on_call is not None:
             on_call(usage)
         try:
@@ -259,9 +272,11 @@ async def classify_body(
     ) from last_error
 
 
-async def _call(client: Any, model: str, prompt: str, attempt: int) -> tuple[str, Usage]:
+async def _call(
+    client: Any, model: str, prompt: str, attempt: int, provider: Provider
+) -> tuple[str, Usage]:
     try:
-        return await call_gemini(
+        return await provider.call_model(
             client,
             model,
             prompt,

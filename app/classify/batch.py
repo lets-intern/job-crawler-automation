@@ -2,7 +2,7 @@
 
 **수집과 따로 돈다.** 같은 실행에서 이어 돌리면 SK 103건일 때 실행이 9분 가까이 길어지고,
 분류가 실패하면 수집까지 실패로 보인다. 수집은 본문까지만 하고, 나누는 것은 여기가 한다
-(`.claude/tasks/todo/prd-llm-classify.md`).
+(`.claude/tasks/memos/보류/llm-classify/prd-llm-classify.md`).
 
 **분류 실패는 그 공고에서 끝난다.** 그 공고는 본문만 가진 채로 남고 `job_classifications` 에
 행이 생기지 않아서, 다음 실행이 다시 집어 든다. 본문이 `raw_jobs` 에 있으니 몇 번이든 다시
@@ -25,10 +25,11 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from app.classify.classifier import ClassifyError, classify_body
+from app.classify.classifier import ClassifyError, chosen, classify_body
 from app.classify.store import pending_count, pending_ids, read_body, save_classification
-from app.config import Settings, get_settings
-from app.llm.gemini import Usage
+from app.config import Settings
+from app.llm import settings as llm_settings
+from app.llm.base import Usage
 from app.llm.log import CLASSIFY, record_call
 from app.normalize.backfill import ConnectFactory, rewrite_one
 from app.normalize.engine import NormalizeError, load_rules
@@ -170,9 +171,14 @@ async def classify_ids(
     않아서 다음 실행이 다시 집어 든다.
     """
     progress.total = len(raw_job_ids)
-    resolved = settings or get_settings()
+    # 화면에서 고른 제공자와 모델이 여기서 들어온다. 실행할 때마다 다시 읽으므로 배포 없이
+    # 다음 실행부터 바뀐다 (`app/llm/settings.py`)
+    resolved = llm_settings.settings_for(conn, CLASSIFY, settings)
 
     try:
+        # 제공자와 모델을 여기서 먼저 읽는다. 실패한 호출도 기록해야 하는데, 그때는
+        # 응답이 없어 누가 무엇으로 실패했는지 알 길이 이것뿐이다
+        provider, model = chosen(resolved)
         resolved_client = client or _client(resolved)
         rules = load_rules(conn)
     except (ClassifyError, NormalizeError) as exc:
@@ -194,7 +200,7 @@ async def classify_ids(
                 body, settings=resolved, client=resolved_client, on_call=counted
             )
         except ClassifyError as exc:
-            _note_failed_call(conn, resolved.gemini_model, exc)
+            _note_failed_call(conn, provider.name, model, exc)
             progress.note(f"raw_jobs {raw_job_id}: {exc}")
             continue
 
@@ -240,7 +246,9 @@ def _client(settings: Settings) -> Any:
     return build_client(settings)
 
 
-def _note_failed_call(conn: sqlite3.Connection, model: str, exc: ClassifyError) -> None:
+def _note_failed_call(
+    conn: sqlite3.Connection, provider: str, model: str, exc: ClassifyError
+) -> None:
     """응답을 받지 못한 호출도 남긴다. 토큰은 알 수 없어 0 이다.
 
     `empty_body` 는 모델을 부르지 않은 것이라 남기지 않는다 — 부르지 않은 호출을 기록하면
@@ -251,7 +259,14 @@ def _note_failed_call(conn: sqlite3.Connection, model: str, exc: ClassifyError) 
     record_call(
         conn,
         feature=CLASSIFY,
-        usage=Usage(model=model, input_tokens=0, output_tokens=0, total_tokens=0, latency_ms=0),
+        usage=Usage(
+            provider=provider,
+            model=model,
+            input_tokens=0,
+            output_tokens=0,
+            total_tokens=0,
+            latency_ms=0,
+        ),
         ok=False,
         error=f"{exc.reason}: {exc}",
     )

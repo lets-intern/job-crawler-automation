@@ -1,0 +1,17 @@
+{% extends "pages/settings.html" %}
+{% from "macros.html" import empty %}
+{% block section %}
+<section>
+  <h3>새 공고 알림</h3>
+  <p>
+    실행이 끝났을 때 새로 적재된 공고가 있으면 ntfy 로 알린다.
+    공고마다 보내지 않고 <span class="font-semibold text-slate-900">실행 하나에 한 번</span> 보낸다.
+  </p>
+  <p class="text-sm text-slate-600">
+    알림이 실패해도 수집은 실패하지 않는다. 못 보낸 사유는 서버 로그에 남는다.
+  </p>
+  <div id="notify-form" hx-get="/ui/notify" hx-trigger="load" hx-swap="innerHTML">
+    {{ empty("알림 설정을 불러오는 중") }}
+  </div>
+</section>
+{% endblock %}

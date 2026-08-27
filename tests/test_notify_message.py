@@ -1,7 +1,7 @@
 """알림 내용 테스트 (1.2.V).
 
 1건·5건·104건일 때 본문이 각각 어떻게 줄어드는지를 본다. 104건은 SK 한 번의 실제 건수다
-(`.claude/tasks/todo/tasks-ntfy-notify.md`).
+(`.claude/tasks/done/ntfy-notify/tasks-ntfy-notify.md`).
 """
 
 from __future__ import annotations

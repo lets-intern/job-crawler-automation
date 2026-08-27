@@ -1,6 +1,6 @@
 # Tasks: 본문 나누기 - Push 1
 
-> PRD: `.claude/tasks/todo/prd-split-body.md`
+> PRD: `.claude/tasks/memos/보류/split-body/prd-split-body.md`
 > Push 범위: 열한 사이트 응답을 대조해 칸을 확정하고 스키마를 만든다
 > 상태: 완료
 

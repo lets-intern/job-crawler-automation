@@ -1,6 +1,6 @@
 # Tasks: job-crawler - Push 20
 
-> PRD: `.claude/tasks/todo/prd-job-crawler.md`
+> PRD: `.claude/tasks/done/job-crawler/prd-job-crawler.md`
 > Push 범위: AI 수정에 운영자 힌트를 더하고, 테스트 실행 화면에서도 고칠 수 있게 한다
 > 상태: 완료 (2026-08-24)
 

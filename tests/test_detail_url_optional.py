@@ -133,6 +133,7 @@ def called_with() -> list[tuple[str, str]]:
         return GenerationResult(
             selectors=validate_selectors(SELECTORS),
             usage=Usage(
+                provider="gemini",
                 model="gemini-3.5-flash",
                 input_tokens=8000,
                 output_tokens=120,
@@ -238,6 +239,7 @@ async def test_상세_URL_이_없으면_목록만_가져온다(monkeypatch: pyte
         return GenerationResult(
             selectors=validate_selectors(SELECTORS),
             usage=Usage(
+                provider="gemini",
                 model="gemini-3.5-flash",
                 input_tokens=1,
                 output_tokens=1,
@@ -255,7 +257,7 @@ async def test_상세_URL_이_없으면_목록만_가져온다(monkeypatch: pyte
     monkeypatch.setattr(crawlers_api, "generate_from_html", stub_generate_from_html)
     monkeypatch.setattr(crawlers_api, "generate_for_urls", unreachable)
 
-    generate = crawlers_api.get_generator()
+    generate = crawlers_api.get_generator(None)
     result = await generate(LIST_URL, "", "static")
 
     assert result.selectors.list.item == "ul.list > li"

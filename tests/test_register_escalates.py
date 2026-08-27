@@ -71,6 +71,7 @@ def result_for(html: str) -> GenerationResult:
     return GenerationResult(
         selectors=validate_selectors(SELECTORS),
         usage=Usage(
+            provider="gemini",
             model="gemini-3.5-flash",
             input_tokens=10,
             output_tokens=10,
@@ -105,7 +106,7 @@ def modes(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
 @pytest.mark.asyncio
 async def test_정적_껍데기면_렌더로_다시_만든다(modes: list[str]) -> None:
-    generate = crawlers_api.get_generator()
+    generate = crawlers_api.get_generator(None)
 
     result = await generate(LIST_URL, DETAIL_URL, "")
 
@@ -127,7 +128,7 @@ async def test_정적으로_목록이_잡히면_브라우저를_띄우지_않는
         return result_for(RENDERED)
 
     monkeypatch.setattr(crawlers_api, "generate_for_urls", generate_for_urls)
-    generate = crawlers_api.get_generator()
+    generate = crawlers_api.get_generator(None)
 
     result = await generate(LIST_URL, DETAIL_URL, "")
 
@@ -139,7 +140,7 @@ async def test_정적으로_목록이_잡히면_브라우저를_띄우지_않는
 @pytest.mark.asyncio
 async def test_모드를_고른_등록은_그대로_한_번만_만든다(modes: list[str]) -> None:
     """고른 값을 판정이 덮어쓰지 않는다 (`.claude/rules/llm.md`)."""
-    generate = crawlers_api.get_generator()
+    generate = crawlers_api.get_generator(None)
 
     result = await generate(LIST_URL, DETAIL_URL, STATIC)
 
@@ -160,7 +161,7 @@ async def test_렌더로도_목록이_없으면_렌더한_결과를_올린다(
         return result_for(SHELL)
 
     monkeypatch.setattr(crawlers_api, "generate_for_urls", generate_for_urls)
-    generate = crawlers_api.get_generator()
+    generate = crawlers_api.get_generator(None)
 
     result = await generate(LIST_URL, DETAIL_URL, "")
 
@@ -183,7 +184,7 @@ async def test_브라우저가_없으면_정적_결과를_사유와_함께_올�
         return result_for(SHELL)
 
     monkeypatch.setattr(crawlers_api, "generate_for_urls", generate_for_urls)
-    generate = crawlers_api.get_generator()
+    generate = crawlers_api.get_generator(None)
 
     result = await generate(LIST_URL, DETAIL_URL, "")
 

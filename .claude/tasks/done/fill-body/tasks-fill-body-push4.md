@@ -1,6 +1,6 @@
 # Tasks: 본문 채우기 - Push 4
 
-> PRD: `.claude/tasks/todo/prd-fill-body.md`
+> PRD: `.claude/tasks/done/fill-body/prd-fill-body.md`
 > Push 범위: 여섯 사이트를 목록 API 로 돌리고 빠진 값을 채운다 (사이트 설정)
 > 상태: 완료 (2026-08-25)
 

@@ -126,8 +126,10 @@
       legend { @apply px-1 text-sm font-semibold text-slate-900; }
       label { @apply text-sm font-medium text-slate-700; }
       form p { @apply my-3; }
+      /* `password` 가 여기 있어야 한다. 빠지면 API 키 넣는 칸만 테두리 없이 그려져
+         입력할 자리가 있다는 것이 보이지 않는다 */
       input[type="text"], input[type="url"], input[type="number"], input[type="search"],
-      select, textarea {
+      input[type="password"], select, textarea {
         @apply mt-1 max-w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm
                text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none
                focus:ring-1 focus:ring-slate-500;

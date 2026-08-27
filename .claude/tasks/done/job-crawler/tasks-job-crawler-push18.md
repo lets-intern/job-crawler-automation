@@ -1,6 +1,6 @@
 # Tasks: job-crawler - Push 18
 
-> PRD: `.claude/tasks/todo/prd-job-crawler.md`
+> PRD: `.claude/tasks/done/job-crawler/prd-job-crawler.md`
 > Push 범위: 워크플로우 카드에 주기·실행 출처·임계치를 드러내고, 검수를 한 건 단위 모달로 바꾼다
 > 상태: 진행 중
 

@@ -1,6 +1,6 @@
 # Tasks: job-crawler - Push 13
 
-> PRD: `.claude/tasks/todo/prd-job-crawler.md`
+> PRD: `.claude/tasks/done/job-crawler/prd-job-crawler.md`
 > Push 범위: 렌더 모드를 기본으로 올리고, 테스트 실행 화면에서 정적·렌더를 둘 다 시험한다
 > 상태: 완료
 

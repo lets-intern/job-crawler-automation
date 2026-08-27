@@ -4,7 +4,7 @@
 돌려 보면 되지만 분류에는 돌릴 것이 없다 — 대신 **본문에 근거가 있는지** 를 본다.
 
 근거가 없는 칸은 버린다. 지어낸 값은 소비 측이 그대로 사실로 노출하고, 빈 칸보다 나쁘다
-(`.claude/tasks/todo/prd-llm-classify.md`).
+(`.claude/tasks/memos/보류/llm-classify/prd-llm-classify.md`).
 
 ## 칸에 따라 근거가 다르다
 

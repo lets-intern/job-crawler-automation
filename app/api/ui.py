@@ -78,12 +78,17 @@ NEXT_STEPS: dict[str, str] = {
     "transport": "사이트에 닿지 못했다. URL 과 사이트 상태를 확인하고 다시 시도한다",
     "selector_miss": "가져오기는 됐는데 셀렉터가 아무것도 잡지 못했다. 셀렉터를 손으로 고친다",
     "parse": "잡기는 했는데 값을 읽지 못했다. 그 필드의 셀렉터만 고친다",
-    "list_empty": "목록에서 반복 항목을 하나도 잡지 못했다. 목록 셀렉터를 고친다",
+    # 항목을 못 잡은 경우와, 항목은 잡혔는데 필수 필드를 못 읽은 경우가 둘 다 여기로 온다.
+    # "목록 셀렉터를 고친다" 라고만 적으면 뒤쪽에서 운영자가 멀쩡한 list.item 을 뒤진다
+    "list_empty": "쓸 수 있는 항목이 하나도 나오지 않았다. 위 사유가 가리키는 셀렉터를 "
+    "고친다 — 항목을 못 잡았으면 list.item, 항목은 잡혔는데 링크를 못 읽었으면 list.link 다",
     "detail_unreachable": "상세에 가지 못했다. 크롤러를 다시 등록해 상세로 가는 길을 찾는다",
     "detail_empty": "상세는 열렸는데 본문이 비었다. 상세의 본문 셀렉터만 고친다",
     "list_not_found": "정적 HTML 에 목록이 없다. 렌더(Playwright) 방식으로 올려 다시 생성한다",
-    "no_api_key": "GEMINI_API_KEY 가 비어 있다. 환경변수를 채우면 생성만 다시 된다",
+    "no_api_key": "그 기능이 고른 제공자의 API 키가 비어 있다. 환경변수를 채우면 다시 된다",
     "api_error": "생성 모델 호출이 실패했다. 잠시 뒤 다시 생성한다",
+    "unknown_provider": "설정의 제공자 이름이 없는 이름이다. gemini/claude/gpt/qwen 중 하나다",
+    "no_schema_support": "그 제공자의 그 모델은 응답을 정해진 목록으로 묶지 못한다. 모델을 바꾼다",
     "unparsable": "모델 응답이 JSON 이 아니었다. 셀렉터를 손으로 쓴다",
     "missing_field": "모델 응답에 필요한 필드가 없다. 셀렉터를 손으로 쓴다",
     "unknown_field": "모델이 스키마에 없는 필드를 냈다. 셀렉터를 손으로 쓴다",
@@ -177,7 +182,7 @@ def mode_word(mode: str) -> str:
 
 
 # 크롤러 하나가 어떤 방식으로 도는지를 적는 낱말. 저장값(`static`/`api`/`playwright`)은 그대로
-# 두고 사람이 읽는 자리에만 이 말을 쓴다 (`.claude/tasks/todo/prd-fill-body.md` 5절).
+# 두고 사람이 읽는 자리에만 이 말을 쓴다 (`.claude/tasks/done/fill-body/prd-fill-body.md` 5절).
 LIST_WORDS: dict[str, str] = {API: "목록 API", PLAYWRIGHT: "목록 렌더", STATIC: "정적 목록"}
 DETAIL_API_WORD = "상세 API"
 # 항목의 `a[href]` 를 그대로 따라간다
@@ -384,9 +389,52 @@ def jobs_page() -> RedirectResponse:
     return RedirectResponse("/review", status_code=307)
 
 
+# 운영 설정의 하위 메뉴. 한 화면에 다섯 구역이 있으면 찾지 못한다.
+# 위쪽 네비게이션과 달리 여기는 `/settings` 하나로 묶여 있어서, 어느 하위 화면에 있든
+# 위 네비게이션은 `운영 설정` 이 켜져 있어야 한다
+SETTINGS_NAV: tuple[tuple[str, str], ...] = (
+    ("/settings", "AI 제공자"),
+    ("/settings/notify", "알림"),
+    ("/settings/runs", "동시 실행"),
+    ("/settings/export", "스냅샷 내보내기"),
+    ("/settings/import", "데이터 가져오기"),
+)
+
+
+def render_settings(request: Request, name: str, /) -> HTMLResponse:
+    """운영 설정의 하위 화면 하나. 위 네비게이션은 `/settings` 에 머문다."""
+    return render_page(
+        request,
+        name,
+        active="/settings",
+        settings_nav=SETTINGS_NAV,
+        settings_active=request.url.path,
+    )
+
+
 @router.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request) -> HTMLResponse:
-    return render_page(request, "pages/settings.html")
+    return render_settings(request, "pages/settings_llm.html")
+
+
+@router.get("/settings/notify", response_class=HTMLResponse)
+def settings_notify_page(request: Request) -> HTMLResponse:
+    return render_settings(request, "pages/settings_notify.html")
+
+
+@router.get("/settings/runs", response_class=HTMLResponse)
+def settings_runs_page(request: Request) -> HTMLResponse:
+    return render_settings(request, "pages/settings_runs.html")
+
+
+@router.get("/settings/export", response_class=HTMLResponse)
+def settings_export_page(request: Request) -> HTMLResponse:
+    return render_settings(request, "pages/settings_export.html")
+
+
+@router.get("/settings/import", response_class=HTMLResponse)
+def settings_import_page(request: Request) -> HTMLResponse:
+    return render_settings(request, "pages/settings_import.html")
 
 
 @router.get("/ui/health", response_class=HTMLResponse)

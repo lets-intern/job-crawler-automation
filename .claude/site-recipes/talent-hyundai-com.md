@@ -70,7 +70,7 @@
 
 상세는 서버가 렌더한 HTML 이다. 클릭 뒤 XHR 이 0건이고 나가는 것은 문서 요청 하나다.
 구조화된 응답이 없으므로 13개 항목은 텍스트를 LLM 이 나눠야 한다
-(`.claude/tasks/todo/prd-crawler-v2.md` 5번).
+(`.claude/tasks/memos/prd-crawler-v2-보류.md` 5번).
 
 ## 2026-08-25: 목록도 상세도 API 다. 브라우저를 띄우지 않는다
 

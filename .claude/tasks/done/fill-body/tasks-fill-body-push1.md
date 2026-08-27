@@ -1,6 +1,6 @@
 # Tasks: 본문 채우기 - Push 1
 
-> PRD: `.claude/tasks/todo/prd-fill-body.md`
+> PRD: `.claude/tasks/done/fill-body/prd-fill-body.md`
 > Push 범위: 실패한 공고를 저장하지 않고도 무엇을 놓쳤는지 아는 자리를 만든다 (스키마)
 > 상태: 완료
 

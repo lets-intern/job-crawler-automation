@@ -163,6 +163,7 @@ def use_stubs(discovery: Discovery | Exception) -> None:
         return GenerationResult(
             selectors=selectors,
             usage=Usage(
+                provider="gemini",
                 model="gemini-3.5-flash",
                 input_tokens=10399,
                 output_tokens=139,

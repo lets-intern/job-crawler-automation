@@ -1,6 +1,6 @@
 # Tasks: job-crawler - Push 16
 
-> PRD: `.claude/tasks/todo/prd-job-crawler.md`
+> PRD: `.claude/tasks/done/job-crawler/prd-job-crawler.md`
 > Push 범위: 모달 편집·상세 보기와 워크플로우 화면 정리
 > 상태: 진행 중
 

@@ -1,6 +1,6 @@
 # Tasks: 본문 나누기 - Push 3
 
-> PRD: `.claude/tasks/todo/prd-split-body.md`
+> PRD: `.claude/tasks/memos/보류/split-body/prd-split-body.md`
 > Push 범위: 비우고 열한 사이트를 새 칸으로 다시 채운다
 > 상태: 중단 (2026-08-26). 3.3 까지 하고 멈췄다. 아래 "여기서 멈췄다" 를 먼저 읽는다
 
