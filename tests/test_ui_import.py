@@ -88,7 +88,8 @@ def count(conn: sqlite3.Connection, table: str) -> int:
 
 
 def test_설정_화면에_올리기_전_안내와_잠기는_버튼이_있다(client: TestClient) -> None:
-    body = client.get("/settings").text
+    # 운영 설정이 하위 메뉴로 갈렸다. 가져오기는 `/settings/import` 다
+    body = client.get("/settings/import").text
 
     assert "더한다" in body
     assert "덮어쓰지 않는다" in body
@@ -170,7 +171,7 @@ def test_거절_사유는_무엇이_틀렸는지_이름을_댄다(
 
 def test_결과_화면에_이모지가_없다(client: TestClient) -> None:
     """상태는 단어로 적는다 (`.claude/rules/writing.md`)."""
-    body = upload(client, SNAPSHOT) + client.get("/settings").text
+    body = upload(client, SNAPSHOT) + client.get("/settings/import").text
 
     assert not any(character in body for character in "✅❌⚠\U0001f4dd⭐")
 

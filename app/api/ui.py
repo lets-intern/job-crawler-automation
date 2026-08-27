@@ -386,9 +386,52 @@ def jobs_page() -> RedirectResponse:
     return RedirectResponse("/review", status_code=307)
 
 
+# 운영 설정의 하위 메뉴. 한 화면에 다섯 구역이 있으면 찾지 못한다.
+# 위쪽 네비게이션과 달리 여기는 `/settings` 하나로 묶여 있어서, 어느 하위 화면에 있든
+# 위 네비게이션은 `운영 설정` 이 켜져 있어야 한다
+SETTINGS_NAV: tuple[tuple[str, str], ...] = (
+    ("/settings", "AI 제공자"),
+    ("/settings/notify", "알림"),
+    ("/settings/runs", "동시 실행"),
+    ("/settings/export", "스냅샷 내보내기"),
+    ("/settings/import", "데이터 가져오기"),
+)
+
+
+def render_settings(request: Request, name: str, /) -> HTMLResponse:
+    """운영 설정의 하위 화면 하나. 위 네비게이션은 `/settings` 에 머문다."""
+    return render_page(
+        request,
+        name,
+        active="/settings",
+        settings_nav=SETTINGS_NAV,
+        settings_active=request.url.path,
+    )
+
+
 @router.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request) -> HTMLResponse:
-    return render_page(request, "pages/settings.html")
+    return render_settings(request, "pages/settings_llm.html")
+
+
+@router.get("/settings/notify", response_class=HTMLResponse)
+def settings_notify_page(request: Request) -> HTMLResponse:
+    return render_settings(request, "pages/settings_notify.html")
+
+
+@router.get("/settings/runs", response_class=HTMLResponse)
+def settings_runs_page(request: Request) -> HTMLResponse:
+    return render_settings(request, "pages/settings_runs.html")
+
+
+@router.get("/settings/export", response_class=HTMLResponse)
+def settings_export_page(request: Request) -> HTMLResponse:
+    return render_settings(request, "pages/settings_export.html")
+
+
+@router.get("/settings/import", response_class=HTMLResponse)
+def settings_import_page(request: Request) -> HTMLResponse:
+    return render_settings(request, "pages/settings_import.html")
 
 
 @router.get("/ui/health", response_class=HTMLResponse)
