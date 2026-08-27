@@ -87,14 +87,14 @@ def resolve_link(node: Tag, selectors: ListSelectors) -> LinkResult:
     if not selectors.link:
         return LinkResult(reason="list.link 셀렉터가 비어 있다. 목록에 상세 링크가 없다는 응답이다")
 
-    found = node.select(selectors.link)
-    if not found:
-        return LinkResult(reason="list.link 셀렉터가 항목 안에서 노드를 찾지 못했다")
+    target = _find(node, selectors.link)
+    if target is None:
+        return LinkResult(reason="list.link 셀렉터가 항목의 안에서도 밖에서도 노드를 찾지 못했다")
 
-    href = found[0].get("href")
+    href = target.get("href")
     if not isinstance(href, str) or not href.strip():
         return LinkResult(
-            reason=f"`{selectors.link}` 이 잡은 <{found[0].name}> 에 href 가 없다. "
+            reason=f"`{selectors.link}` 이 잡은 <{target.name}> 에 href 가 없다. "
             "a 태그가 아닌 요소를 골랐을 수 있다"
         )
 
@@ -102,6 +102,37 @@ def resolve_link(node: Tag, selectors: ListSelectors) -> LinkResult:
     if not followable(href):
         return LinkResult(reason=f"따라갈 수 있는 링크가 아니다: {href}")
     return LinkResult(url=href)
+
+
+# 항목 밖으로 몇 대까지 올라가 볼 것인가. 카드를 감싸는 `a` 는 바로 위이거나 한두 대 위다.
+# 무한정 올라가면 목록 전체를 감싼 링크나 헤더의 링크를 잡아 모든 항목이 같은 주소가 된다
+_ANCESTOR_LIMIT = 3
+
+
+def _find(node: Tag, selector: str) -> Tag | None:
+    """항목에서 링크 노드를 찾는다. 안, 자기 자신, 그다음 바깥 순서다.
+
+    **링크가 항목을 감싸고 있는 사이트가 있다.** 뤼튼이 그렇다 — `a[data-testid="공고_아이템"]`
+    가 `li` 를 감싸고, 항목으로 잡히는 것은 안쪽 `li` 다. `node.select()` 는 자손만 뒤지므로
+    이 구조에서 링크를 영원히 찾지 못한다. React 로 만든 목록에서 흔한 모양이다.
+
+    가까운 쪽부터 본다. 안에 있으면 그것이 그 항목의 링크이고, 밖에 있으면 가장 가까운 조상이
+    그 항목을 감싼 것이다. `_ANCESTOR_LIMIT` 를 두는 것은 끝까지 올라가면 목록 전체를 감싼
+    링크를 잡아 스물여덟 항목이 같은 주소를 갖게 되기 때문이다.
+    """
+    found = node.select(selector)
+    if found:
+        return found[0]
+
+    if node.css.match(selector):
+        return node
+
+    for depth, parent in enumerate(node.parents):
+        if depth >= _ANCESTOR_LIMIT:
+            break
+        if parent.name and parent.css.match(selector):
+            return parent
+    return None
 
 
 def _from_attributes(node: Tag, selectors: ListSelectors) -> LinkResult:
@@ -114,10 +145,12 @@ def _from_attributes(node: Tag, selectors: ListSelectors) -> LinkResult:
         )
 
     if selectors.link:
-        found = node.select(selectors.link)
-        if not found:
-            return LinkResult(reason="list.link 셀렉터가 항목 안에서 노드를 찾지 못했다")
-        target = found[0]
+        found = _find(node, selectors.link)
+        if found is None:
+            return LinkResult(
+                reason="list.link 셀렉터가 항목의 안에서도 밖에서도 노드를 찾지 못했다"
+            )
+        target = found
     else:
         # 셀렉터가 없으면 항목 노드 자신의 속성을 읽는다
         target = node
