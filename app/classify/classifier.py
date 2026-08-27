@@ -45,7 +45,7 @@ from app.classify.schema import (
     parse_classification,
 )
 from app.config import Settings, get_settings
-from app.llm.gemini import LlmCallError, Usage
+from app.llm.base import LlmCallError, Usage
 from app.llm.gemini import build_client as build_gemini_client
 from app.llm.gemini import call_model as call_gemini
 

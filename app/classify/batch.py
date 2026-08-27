@@ -28,7 +28,7 @@ from typing import Any
 from app.classify.classifier import ClassifyError, classify_body
 from app.classify.store import pending_count, pending_ids, read_body, save_classification
 from app.config import Settings, get_settings
-from app.llm.gemini import Usage
+from app.llm.base import Usage
 from app.llm.log import CLASSIFY, record_call
 from app.normalize.backfill import ConnectFactory, rewrite_one
 from app.normalize.engine import NormalizeError, load_rules

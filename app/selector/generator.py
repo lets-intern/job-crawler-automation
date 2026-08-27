@@ -25,7 +25,7 @@ from google import genai
 from app.config import Settings, get_settings
 from app.crawler.fetcher import PageSource, get_fetcher
 from app.crawler.playwright import STATIC
-from app.llm.gemini import LlmCallError, Usage
+from app.llm.base import LlmCallError, Usage
 from app.llm.gemini import build_client as build_gemini_client
 from app.llm.gemini import call_model as call_gemini
 from app.selector.cleaner import CleanedHtml, clean_html

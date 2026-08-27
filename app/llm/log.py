@@ -15,7 +15,8 @@ from __future__ import annotations
 import logging
 import sqlite3
 
-from app.llm.gemini import PROVIDER, Usage
+from app.llm.base import Usage
+from app.llm.gemini import PROVIDER
 
 logger = logging.getLogger(__name__)
 
