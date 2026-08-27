@@ -177,7 +177,7 @@ def mode_word(mode: str) -> str:
 
 
 # 크롤러 하나가 어떤 방식으로 도는지를 적는 낱말. 저장값(`static`/`api`/`playwright`)은 그대로
-# 두고 사람이 읽는 자리에만 이 말을 쓴다 (`.claude/tasks/todo/prd-fill-body.md` 5절).
+# 두고 사람이 읽는 자리에만 이 말을 쓴다 (`.claude/tasks/done/fill-body/prd-fill-body.md` 5절).
 LIST_WORDS: dict[str, str] = {API: "목록 API", PLAYWRIGHT: "목록 렌더", STATIC: "정적 목록"}
 DETAIL_API_WORD = "상세 API"
 # 항목의 `a[href]` 를 그대로 따라간다

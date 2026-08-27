@@ -1,6 +1,6 @@
 # Tasks: job-crawler - Push 6
 
-> PRD: `.claude/tasks/todo/prd-job-crawler.md`
+> PRD: `.claude/tasks/done/job-crawler/prd-job-crawler.md`
 > Push 범위: 운영 화면 — 크롤러 등록, 테스트 결과, 워크플로우 목록, 정규화 규칙과 재정규화, 데이터 조회, 운영 설정
 > 상태: 진행 중
 

@@ -1,6 +1,6 @@
 # Tasks: job-crawler - Push 11
 
-> PRD: `.claude/tasks/todo/prd-job-crawler.md`
+> PRD: `.claude/tasks/done/job-crawler/prd-job-crawler.md`
 > Push 범위: Playwright 렌더링 — 정적 fetch 가 껍데기만 돌려주는 사이트를 등록 가능하게 만든다
 > 상태: 진행 중
 

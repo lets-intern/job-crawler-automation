@@ -1,6 +1,6 @@
 # Tasks: job-crawler - Push 12
 
-> PRD: `.claude/tasks/todo/prd-job-crawler.md`
+> PRD: `.claude/tasks/done/job-crawler/prd-job-crawler.md`
 > Push 범위: 크롤러 삭제와 생성 결과 판정 일관성
 > 상태: 진행 중
 

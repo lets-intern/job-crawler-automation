@@ -1,6 +1,6 @@
 # Tasks: 본문 나누기 - Push 2
 
-> PRD: `.claude/tasks/todo/prd-split-body.md`
+> PRD: `.claude/tasks/memos/보류/split-body/prd-split-body.md`
 > Push 범위: 열한 사이트 매핑을 새 칸으로 다시 쓴다
 > 상태: 완료
 

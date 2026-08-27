@@ -1,6 +1,6 @@
 # Tasks: job-crawler - Push 5
 
-> PRD: `.claude/tasks/todo/prd-job-crawler.md`
+> PRD: `.claude/tasks/done/job-crawler/prd-job-crawler.md`
 > Push 범위: 정규화 — 규칙 타입, 규칙 엔진, 파이프라인 연결, 규칙 CRUD, 일괄 재정규화
 > 상태: 완료
 

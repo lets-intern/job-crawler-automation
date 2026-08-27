@@ -11,5 +11,5 @@
 | [tech-stack.md](tech-stack.md) | 기술 선택과 그 이유, 쓰지 않기로 한 것 |
 | [ocr-benchmark.md](ocr-benchmark.md) | 수집 방식 네 가지의 시간·토큰 실측 (2026-08-24) |
 
-원본 PRD 는 `.claude/tasks/todo/prd-job-crawler.md` 에 있다.
+원본 PRD 는 `.claude/tasks/done/job-crawler/prd-job-crawler.md` 에 있다.
 사이트별 특성은 `.claude/site-recipes/` 에 사이트당 한 파일로 있다.

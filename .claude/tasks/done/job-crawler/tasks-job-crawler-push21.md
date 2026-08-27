@@ -1,6 +1,6 @@
 # Tasks: job-crawler - Push 21
 
-> PRD: `.claude/tasks/todo/prd-job-crawler.md`
+> PRD: `.claude/tasks/done/job-crawler/prd-job-crawler.md`
 > Push 범위: 화면의 시각을 운영자가 사는 시간대로 보여준다
 > 상태: 완료 (2026-08-24)
 

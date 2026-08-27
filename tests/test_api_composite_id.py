@@ -2,7 +2,7 @@
 
 현대 상세는 `recuYy`·`recuType`·`recuCls` 세 값이 다 있어야 열린다. 한 값으로는 공고를
 지목할 수 없어서, id 자체가 세 값을 이어 붙인 것이 된다
-(`.claude/tasks/todo/tasks-fill-body-push4.md`).
+(`.claude/tasks/done/fill-body/tasks-fill-body-push4.md`).
 """
 
 from __future__ import annotations

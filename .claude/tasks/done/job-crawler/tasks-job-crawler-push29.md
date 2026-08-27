@@ -1,6 +1,6 @@
 # Tasks: job-crawler - Push 29
 
-> PRD: `.claude/tasks/todo/prd-job-crawler.md`
+> PRD: `.claude/tasks/done/job-crawler/prd-job-crawler.md`
 > Push 범위: HTML 조각으로 들어온 값을 정규화 단계에서 텍스트로 편다
 > 상태: 완료
 

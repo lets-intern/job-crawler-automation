@@ -36,7 +36,7 @@ decision — hand-write the selector or drop the site.
 ## Providers
 
 Four providers are supported: Gemini, Claude, GPT and Qwen. The operator picks which one a given
-call uses. This replaces the earlier single-provider rule (2026-08-24, `.claude/tasks/todo/prd-crawler-v2.md`).
+call uses. This replaces the earlier single-provider rule (2026-08-24, `.claude/tasks/memos/prd-crawler-v2-보류.md`).
 
 One thin call site, not an abstraction tower. A provider entry states its SDK, its model setting and
 how it returns token counts; nothing else in the codebase branches on which provider is in use. If a

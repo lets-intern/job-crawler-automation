@@ -1,6 +1,6 @@
 # Tasks: job-crawler - Push 4
 
-> PRD: `.claude/tasks/todo/prd-job-crawler.md`
+> PRD: `.claude/tasks/done/job-crawler/prd-job-crawler.md`
 > Push 범위: 워크플로우 — 승격, APScheduler 등록, 운영 설정 저장소, 동시성 상한, 실행 타임아웃, 실패 임계치 자동 중지
 > 상태: 완료
 

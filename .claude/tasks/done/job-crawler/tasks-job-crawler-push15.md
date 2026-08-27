@@ -1,6 +1,6 @@
 # Tasks: job-crawler - Push 15
 
-> PRD: `.claude/tasks/todo/prd-job-crawler.md`
+> PRD: `.claude/tasks/done/job-crawler/prd-job-crawler.md`
 > Push 범위: 워크플로우 승격 화면 — 화면만 쓰는 운영자가 파이프라인을 끝까지 갈 수 있게 한다
 > 상태: 완료 (2026-08-22)
 

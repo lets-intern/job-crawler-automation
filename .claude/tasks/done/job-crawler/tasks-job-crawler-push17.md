@@ -1,6 +1,6 @@
 # Tasks: job-crawler - Push 17
 
-> PRD: `.claude/tasks/todo/prd-job-crawler.md`
+> PRD: `.claude/tasks/done/job-crawler/prd-job-crawler.md`
 > Push 범위: 실패한 필드를 LLM 에게 다시 고치게 하는 AI 수정
 > 상태: 완료
 

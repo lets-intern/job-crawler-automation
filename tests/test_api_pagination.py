@@ -2,7 +2,7 @@
 
 한화는 20건씩 4쪽 68건이고 `data.hasNext` 가 마지막에 false 가 된다. 삼성은 9+7 = 16건이고
 총 쪽 수가 응답 안 `input.divCnt[data-max]` 에 있다. 마지막 쪽을 판정하는 법이 서로 다르고,
-둘 다 담을 수 있어야 한다 (`.claude/tasks/todo/tasks-fill-body-push4.md`).
+둘 다 담을 수 있어야 한다 (`.claude/tasks/done/fill-body/tasks-fill-body-push4.md`).
 
 쪽 사이에도 호스트 딜레이가 지켜지는지, 끝나지 않는 `hasNext` 에 상한이 걸리는지도 여기서 본다.
 """

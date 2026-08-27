@@ -1,7 +1,7 @@
 """API 설정에 담은 헤더가 실제 요청에 실려 나가는지 본다. 픽스처로만 돈다.
 
 현대 목록 API 는 `x-hkmc-service` 와 `referer` 가 없으면 400 을 준다 (2026-08-25 측정,
-`.claude/tasks/todo/tasks-fill-body-push4.md`). 그래서 사이트가 요구하는 기능성 헤더를 설정에
+`.claude/tasks/done/fill-body/tasks-fill-body-push4.md`). 그래서 사이트가 요구하는 기능성 헤더를 설정에
 담을 자리가 필요하다.
 
 담을 수 없는 것이 하나 있다. `User-Agent` 는 공용 fetch 클라이언트가 정하고 설정이 덮을 수

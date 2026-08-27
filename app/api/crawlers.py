@@ -548,7 +548,7 @@ async def create_crawler(
     #
     # 운영자가 렌더를 고른 등록은 렌더로 남는다. 정적으로도 목록이 잡히더라도 판정이 그 선택을
     # 내려앉히지 않는다 — 고른 값을 자동 판정이 덮어쓰지 않는다는 규칙이 등록 순간에도 같다
-    # (`.claude/tasks/todo/prd-fill-body.md` 5절).
+    # (`.claude/tasks/done/fill-body/prd-fill-body.md` 5절).
     #
     # 목록 API 는 상세 판정이 실패해도 살린다. 그것은 이미 `httpx` 로 다시 불러 확인한
     # 사실이고, 상세로 가는 길을 못 찾았다는 것과 별개다 (`app/selector/list_api.py`).
@@ -913,7 +913,7 @@ def update_company(
     """운영자가 적어 둔 회사명을 고친다.
 
     이 값은 `normalized_jobs` 에 즉시 반영되지 않는다. 고친 뒤 재정규화를 돌려야 `operator`
-    로 확정된 행이 새 값을 받는다 (`.claude/tasks/todo/tasks-job-crawler-push7.md`).
+    로 확정된 행이 새 값을 받는다 (`.claude/tasks/done/job-crawler/tasks-job-crawler-push7.md`).
     """
     row = conn.execute("SELECT id FROM crawlers WHERE id = ?", (crawler_id,)).fetchone()
     if row is None:

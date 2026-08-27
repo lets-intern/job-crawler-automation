@@ -1,6 +1,6 @@
 # Tasks: job-crawler - Push 26
 
-> PRD: `.claude/tasks/todo/prd-job-crawler.md`
+> PRD: `.claude/tasks/done/job-crawler/prd-job-crawler.md`
 > Push 범위: 마감이 지난 공고는 수집하지 않는다
 > 상태: 대기
 

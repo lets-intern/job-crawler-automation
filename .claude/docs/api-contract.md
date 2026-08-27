@@ -94,7 +94,7 @@ GET /api/jobs?updated_after=<ISO8601>&limit=100&cursor=<opaque>
 
 이 열 필드와 `requirements`·`department` 는 2026-08-26 부터 **수집이 아니라 본문을 나눠서**
 채운다. 사이트마다 칸 매핑을 적는 방식이 640건에서 절반도 채우지 못했기 때문이다
-(`.claude/tasks/todo/prd-llm-classify.md`). 소비 측이 보는 필드 이름과 뜻은 그대로다 —
+(`.claude/tasks/memos/보류/llm-classify/prd-llm-classify.md`). 소비 측이 보는 필드 이름과 뜻은 그대로다 —
 바뀐 것은 값이 어디서 오는가뿐이다.
 
 `job_category`·`employment_type`·`career_level` 세 필드는 **정해진 값만 나온다.** 사이트마다

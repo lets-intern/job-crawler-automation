@@ -26,7 +26,7 @@ def pending_ids(conn: sqlite3.Connection, limit: int | None = None) -> list[int]
     """본문이 있고 아직 분류되지 않은 공고. 오래된 것부터다. 읽기 전용이다.
 
     `limit` 은 한 번에 도는 건수의 상한이다. 640건을 한 번에 돌리면 멈출 수가 없다
-    (`.claude/tasks/todo/prd-llm-classify.md`).
+    (`.claude/tasks/memos/보류/llm-classify/prd-llm-classify.md`).
     """
     bound = "" if limit is None else " LIMIT ?"
     params: tuple[int, ...] = () if limit is None else (limit,)

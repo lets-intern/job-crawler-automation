@@ -1,6 +1,6 @@
 # Tasks: 수집은 최소한, 나누는 것은 LLM
 
-> PRD: `.claude/tasks/todo/prd-llm-classify.md`
+> PRD: `.claude/tasks/memos/보류/llm-classify/prd-llm-classify.md`
 > 브랜치: `feat/auto-register`
 > 상태: 진행 중
 

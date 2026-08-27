@@ -459,7 +459,7 @@ async def _collect(
 
     본문을 얻지 못한 공고는 적재하지 않고 실패로 낸다. 목록에서 읽은 값만 넣고 성공으로
     넘기면 `body` 가 빈 행이 쌓이고, 소비 측은 그것을 본문이 없는 공고로 받는다
-    (`.claude/tasks/todo/prd-fill-body.md`).
+    (`.claude/tasks/done/fill-body/prd-fill-body.md`).
 
     실패는 둘로 갈린다. 상세로 갈 길이 없는 것은 `detail_unreachable` 이고 상세를 열었는데
     읽을 것이 없는 것은 `detail_empty` 다 — 앞은 경로를 다시 찾아야 하고 뒤는 본문 셀렉터만
@@ -568,7 +568,7 @@ def _record(item: ListItem, detail: dict[str, str]) -> dict[str, str]:
     있어서다 — 카카오 목록 API 는 직군·근무지·모집인원·주요 업무·전형 절차를 항목마다 담아
     주는데 상세 문서에는 그것들이 한 덩어리로만 있다. 읽지 않으면 그 값들은 여기서 사라지고,
     매핑하지 않은 값은 저장되지 않으므로 다시 얻을 길이 없다
-    (`.claude/tasks/todo/prd-split-body.md`).
+    (`.claude/tasks/memos/보류/split-body/prd-split-body.md`).
 
     **순서가 규칙이다.** 상세에서 읽은 값이 늘 이긴다. 목록 값은 상세가 비었을 때만 쓰이고,
     목록도 그 값을 안 주면 빈 칸이다. 빈 칸을 채우려고 뜻이 다른 값을 옮겨 오지 않는다.

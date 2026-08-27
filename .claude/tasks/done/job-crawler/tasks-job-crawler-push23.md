@@ -1,6 +1,6 @@
 # Tasks: job-crawler - Push 23
 
-> PRD: `.claude/tasks/todo/prd-job-crawler.md`
+> PRD: `.claude/tasks/done/job-crawler/prd-job-crawler.md`
 > Push 범위: 수집 방식을 목록·상세 각각 `static` / `api` / `playwright` 로 고를 수 있게 한다
 > 상태: 완료 (2026-08-24)
 

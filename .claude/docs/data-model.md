@@ -225,7 +225,7 @@ append-only 인 `raw_jobs` 에 매달아야 몇 번을 다시 정규화해도 �
 
 수집은 어느 사이트나 확실히 주는 여섯(제목·본문·모집 시작일·모집 마감일·회사명·원본 주소)만
 하고, 나머지 열한 칸은 본문을 읽어 나눈다. 사이트마다 칸 매핑을 적는 방식은 열한 사이트
-640건에서 절반도 채우지 못했다 (`.claude/tasks/todo/prd-llm-classify.md`).
+640건에서 절반도 채우지 못했다 (`.claude/tasks/memos/보류/llm-classify/prd-llm-classify.md`).
 
 **`normalized_jobs` 에 바로 쓰지 않는 이유가 있다.** 그 표는 `raw_jobs` 에서 규칙으로 다시
 만들어진다. 재정규화를 한 번 돌리면 분류가 채운 칸이 통째로 NULL 로 돌아가고, 되살리려면
@@ -254,7 +254,7 @@ append-only 인 `raw_jobs` 에 매달아야 몇 번을 다시 정규화해도 �
 있지 않아서 글자 일치를 요구하면 이 셋은 영원히 빈다.
 
 판정 칸의 목록은 응답 스키마의 enum 이 강제하고, 목록과 그 근거는
-`.claude/tasks/todo/tasks-llm-classify.md` 에 있다. 목록을 정하지 않으면 같은 일이 사이트마다
+`.claude/tasks/memos/보류/llm-classify/tasks-llm-classify.md` 에 있다. 목록을 정하지 않으면 같은 일이 사이트마다
 다른 이름으로 쌓인다 — 이 표가 생기기 전 640건에 `Permanent` 71건과 `정규직` 7건과 `정규`
 3건이 따로 있었다.
 

@@ -1,7 +1,7 @@
 """본문 하나를 열한 칸으로 나눈다.
 
 수집은 어느 사이트나 확실히 주는 여섯 칸만 한다. 나머지를 나누는 것은 본문을 읽는 이쪽 일이다
-(`.claude/tasks/todo/prd-llm-classify.md`).
+(`.claude/tasks/memos/보류/llm-classify/prd-llm-classify.md`).
 
 ## 칸이 두 가지다
 
@@ -123,7 +123,7 @@ class ClassifyError(RuntimeError):
     | `empty_body` | 나눌 본문이 없다. 모델을 부르지 않는다 |
 
     어느 것도 수집을 실패로 만들지 않는다. 본문은 `raw_jobs` 에 그대로 있고 나중에 다시
-    돌릴 수 있다 (`.claude/tasks/todo/prd-llm-classify.md`).
+    돌릴 수 있다 (`.claude/tasks/memos/보류/llm-classify/prd-llm-classify.md`).
     """
 
     def __init__(self, reason: str, message: str) -> None:

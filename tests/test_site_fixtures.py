@@ -4,7 +4,7 @@ Push 4 는 이 픽스처만 보고 설정을 만든다. 그래서 파일이 제�
 숫자와 같고, 설정이 읽을 키가 실제로 들어 있는지를 먼저 확인한다. 여기가 깨지면 뒤의 시험은
 전부 잘못된 입력 위에서 도는 것이라 통과해도 의미가 없다.
 
-숫자는 `.claude/tasks/todo/tasks-fill-body-push4.md` 의 측정값이다.
+숫자는 `.claude/tasks/done/fill-body/tasks-fill-body-push4.md` 의 측정값이다.
 
 | 사이트 | 목록 | 상세 |
 |---|---|---|

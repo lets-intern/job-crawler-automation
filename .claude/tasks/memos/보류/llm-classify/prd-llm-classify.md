@@ -1,7 +1,7 @@
 # PRD: 수집은 최소한, 나누는 것은 LLM 이 한다
 
 > 작성일: 2026-08-26
-> 대체: `.claude/tasks/todo/prd-split-body.md` (Push 1·2 로 만든 칸은 그대로 쓴다)
+> 대체: `.claude/tasks/memos/보류/split-body/prd-split-body.md` (Push 1·2 로 만든 칸은 그대로 쓴다)
 > 근거: 348건 실측, 열한 사이트 픽스처 대조
 
 ## 왜 바꾸나

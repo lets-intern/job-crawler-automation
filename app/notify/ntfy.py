@@ -7,7 +7,7 @@ User-Agent 로 밝힌다. 알림 서버는 크롤링 대상이 아니라 우리�
 `.claude/rules/crawling.md` 에 적혀 있다.
 
 **보내기는 실패해도 예외를 밖으로 내지 않는다.** 알림이 안 갔다고 수집이 실패한 것은 아니다
-(`.claude/tasks/todo/tasks-ntfy-notify.md`). 사유는 `SendResult` 와 로그에 남는다.
+(`.claude/tasks/done/ntfy-notify/tasks-ntfy-notify.md`). 사유는 `SendResult` 와 로그에 남는다.
 
 한글은 헤더에 UTF-8 바이트로 직접 넣는다. httpx 에 `dict[str, str]` 을 넘기면 헤더 값을
 **ascii 로** 인코딩해서 한글 제목이 `UnicodeEncodeError` 로 죽는다 (`Headers.__init__` 은

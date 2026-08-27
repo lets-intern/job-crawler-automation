@@ -1,6 +1,6 @@
 # Tasks: 본문 채우기 - Push 6
 
-> PRD: `.claude/tasks/todo/prd-fill-body.md`
+> PRD: `.claude/tasks/done/fill-body/prd-fill-body.md`
 > Push 범위: 쌓인 수집 데이터를 비우고 새 경로로 다시 채운다 (운영)
 > 상태: 완료
 
@@ -158,7 +158,7 @@ Push 의 목적이다.
         - 사이트별 수집 건수, 실패 건수와 사유, 걸린 시간을 결과보고서에 적는다
         - 비우기 전후 건수를 같이 적는다
         - [x] 6.6.V 검증: 보고서의 숫자를 DB 에서 다시 세어 일치하는지
-            - `.claude/tasks/todo/result-fill-body-push6.md` 에 썼다
+            - `.claude/tasks/done/fill-body/result-fill-body-push6.md` 에 썼다
             - 보고서의 표를 파싱해 DB 와 대조하는 스크립트로 숫자 88개를 다시 셌다. 눈으로
               훑지 않았다. 비우기 전 열 표는 백업 파일에서, 다시 채운 뒤는 운영 DB 에서 센다
             - 88개 전부 일치한다
@@ -170,7 +170,7 @@ Push 의 목적이다.
         - 그 커밋이 보고서에 덧붙인 `## 6.5 검증 기록` 절은 바로 위 `## 주기 실행` 절과 같은
           말을 두 번 하고 굵은 글씨를 강조로 썼다. `.claude/rules/writing.md` 위반이라 한 절로
           합쳤다. 숫자는 양쪽이 같았고 6.6.V 대조에서도 전부 맞았다
-        - 같은 커밋이 만든 `.claude/tasks/todo/result-fill-body.md` 는 이 Push 가 아니라 기능
+        - 같은 커밋이 만든 `.claude/tasks/done/fill-body/result-fill-body.md` 는 이 Push 가 아니라 기능
           전체의 결과보고서다. 내 범위가 아니라 손대지 않았다
 
 ## 하지 않는 것

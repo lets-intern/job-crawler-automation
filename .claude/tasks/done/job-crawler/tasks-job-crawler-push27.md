@@ -1,6 +1,6 @@
 # Tasks: job-crawler - Push 27
 
-> PRD: `.claude/tasks/todo/prd-job-crawler.md`
+> PRD: `.claude/tasks/done/job-crawler/prd-job-crawler.md`
 > Push 범위: 데이터 조회에서 상세하게 걸러 내고, 걸린 것을 지운다
 > 상태: 완료
 

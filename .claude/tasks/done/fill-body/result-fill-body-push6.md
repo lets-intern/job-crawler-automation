@@ -1,6 +1,6 @@
 # 결과: 본문 채우기 - Push 6
 
-> 작업 파일: `.claude/tasks/todo/tasks-fill-body-push6.md`
+> 작업 파일: `.claude/tasks/done/fill-body/tasks-fill-body-push6.md`
 > 실행: 2026-08-25 (KST). 운영 DB(포트 8000 컨테이너, `/data/jobs.db`)
 > 판정: 성공
 
