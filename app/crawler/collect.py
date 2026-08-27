@@ -112,14 +112,24 @@ class HtmlDetailCollector:
 
 
 class ApiListCollector:
-    """JSON 목록. 요청은 공용 fetch 클라이언트로 나간다."""
+    """JSON 목록. 요청은 공용 fetch 클라이언트로 나간다.
 
-    def __init__(self, client: FetchPolicy, config: ApiConfig) -> None:
+    `known` 은 "이 주소는 이미 담은 공고인가" 다. 쪽이 통째로 아는 공고면 다음 쪽을 받지
+    않는다 — 목록이 새것부터 오므로 그 뒤는 더 옛것이다. 주지 않으면 끝까지 넘긴다.
+    """
+
+    def __init__(
+        self,
+        client: FetchPolicy,
+        config: ApiConfig,
+        known: Callable[[str], bool] | None = None,
+    ) -> None:
         self._client = client
         self._config = config.list_config()
+        self._known = known
 
     async def collect(self) -> ListParseResult:
-        return await fetch_list(self._client, self._config)
+        return await fetch_list(self._client, self._config, known=self._known)
 
 
 class ApiDetailCollector:
@@ -154,6 +164,7 @@ async def open_collectors(
     fetcher: FetchPolicy,
     api_config: ApiConfig | None = None,
     renderer: Callable[[FetchPolicy], Renderer] | None = None,
+    known: Callable[[str], bool] | None = None,
 ) -> AsyncIterator[Collectors]:
     """이 실행이 쓸 수집기 둘을 만든다. 브라우저 수명이 이 블록이다.
 
@@ -177,7 +188,7 @@ async def open_collectors(
     config = api_config or ApiConfig()
     try:
         list_collector: ListCollector = (
-            ApiListCollector(fetcher, config)
+            ApiListCollector(fetcher, config, known)
             if list_mode == API
             else HtmlListCollector(source_for(list_mode), list_url, selectors.list, list_mode)
         )

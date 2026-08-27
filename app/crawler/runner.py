@@ -216,6 +216,9 @@ async def run_workflow(
         selectors=selectors,
         fetcher=fetcher or get_fetcher(),
         api_config=api_config,
+        # 쪽을 넘기는 목록에서 아는 공고만 있는 쪽을 만나면 거기서 멈춘다. 목록이 새것부터
+        # 오므로 그 뒤는 더 옛것이다 (`app/crawler/api_source.py`)
+        known=lambda link: _is_known(conn, workflow_id, "source_url", link),
     ) as collectors:
         result = await run_once(
             conn,
