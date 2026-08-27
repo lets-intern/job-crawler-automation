@@ -257,7 +257,7 @@ async def test_상세_URL_이_없으면_목록만_가져온다(monkeypatch: pyte
     monkeypatch.setattr(crawlers_api, "generate_from_html", stub_generate_from_html)
     monkeypatch.setattr(crawlers_api, "generate_for_urls", unreachable)
 
-    generate = crawlers_api.get_generator()
+    generate = crawlers_api.get_generator(None)
     result = await generate(LIST_URL, "", "static")
 
     assert result.selectors.list.item == "ul.list > li"

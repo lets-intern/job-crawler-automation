@@ -27,7 +27,8 @@ from typing import Any
 
 from app.classify.classifier import ClassifyError, chosen, classify_body
 from app.classify.store import pending_count, pending_ids, read_body, save_classification
-from app.config import Settings, get_settings
+from app.config import Settings
+from app.llm import settings as llm_settings
 from app.llm.base import Usage
 from app.llm.log import CLASSIFY, record_call
 from app.normalize.backfill import ConnectFactory, rewrite_one
@@ -170,7 +171,9 @@ async def classify_ids(
     않아서 다음 실행이 다시 집어 든다.
     """
     progress.total = len(raw_job_ids)
-    resolved = settings or get_settings()
+    # 화면에서 고른 제공자와 모델이 여기서 들어온다. 실행할 때마다 다시 읽으므로 배포 없이
+    # 다음 실행부터 바뀐다 (`app/llm/settings.py`)
+    resolved = llm_settings.settings_for(conn, CLASSIFY, settings)
 
     try:
         # 제공자와 모델을 여기서 먼저 읽는다. 실패한 호출도 기록해야 하는데, 그때는

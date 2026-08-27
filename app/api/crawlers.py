@@ -45,11 +45,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app import db
+from app.config import Settings
 from app.crawler.collect import API, COLLECT_MODES, open_collectors
 from app.crawler.failures import SUCCESS
 from app.crawler.fetcher import FetchError, FetchPolicy, RobotsDisallowedError, get_fetcher
 from app.crawler.playwright import PLAYWRIGHT, RENDER_MODES, STATIC, Renderer, open_source
 from app.crawler.runner import TEST, RunTarget, collect_selectors, run_once
+from app.llm import settings as llm_settings
 from app.llm.log import SELECTOR_GENERATE, SELECTOR_REPAIR, record_call
 from app.selector.api_schema import (
     ApiConfig,
@@ -347,8 +349,14 @@ def get_crawl_fetcher() -> FetchPolicy:
     return get_fetcher()
 
 
-def get_generator() -> GenerateFn:
+def get_generator(
+    conn: Annotated[sqlite3.Connection | None, Depends(get_connection)],
+) -> GenerateFn:
     """기본 생성 경로. 테스트는 이 의존성을 갈아끼운다.
+
+    연결을 받는 것은 어느 제공자로 만들지가 DB 에 있어서다. 요청마다 다시 읽으므로 화면에서
+    바꾼 값이 **다음 호출부터** 적용된다 (`app/llm/settings.py`). 연결 없이 부르면 환경변수
+    설정 그대로다.
 
     `render_mode` 가 비어 있으면 등록이 스스로 정한다. 정적으로 먼저 만들어 보고, 정적
     HTML 에 목록이 아예 없으면 렌더한 HTML 로 한 번 더 만든다. **운영자에게 모드를 묻지
@@ -358,19 +366,22 @@ def get_generator() -> GenerateFn:
     값을 주면 그 모드로만 만든다. 운영자가 고른 것을 판정이 덮어쓰지 않는다.
     """
 
+    settings = llm_settings.settings_for(conn, SELECTOR_GENERATE)
+
     async def generate(list_url: str, detail_url: str, render_mode: str) -> GenerationResult:
         if render_mode:
             return replace(
-                await _generate(list_url, detail_url, render_mode), render_mode=render_mode
+                await _generate(list_url, detail_url, render_mode, settings),
+                render_mode=render_mode,
             )
 
-        static_result = await _generate(list_url, detail_url, STATIC)
+        static_result = await _generate(list_url, detail_url, STATIC, settings)
         if not static_result.verification.list_missing:
             return replace(static_result, render_mode=STATIC)
 
         logger.info("정적 HTML 에 목록이 없어 렌더로 다시 만든다 url=%s", list_url)
         try:
-            rendered = await _generate(list_url, detail_url, PLAYWRIGHT)
+            rendered = await _generate(list_url, detail_url, PLAYWRIGHT, settings)
         except FetchError as exc:
             # 브라우저가 없거나 렌더가 실패했다. 정적 결과를 그대로 올려 무엇이 안 됐는지
             # 운영자가 보게 한다 — 여기서 예외를 던지면 사유가 렌더 실패로 바뀐다
@@ -395,24 +406,31 @@ def get_generator() -> GenerateFn:
     return generate
 
 
-async def _generate(list_url: str, detail_url: str, render_mode: str) -> GenerationResult:
+async def _generate(
+    list_url: str, detail_url: str, render_mode: str, settings: Settings | None = None
+) -> GenerationResult:
     """한 경로로 한 번 만든다. 렌더 모드면 브라우저가 이 블록 안에서만 산다."""
     async with open_source(render_mode, get_fetcher()) as source:
         if not detail_url.strip():
             # 상세 페이지 주소가 없는 사이트다. 없는 주소를 지어내 가져오지 않는다.
             # 목록만 보고 만들고, 상세 셀렉터는 볼 HTML 이 없어 판정되지 않는다
             list_html = (await source.fetch(list_url)).text
-            return await generate_from_html(list_html, "", list_url=list_url)
-        return await generate_for_urls(list_url, detail_url, source=source)
+            return await generate_from_html(list_html, "", list_url=list_url, settings=settings)
+        return await generate_for_urls(list_url, detail_url, source=source, settings=settings)
 
 
-def get_repairer() -> RepairFn:
+def get_repairer(
+    conn: Annotated[sqlite3.Connection | None, Depends(get_connection)],
+) -> RepairFn:
     """기본 고치기 경로. 테스트는 이 의존성을 갈아끼운다.
 
     가져오기는 생성과 같은 경로다. HTML 은 어디에도 보관하지 않으므로 고칠 때 다시 가져오고,
     그 요청도 공용 fetch 클라이언트의 딜레이와 robots 아래에서 돈다
     (`.claude/rules/crawling.md`).
+
+    제공자는 생성과 따로 고른다. 연결에서 읽는 이유는 생성 쪽과 같다.
     """
+    settings = llm_settings.settings_for(conn, SELECTOR_REPAIR)
 
     async def repair(
         list_url: str,
@@ -423,7 +441,9 @@ def get_repairer() -> RepairFn:
         hint: str = "",
     ) -> RepairOutcome:
         async with open_source(render_mode, get_fetcher()) as source:
-            return await repair_for_urls(list_url, detail_url, selectors, source=source, hint=hint)
+            return await repair_for_urls(
+                list_url, detail_url, selectors, source=source, hint=hint, settings=settings
+            )
 
     return repair
 
