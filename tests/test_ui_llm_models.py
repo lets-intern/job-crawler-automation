@@ -48,9 +48,7 @@ async def test_키가_있으면_목록이_정렬되어_온다(
         return ["나중-모델", "가장-먼저", "중간"]
 
     monkeypatch.setitem(store.registry.PROVIDERS, "테스트", _entry("테스트", lister))
-    models, problem = await store.list_models(
-        conn, "테스트", Settings(gemini_api_key="키가-있다")
-    )
+    models, problem = await store.list_models(conn, "테스트", Settings(gemini_api_key="키가-있다"))
 
     assert models == ["가장-먼저", "나중-모델", "중간"]
     assert problem == ""
@@ -129,7 +127,7 @@ async def test_키는_저장된_값이_환경변수를_이긴다(
 
 
 def test_모든_제공자가_목록_함수를_가진다() -> None:
-    """넷 다 `models.list()` 가 있는 것을 SDK 에서 확인했다. 빠뜨리면 그 제공자만 손입력이다."""
+    """다섯 다 `models.list()` 가 있는 것을 SDK 에서 확인했다. 빠뜨리면 그 제공자만 손입력이다."""
     for name, entry in store.registry.PROVIDERS.items():
         assert entry.list_models is not None, name
 
