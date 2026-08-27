@@ -61,6 +61,16 @@ def test_어느_하위_화면에서도_위_네비게이션은_운영_설정이�
     assert '<a href="/settings" aria-current="page"' in body
 
 
+def test_내보내기_화면이_파일에_키가_들어_있다고_알린다(client: TestClient) -> None:
+    """숨기지 않고 알린다. 운영자가 모르고 남에게 주는 일만 막으면 된다 (2.5.V)."""
+    body = client.get("/settings/export").text
+
+    assert "이 파일에 API 키가 들어 있습니다" in body
+    assert "키도 같이 옮겨집니다" in body
+    assert "키 재발급" in body
+    assert not any(character in body for character in "✅❌⚠\U0001f4dd⭐")
+
+
 @pytest.mark.parametrize(("path", "_call"), CALLS)
 def test_하위_메뉴_다섯이_모든_화면에_있다(client: TestClient, path: str, _call: str) -> None:
     body = client.get(path).text
