@@ -83,6 +83,14 @@ DELIVERY_STATES: dict[str, str] = {
     "no": "미전달",
 }
 
+# 제안 여부. `job_field_suggestions` 에 그 공고의 행이 하나라도 있는지만 본다 — 어느 칸의
+# 제안인지는 이 조건이 가르지 않는다. 640건에서 제안이 붙은 것을 눈으로 찾게 두면 아무도
+# 수락하지 않는다 (11.7, PRD 6절)
+HAS_SUGGESTION_STATES: dict[str, str] = {
+    "yes": "제안 있음",
+    "no": "제안 없음",
+}
+
 # 사람이 고칠 수 있는 필드와 화면에 적을 이름. 키는 `OVERRIDABLE_FIELDS` 와 같아야 한다 —
 # 그쪽이 `job_field_overrides.field_name` 의 CHECK 와 이미 맞춰져 있다.
 # 지우기의 조건 설명도 이 이름을 쓰기 때문에 `app/api/review.py` 가 아니라 여기 둔다.
@@ -240,6 +248,7 @@ class JobFilter:
     normalized_from: str = ""
     normalized_to: str = ""
     dup: str = ""
+    has_suggestion: str = ""
 
     def without_empty(self) -> JobFilter:
         """빈 값 조건만 뺀 같은 조건. 필드별 빈 건수를 세는 데 쓴다.
@@ -263,6 +272,7 @@ class JobFilter:
             "normalized_from": self.normalized_from,
             "normalized_to": self.normalized_to,
             "dup": self.dup,
+            "has_suggestion": self.has_suggestion,
         }
 
 
@@ -278,6 +288,7 @@ def read_filter(
     normalized_from: str = "",
     normalized_to: str = "",
     dup: str = "",
+    has_suggestion: str = "",
 ) -> JobFilter:
     """화면이 보낸 값을 조건 한 벌로. 표에 없는 값은 조건을 걸지 않은 것으로 본다.
 
@@ -296,6 +307,7 @@ def read_filter(
         normalized_from=normalized_from.strip(),
         normalized_to=normalized_to.strip(),
         dup=dup if dup in DUP_CRITERIA else "",
+        has_suggestion=has_suggestion if has_suggestion in HAS_SUGGESTION_STATES else "",
     )
 
 
@@ -415,6 +427,14 @@ def filter_sql(picked: JobFilter) -> tuple[str, list[Any]]:
         clauses.append("n.delivered_at IS NOT NULL")
     elif picked.delivered == "no":
         clauses.append("n.delivered_at IS NULL")
+
+    # 어느 칸의 제안인지는 보지 않는다 — "제안이 붙어 있다" 만 가른다. 칸별로 좁히고 싶으면
+    # 모달을 열어 본다 (11.6)
+    _suggestion_exists = "EXISTS (SELECT 1 FROM job_field_suggestions s WHERE s.raw_job_id = r.id)"
+    if picked.has_suggestion == "yes":
+        clauses.append(_suggestion_exists)
+    elif picked.has_suggestion == "no":
+        clauses.append(f"NOT {_suggestion_exists}")
 
     for column, start, end in (
         ("r.crawled_at", picked.crawled_from, picked.crawled_to),
@@ -646,6 +666,7 @@ def _describe(conn: sqlite3.Connection, picked: JobFilter, scope: str) -> str:
             f"전달 여부 {DELIVERY_STATES.get(picked.delivered, '전체')}",
             f"빈 값 {EMPTY_LABELS.get(picked.empty, '안 걸림')}",
             f"중복 {DUP_LABELS.get(picked.dup, '안 걸림')}",
+            f"제안 여부 {HAS_SUGGESTION_STATES.get(picked.has_suggestion, '전체')}",
             f"수집 {span(picked.crawled_from, picked.crawled_to)}",
             f"정규화 {span(picked.normalized_from, picked.normalized_to)}",
             f"검색어 {picked.query or '없음'}",
@@ -768,6 +789,7 @@ async def _delete_request(request: Request) -> tuple[str, list[int], JobFilter]:
                 "normalized_from",
                 "normalized_to",
                 "dup",
+                "has_suggestion",
             )
         }
     )
@@ -775,15 +797,17 @@ async def _delete_request(request: Request) -> tuple[str, list[int], JobFilter]:
 
 
 def _delete_rows(conn: sqlite3.Connection, raw_job_ids: Sequence[int]) -> tuple[int, int, int]:
-    """네 표를 한 트랜잭션으로, 외래키 순서대로 비운다.
+    """다섯 표를 한 트랜잭션으로, 외래키 순서대로 비운다.
 
-    `job_field_overrides` -> `job_classifications` -> `normalized_jobs` -> `raw_jobs` 순이다.
-    거꾸로 지우면 외래키가 막고, 막히지 않는다면 그것대로 문제다 — 가리키는 곳이 없는 보정이
-    남는다. `job_classifications` (`migrations/0014_job_classifications.sql`) 도 `raw_job_id` 를
-    참조하는데 이 함수가 지우지 않아, 분류가 붙은 건을 지우면 `FOREIGN KEY constraint failed` 로
-    죽었다 — 지운 것은 여기서 함께 지운다. 반환값 개수에는 넣지 않는다. 화면의 확인 창이
-    보여주는 세 수치(`overrides`, `normalized`, `delivered`)는 그대로 두고, 분류는 원문에서
-    다시 만들 수 있는 파생값이라 사라져도 되돌릴 수 없는 손실이 아니다.
+    `job_field_overrides` -> `job_classifications` -> `job_field_suggestions` ->
+    `normalized_jobs` -> `raw_jobs` 순이다. 거꾸로 지우면 외래키가 막고, 막히지 않는다면
+    그것대로 문제다 — 가리키는 곳이 없는 보정이 남는다. `job_classifications`
+    (`migrations/0014_job_classifications.sql`) 와 `job_field_suggestions`
+    (`migrations/0023_job_field_suggestions.sql`) 도 `raw_job_id` 를 참조하는데 이 함수가
+    지우지 않으면 분류·제안이 붙은 건을 지울 때 `FOREIGN KEY constraint failed` 로 죽는다 —
+    지운 것은 여기서 함께 지운다. 반환값 개수에는 넣지 않는다. 화면의 확인 창이 보여주는 세
+    수치(`overrides`, `normalized`, `delivered`)는 그대로 두고, 분류·제안은 원문에서 다시
+    만들 수 있는 파생값이라 사라져도 되돌릴 수 없는 손실이 아니다.
 
     한 트랜잭션인 이유는 절반만 지워진 상태를 운영자가 손으로 풀 수 없어서다. 정규화 행만
     사라지고 수집 건이 남으면 그 건은 어느 화면에도 나오지 않는데 표에는 있다.
@@ -796,6 +820,7 @@ def _delete_rows(conn: sqlite3.Connection, raw_job_ids: Sequence[int]) -> tuple[
                 f"DELETE FROM job_field_overrides WHERE raw_job_id IN ({marks})", part
             ).rowcount
             conn.execute(f"DELETE FROM job_classifications WHERE raw_job_id IN ({marks})", part)
+            conn.execute(f"DELETE FROM job_field_suggestions WHERE raw_job_id IN ({marks})", part)
             normalized += conn.execute(
                 f"DELETE FROM normalized_jobs WHERE raw_job_id IN ({marks})", part
             ).rowcount
