@@ -41,7 +41,7 @@ DEFAULT_COMPANY = "운영자가 적은 회사"
 
 HUMAN_TITLE = "사람이 정한 제목"
 RULE_TITLE = "규칙이 만든 제목"
-RULE_DEPARTMENT = "규칙이 만든 부서"
+RULE_BODY = "규칙이 만든 본문"
 
 # 어느 원문 값과도 같지 않은 키. `mapping` 규칙이 항상 `default` 로 떨어지게 만든다
 UNMATCHED = "어느 공고에도 없는 값"
@@ -86,9 +86,9 @@ def add_late_rules(conn: sqlite3.Connection) -> None:
     add_rule(conn, "title", "mapping", {"map": {UNMATCHED: "쓰이지 않는다"}, "default": RULE_TITLE})
     add_rule(
         conn,
-        "department",
+        "body",
         "mapping",
-        {"map": {UNMATCHED: "쓰이지 않는다"}, "default": RULE_DEPARTMENT},
+        {"map": {UNMATCHED: "쓰이지 않는다"}, "default": RULE_BODY},
     )
 
 
@@ -116,7 +116,7 @@ async def test_override_survives_a_later_rule_change(conn: sqlite3.Connection) -
 
     row = normalized(conn, 1)
     assert row["title"] == HUMAN_TITLE
-    assert row["department"] == RULE_DEPARTMENT
+    assert row["body"] == RULE_BODY
 
     other = normalized(conn, 2)
     assert other["title"] == RULE_TITLE, "보정이 없는 건은 규칙 값 그대로다"
@@ -179,14 +179,14 @@ async def test_empty_override_clears_the_field(conn: sqlite3.Connection) -> None
     """빈 문자열은 "비어 있는 것이 맞다" 는 판단이다. 값 없음은 NULL 하나로만 나타난다."""
     await collect(conn)
     set_override(conn, 1, "company", "")
-    set_override(conn, 1, "department", "")
+    set_override(conn, 1, "work_location", "")
 
     run_renormalize(conn)
 
     row = normalized(conn, 1)
     assert row["company"] is None
     assert row["company_source"] is None, "회사명이 없는데 출처만 남으면 읽는 쪽이 헷갈린다"
-    assert row["department"] is None
+    assert row["work_location"] is None
 
 
 async def test_overrides_leave_raw_and_delivery_untouched(conn: sqlite3.Connection) -> None:

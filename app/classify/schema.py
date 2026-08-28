@@ -4,17 +4,18 @@
 읽어도 되는 모양인지만 판정하고, 그 값이 본문에 근거가 있는지는 `app/classify/grounding.py`
 가 본다.
 
-칸은 `normalized_jobs` 에 이미 있는 열한 개다. 새로 만들지 않는다
-(`migrations/0011_split_body_columns.sql`).
+칸은 `normalized_jobs` 에 이미 있는 여덟 개다. 새로 만들지 않는다
+(`migrations/0011_split_body_columns.sql`). 0016 이 부서·직군·모집인원을 뺐다
+(`migrations/0016_drop_department_category_headcount.sql`).
 
 ## 칸이 두 가지다
 
 **뽑는 칸**은 본문에 있는 글자를 그대로 가져온다. 옮긴 값은 본문에서 그대로 찾을 수 있어야
 하고, 없으면 빈 칸이다.
 
-**판정하는 칸**은 본문을 읽고 정해진 값 중에서 고른다. `백엔드 개발자 채용` 이라는 제목에
-"직군: 개발" 이라고 적혀 있지 않다 — 글자 일치를 요구하면 이 칸은 영원히 빈다. 매핑 방식의
-채움률이 직군 53%, 고용형태 26%, 경력 45% 였던 이유가 그것이다.
+**판정하는 칸**은 본문을 읽고 정해진 값 중에서 고른다. `정규직 채용` 이라고 본문에 그대로
+적혀 있지 않은 공고가 많다 — 글자 일치를 요구하면 이 칸은 영원히 빈다. 매핑 방식의 채움률이
+고용형태 26%, 경력 45% 였던 이유가 그것이다.
 
 판정 칸은 **반드시 닫힌 목록**이다. 목록을 정하지 않으면 같은 일이 사이트마다 다른 이름으로
 쌓인다 — 운영 DB 640건에 `Permanent` 71건과 `정규직` 7건과 `정규` 3건이 따로 있고,
@@ -62,34 +63,14 @@ UNDECIDED: Final = "판단불가"
 
 
 class Classification(BaseModel):
-    """본문을 나눈 열한 칸과, 판정 칸 셋의 근거 문장.
+    """본문을 나눈 여덟 칸과, 판정 칸 둘의 근거 문장.
 
     뽑는 칸은 자유 문자열이고 본문에 없으면 빈 문자열이다. 판정 칸은 `Literal` 이라 목록에
     없는 값이 애초에 응답에 담기지 못한다. `판단불가` 가 목록에 있는 것은 "본문만으로는 고를
     수 없다" 를 답할 자리가 있어야 하기 때문이다 — 자리가 없으면 모델은 아무거나 고른다.
     """
 
-    # 판정하는 칸. 목록은 운영 DB 640건의 실제 값에서 뽑았다 (아래 주석)
-    job_category: Literal[
-        "판단불가",
-        "개발·IT",
-        "연구개발",
-        "생산·제조",
-        "품질·안전",
-        "건설·플랜트",
-        "영업",
-        "마케팅",
-        "기획·전략",
-        "경영지원",
-        "재무·회계",
-        "법무",
-        "구매·물류",
-        "디자인",
-        "고객서비스",
-        "기타",
-    ] = UNDECIDED
-    job_category_evidence: str = ""
-
+    # 판정하는 칸. 목록은 운영 DB 640건의 실제 값에서 뽑았다
     employment_type: Literal["판단불가", "정규직", "계약직", "인턴", "기타"] = UNDECIDED
     employment_type_evidence: str = ""
 
@@ -98,17 +79,15 @@ class Classification(BaseModel):
 
     # 뽑는 칸. 본문에 있는 글자를 그대로 옮긴다
     work_location: str = ""
-    headcount: str = ""
     duties: str = ""
     preferred: str = ""
     hiring_process: str = ""
     requirements: str = ""
-    department: str = ""
     etc_info: str = ""
 
 
 # 본문을 읽고 정해진 값 중에서 고르는 칸
-JUDGE_FIELDS: tuple[str, ...] = ("job_category", "employment_type", "career_level")
+JUDGE_FIELDS: tuple[str, ...] = ("employment_type", "career_level")
 
 # 판정 칸마다 따라오는 근거 문장. 컬럼이 아니라 검증과 보고를 위한 값이다
 EVIDENCE_FIELDS: tuple[str, ...] = tuple(f"{name}_evidence" for name in JUDGE_FIELDS)
@@ -116,12 +95,10 @@ EVIDENCE_FIELDS: tuple[str, ...] = tuple(f"{name}_evidence" for name in JUDGE_FI
 # 본문에 있는 글자를 그대로 가져오는 칸
 EXTRACT_FIELDS: tuple[str, ...] = (
     "work_location",
-    "headcount",
     "duties",
     "preferred",
     "hiring_process",
     "requirements",
-    "department",
     "etc_info",
 )
 

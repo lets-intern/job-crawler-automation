@@ -42,7 +42,7 @@ LONG_BODY = "본문 첫 줄\n" + ("이 자리는 표 칸 폭에 들어가지 않
 FULL_FORM = {
     "company": "파이썬재단",
     "title": "백엔드 개발자",
-    "department": "",
+    "work_location": "",
     "deadline": "",
     "body": LONG_BODY,
     "requirements": "",
@@ -135,7 +135,7 @@ def test_표는_읽기만_하고_행의_수정_버튼이_모달을_연다(client
 def test_모달에_여섯_필드가_다_들어오고_규칙값을_함께_보여준다(client: TestClient) -> None:
     html = client.get("/ui/review/modal/7").text
 
-    for name in ("company", "title", "department", "deadline", "body", "requirements"):
+    for name in ("company", "title", "work_location", "deadline", "body", "requirements"):
         assert f'name="{name}"' in html, name
     assert "규칙이 만든 값" in html
     assert "본문 첫 줄" in html
@@ -164,20 +164,20 @@ def test_두_필드를_한_번에_저장하면_보정이_둘_쌓인다(
 
     response = client.put(
         "/ui/review/jobs/7",
-        data={**FULL_FORM, "company": "파이썬 소프트웨어 재단", "department": "플랫폼팀"},
+        data={**FULL_FORM, "company": "파이썬 소프트웨어 재단", "work_location": "판교"},
     )
 
     assert response.status_code == 200
-    assert override_fields(conn) == ["company", "department"]
+    assert override_fields(conn) == ["company", "work_location"]
     assert override_of(conn, "company") == "파이썬 소프트웨어 재단"
-    assert override_of(conn, "department") == "플랫폼팀"
+    assert override_of(conn, "work_location") == "판교"
     # 손대지 않은 칸에는 보정이 생기지 않는다
     assert override_of(conn, "title") is None
     assert override_of(conn, "body") is None
     # 파생값에는 손으로 쓰지 않는다
     assert normalized_row(conn) == before
     # 표의 값 칸 전부와 보정 개수·전달 칸만 갈린다. 표 전체는 다시 그리지 않는다.
-    # 칸 목록을 여기 베껴 적지 않는다 — 0012 가 열여섯으로 넓혔고 또 늘어날 수 있다
+    # 칸 목록을 여기 베껴 적지 않는다 — 0012 가 넓혔고 0016 이 셋을 지웠다
     assert oob_ids(response.text) == [
         *(f"review-cell-7-{field}" for field in OVERRIDABLE_FIELDS),
         "review-override-count-7",
@@ -225,22 +225,22 @@ def test_모달_안에서_필드마다_보정을_지우고_모달은_열려_있�
 ) -> None:
     client.put(
         "/ui/review/jobs/7",
-        data={**FULL_FORM, "title": "사람이 고친 제목", "department": "플랫폼팀"},
+        data={**FULL_FORM, "title": "사람이 고친 제목", "work_location": "판교"},
     )
-    assert override_fields(conn) == ["department", "title"]
+    assert override_fields(conn) == ["title", "work_location"]
 
     response = client.put(
         "/ui/review/jobs/7",
-        data={**FULL_FORM, "title": "사람이 고친 제목", "department": "플랫폼팀", "drop": "title"},
+        data={**FULL_FORM, "title": "사람이 고친 제목", "work_location": "판교", "drop": "title"},
     )
 
-    assert override_fields(conn) == ["department"]
+    assert override_fields(conn) == ["work_location"]
     assert "제목 보정을 지웠다" in response.text
     # 되돌리고 나머지를 계속 본다. 닫지 않는다
     assert "HX-Trigger-After-Settle" not in response.headers
     assert "review-cell-7-title" in oob_ids(response.text)
     # 아직 저장하지 않은 다른 칸의 값은 그대로 남는다
-    assert "플랫폼팀" in response.text
+    assert "판교" in response.text
 
 
 def test_전달된_행은_모달_안에서_알리고_전달_표시는_그대로다(

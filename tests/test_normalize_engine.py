@@ -104,8 +104,8 @@ def test_trim_collapses_whitespace() -> None:
 
 
 def test_trim_with_strip_chars() -> None:
-    rule = build_rule("department", "trim", {"collapse_whitespace": False, "strip_chars": "-· "})
-    assert normalize_fields({"department": "-· 개발 ·-"}, [rule])["department"] == "개발"
+    rule = build_rule("work_location", "trim", {"collapse_whitespace": False, "strip_chars": "-· "})
+    assert normalize_fields({"work_location": "-· 판교 ·-"}, [rule])["work_location"] == "판교"
 
 
 def test_regex_removes_matched_text() -> None:
@@ -114,18 +114,18 @@ def test_regex_removes_matched_text() -> None:
 
 
 def test_mapping_replaces_exact_value() -> None:
-    rule = build_rule("department", "mapping", {"map": {"Engineering": "개발"}})
-    assert normalize_fields({"department": "Engineering"}, [rule])["department"] == "개발"
+    rule = build_rule("work_location", "mapping", {"map": {"Pangyo": "판교"}})
+    assert normalize_fields({"work_location": "Pangyo"}, [rule])["work_location"] == "판교"
 
 
 def test_mapping_keeps_value_without_default() -> None:
-    rule = build_rule("department", "mapping", {"map": {"Engineering": "개발"}})
-    assert normalize_fields({"department": "Design"}, [rule])["department"] == "Design"
+    rule = build_rule("work_location", "mapping", {"map": {"Pangyo": "판교"}})
+    assert normalize_fields({"work_location": "Seoul"}, [rule])["work_location"] == "Seoul"
 
 
 def test_mapping_uses_default_when_missing() -> None:
-    rule = build_rule("department", "mapping", {"map": {"Engineering": "개발"}, "default": "기타"})
-    assert normalize_fields({"department": "Design"}, [rule])["department"] == "기타"
+    rule = build_rule("work_location", "mapping", {"map": {"Pangyo": "판교"}, "default": "기타"})
+    assert normalize_fields({"work_location": "Seoul"}, [rule])["work_location"] == "기타"
 
 
 def test_date_parse_reformats() -> None:

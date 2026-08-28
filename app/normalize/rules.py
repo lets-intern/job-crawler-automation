@@ -51,22 +51,22 @@ from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 # `source_url`, `raw_job_id`, `normalized_at` 은 파이프라인이 채우고, `delivered_at` 은
 # 제공 API 만 쓴다 (`.claude/rules/data-safety.md`).
 #
-# 뒤의 열 개는 0011 이 더한 칸이다. 사이트가 이미 나눠서 주는 값을 도로 합치지 않으려고
+# 뒤의 일곱은 0011 이 더한 칸이다. 사이트가 이미 나눠서 주는 값을 도로 합치지 않으려고
 # 늘렸고, 넷 이상의 사이트가 주는 것만 골랐다
 # (`migrations/0011_split_body_columns.sql`, `tests/test_split_body_columns.py`).
+#
+# 0016 이 `department`·`job_category`·`headcount` 를 뺐다. 값이 자리에 맞게 들어오지 않는
+# 칸이었다 (`migrations/0016_drop_department_category_headcount.sql`).
 NORMALIZED_FIELDS: tuple[str, ...] = (
     "company",
     "title",
-    "department",
     "deadline",
     "body",
     "requirements",
     "start_date",
-    "job_category",
     "employment_type",
     "career_level",
     "work_location",
-    "headcount",
     "duties",
     "preferred",
     "hiring_process",
@@ -95,7 +95,7 @@ class _Config(BaseModel):
 
 
 class MappingConfig(_Config):
-    """값 치환표. 부서명·고용형태처럼 사이트마다 표기가 갈리는 필드에 쓴다."""
+    """값 치환표. 회사명·고용형태처럼 사이트마다 표기가 갈리는 필드에 쓴다."""
 
     map: dict[str, str]
     # 표에 없는 값을 만났을 때. None 이면 원문을 그대로 둔다
