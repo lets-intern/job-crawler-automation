@@ -1,4 +1,4 @@
-"""검수 모달의 원문 (10.1, 10.2).
+"""검수 모달의 원문 (10.1, 10.2, 10.3).
 
 실사이트에 나가지 않는다. 저장된 행을 넣고 화면 경로로만 연다.
 
@@ -13,6 +13,7 @@
 | 저장 경로가 `raw_jobs` 를 건드리지 않는다 | 원문이 사람 손을 타 근거가 아니게 된다 |
 | 원문이 없으면 무엇으로 분류됐는지 적는다 | 빈 자리가 아무것도 말하지 않는다 |
 | 상세가 API 인 사이트는 사유를 따로 적는다 | 다시 수집하면 붙을 줄 알고 기다린다 |
+| 원문은 표에 실리지 않는다 | 이미 스물세 개인 열이 하나 더 늘고 행마다 수천 자가 실린다 |
 """
 
 from __future__ import annotations
@@ -39,6 +40,15 @@ SOURCE_TEXT = f"{SOURCE_MARK}\n회사 예시\n근무지 판교\n마감 2026-09-3
 
 # 화면 문구는 줄바꿈과 들여쓰기를 사이에 두고 나온다. 문장으로 견주려면 공백을 접는다
 SPACES = re.compile(r"\s+")
+
+# 검수 표 하나만 본다. 화면에는 빈 값 건수 표와 중복 묶음 표도 있다
+REVIEW_TABLE = re.compile(r"<caption>검수 대상 공고</caption>.*?</table>", re.DOTALL)
+HEAD_CELL = re.compile(r'<th scope="col"')
+
+# 이 Push 가 시작될 때의 열 수. 원문은 모달에만 붙고 표에는 붙지 않는다.
+# 열이 바뀌는 날 이 수를 함께 고친다 — 머리글과 `empty_row` 의 colspan 이 서로 맞는지는
+# `tests/test_ui_review_columns.py` 가 따로 본다
+TABLE_COLUMNS = 23
 
 INPUT_TAG = re.compile(r"<(?:input|textarea)\b[^>]*>")
 TEXTAREA_BODY = re.compile(r"<textarea\b[^>]*>(.*?)</textarea>", re.DOTALL)
@@ -200,3 +210,22 @@ def test_원문이_있는_건에는_본문으로_분류됐다고_적지_않는�
     text = flat(modal(client, 1))
 
     assert "이 건은 본문으로 분류됐다" not in text
+
+
+def review_table(client: TestClient) -> str:
+    """검수 표 하나만 잘라 낸다."""
+    found = REVIEW_TABLE.search(client.get("/ui/review").text)
+    assert found is not None, "검수 표가 화면에 없다"
+    return found.group(0)
+
+
+def test_원문은_표에_실리지_않는다(client: TestClient) -> None:
+    """표에 실으면 한 페이지에 상세 전문이 스무 벌 온다. 원문은 모달에서 본다."""
+    table = review_table(client)
+
+    assert SOURCE_MARK not in table
+    assert "수집한 원문" not in table
+
+
+def test_표의_열_수가_그대로다(client: TestClient) -> None:
+    assert len(HEAD_CELL.findall(review_table(client))) == TABLE_COLUMNS
