@@ -88,16 +88,13 @@ DELIVERY_STATES: dict[str, str] = {
 FIELD_LABELS: dict[str, str] = {
     "company": "회사",
     "title": "제목",
-    "department": "부서",
     "deadline": "마감",
     "body": "본문",
     "requirements": "자격요건",
     "start_date": "모집 시작",
-    "job_category": "직군",
     "employment_type": "고용형태",
     "career_level": "경력 구분",
     "work_location": "근무지",
-    "headcount": "모집인원",
     "duties": "주요 업무",
     "preferred": "우대 조건",
     "hiring_process": "전형 절차",
@@ -114,17 +111,14 @@ EMPTY_LABELS: dict[str, str] = {EMPTY_ANY: "아무 필드나", **FIELD_LABELS}
 # 여기 없는 필드(회사·제목·본문)는 비어 있으면 놓친 것이다
 EMPTY_NOTES: dict[str, str] = {
     "deadline": "상시채용이면 비어 있는 것이 맞다. 저장된 값만으로는 놓친 것과 구분되지 않는다",
-    "department": "부서를 적지 않는 공고가 있다. 목록에 부서가 없는 사이트면 전부 빈다",
     "requirements": "본문에 자격요건이 섞여 있는 사이트면 늘 빈다. 그 사이트는 이것이 정상이다",
-    # 0011 이 더한 열 칸. 사이트가 그 값을 나눠서 줄 때만 채워지고, 한 덩어리로 주는
+    # 0011 이 더한 칸들. 사이트가 그 값을 나눠서 줄 때만 채워지고, 한 덩어리로 주는
     # 사이트에서는 전부 빈다 — 그때 빈 것은 놓친 것이 아니다
     # (`seeds/site-configs-20260826.json` 의 사이트별 note)
     "start_date": "모집 시작일을 적지 않는 사이트가 있다. 그런 사이트는 전부 빈다",
-    "job_category": "직군을 따로 주지 않는 사이트면 늘 빈다",
     "employment_type": "정규직/인턴 구분을 따로 주는 사이트가 넷뿐이다. 나머지는 전부 빈다",
     "career_level": "신입/경력 구분을 따로 주는 사이트가 다섯뿐이다. 나머지는 전부 빈다",
     "work_location": "근무지를 따로 주지 않는 사이트면 늘 빈다",
-    "headcount": "모집인원을 적지 않는 사이트가 많다. 그런 사이트는 전부 빈다",
     "duties": "본문에 주요 업무가 섞여 있는 사이트면 늘 빈다. 그 사이트는 이것이 정상이다",
     "preferred": "본문에 우대 조건이 섞여 있는 사이트면 늘 빈다. 그 사이트는 이것이 정상이다",
     "hiring_process": "전형 절차를 따로 주지 않는 사이트면 늘 빈다",
@@ -372,8 +366,8 @@ def filter_sql(picked: JobFilter) -> tuple[str, list[Any]]:
         clauses.append("n.company = ?")
         params.append(picked.company)
     if picked.query:
-        clauses.append("(n.title LIKE ? OR n.company LIKE ? OR n.department LIKE ?)")
-        params.extend([f"%{picked.query}%"] * 3)
+        clauses.append("(n.title LIKE ? OR n.company LIKE ?)")
+        params.extend([f"%{picked.query}%"] * 2)
 
     # 마감일은 날짜 문자열이다. `date()` 가 NULL 을 내는 값(빈 값, 날짜가 아닌 값)은 진행중도
     # 마감도 아니라 `마감일 없음` 쪽에 모은다 — 그렇지 않으면 어느 조건에도 걸리지 않는 행이
