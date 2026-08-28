@@ -235,18 +235,11 @@ def apply_classification(
     가진 채로 남고, 나중에 분류를 돌리면 재정규화 없이도 다음 정규화에서 넘어간다.
 
     수집이 주는 여섯 칸은 `CLASSIFY_FIELDS` 에 없으므로 여기를 지나가지 않는다.
-
-    **`career_level` 만 빈 칸을 "무관" 으로 채운다 (2026-08-28 결정).** 근거가 없어 판단하지
-    못한 것과 사이트가 경력무관이라고 밝힌 것은 원래 다른 뜻이지만, 실사용에서는 사이트가
-    경력을 아예 언급하지 않은 공고 대부분이 실제로 경력무관이다. 다른 여덟 칸은 이 규칙을
-    타지 않는다 — 빈 칸이 그대로 있어야 검수 화면에서 못 뽑은 것을 잡아낼 수 있다.
     """
     if not classification:
         return fields
     for name in CLASSIFY_FIELDS:
         fields[name] = classification.get(name, "").strip() or None
-    if fields.get("career_level") is None:
-        fields["career_level"] = "무관"
     return fields
 
 

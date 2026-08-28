@@ -192,32 +192,6 @@ def test_no_rules_passes_values_through() -> None:
     assert fields["deadline"] is None
 
 
-def test_판단_못한_경력_구분은_무관으로_채워진다() -> None:
-    """2026-08-28 결정. 분류가 `career_level` 을 비웠으면 "무관" 을 대신 넣는다.
-
-    사이트가 경력을 아예 언급하지 않은 공고 대부분이 실제로 경력무관이라, 근거 없어 판단
-    못한 것과 결과적으로 같은 값이 되는 편이 검수 화면에서 유용하다. 다른 여덟 칸은 이
-    규칙을 타지 않는다 — 빈 칸이 그대로 있어야 못 뽑은 것을 구분할 수 있다.
-    """
-    record = fixture_record()
-    fields = normalize_fields(record, [], classification={"career_level": ""})
-    assert fields["career_level"] == "무관"
-    assert fields["employment_type"] is None
-
-
-def test_경력_구분이_있으면_무관으로_덮지_않는다() -> None:
-    record = fixture_record()
-    fields = normalize_fields(record, [], classification={"career_level": "경력"})
-    assert fields["career_level"] == "경력"
-
-
-def test_분류가_없으면_경력_구분도_채우지_않는다() -> None:
-    """분류가 아직 안 돈 건은 규칙이 만든 값(대개 비어 있음) 그대로다."""
-    record = fixture_record()
-    fields = normalize_fields(record, [], classification=None)
-    assert fields["career_level"] is None
-
-
 def test_load_rules_reads_stored_rows(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
