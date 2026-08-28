@@ -34,7 +34,13 @@ from app.crawler.runner import SCHEDULE, run_workflow
 
 logger = logging.getLogger(__name__)
 
+# 잡 id 의 앞머리. 종류마다 다르다.
+#
+# `workflows.id` 와 `side_workflows.id` 는 서로 다른 표의 자동 증가 값이라 1번이 둘 있다.
+# 앞머리가 하나뿐이면 두 종류의 1번이 같은 잡 id 를 쓰고, `add_job(replace_existing=True)` 가
+# 먼저 있던 크롤 잡을 말없이 덮는다 — 크롤이 멈춘 것이 아무 데도 안 남는다
 JOB_PREFIX = "workflow:"
+SIDE_JOB_PREFIX = "side:"
 
 RunFn = Callable[[int], Awaitable[None]]
 
@@ -43,11 +49,29 @@ def job_id(workflow_id: int) -> str:
     return f"{JOB_PREFIX}{workflow_id}"
 
 
+def side_job_id(side_workflow_id: int) -> str:
+    return f"{SIDE_JOB_PREFIX}{side_workflow_id}"
+
+
 def workflow_id_of(job_identifier: str) -> int | None:
-    """잡 id 에서 워크플로우 id 를 되읽는다. 우리 잡이 아니면 None."""
-    if not job_identifier.startswith(JOB_PREFIX):
+    """잡 id 에서 워크플로우 id 를 되읽는다. 크롤 잡이 아니면 None."""
+    return _id_after(JOB_PREFIX, job_identifier)
+
+
+def side_workflow_id_of(job_identifier: str) -> int | None:
+    """잡 id 에서 부가 워크플로우 id 를 되읽는다. 부가 잡이 아니면 None."""
+    return _id_after(SIDE_JOB_PREFIX, job_identifier)
+
+
+def _id_after(prefix: str, job_identifier: str) -> int | None:
+    """앞머리 뒤가 숫자일 때만 id 다.
+
+    남의 잡을 우리 것으로 읽지 않는 것이 이 함수가 하는 일 전부다. 앞머리가 맞아도 뒤가
+    숫자가 아니면 None 이고, 그 잡은 `sync()` 가 건드리지 않는다.
+    """
+    if not job_identifier.startswith(prefix):
         return None
-    tail = job_identifier[len(JOB_PREFIX) :]
+    tail = job_identifier[len(prefix) :]
     return int(tail) if tail.isdigit() else None
 
 
