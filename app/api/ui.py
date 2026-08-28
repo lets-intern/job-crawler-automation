@@ -74,6 +74,7 @@ NAV_GROUPS: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
         (
             ("/rules", "정규화 규칙"),
             ("/side", "부가 워크플로우"),
+            ("/taxonomy", "직무 분류"),
         ),
     ),
     (
@@ -462,6 +463,13 @@ def side_page(request: Request) -> HTMLResponse:
 @router.get("/rules", response_class=HTMLResponse)
 def rules_page(request: Request) -> HTMLResponse:
     return render_page(request, "pages/rules.html")
+
+
+@router.get("/taxonomy", response_class=HTMLResponse)
+def taxonomy_page(request: Request) -> HTMLResponse:
+    """직무 분류 체계 화면. `/rules` 와 같은 묶음이다 — 분류 체계는 정규화 파이프라인의
+    입력이지 수집이 아니다."""
+    return render_page(request, "pages/taxonomy.html")
 
 
 @router.get("/companies", response_class=HTMLResponse)
