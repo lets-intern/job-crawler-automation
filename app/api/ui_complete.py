@@ -1,16 +1,16 @@
-"""완성 공고 화면. 정규화·분류가 열여섯 칸을 전부 채운 공고만 보여준다.
+"""완성 공고 화면. 정규화·분류가 열여섯 칸 중 80% 이상을 채운 공고만 보여준다.
 
-운영자가 "분류까지 다 끝나서 데이터가 빠짐없는 것" 만 훑어보고 싶을 때 쓰는 자리다. 검수
-화면(`/review`)은 무엇을 고칠지 찾는 화면이고, 여기는 반대로 이미 다 채워진 것만 골라
+운영자가 "분류까지 다 끝나서 데이터가 거의 빠짐없는 것" 만 훑어보고 싶을 때 쓰는 자리다.
+검수 화면(`/review`)은 무엇을 고칠지 찾는 화면이고, 여기는 반대로 이미 채워진 것만 골라
 보여준다 — 고치는 기능은 없다.
 
-## "완성" 은 `NORMALIZED_FIELDS` 전부가 비어 있지 않다는 뜻이다
+## "완성" 은 열여섯 칸 중 80% 이상(열세 칸 이상)이 채워졌다는 뜻이다
 
 `app/normalize/rules.py` 의 `NORMALIZED_FIELDS` 열여섯 칸(수집이 채우는 것, 분류가 채우는
-것, 직무 분류 둘 포함)이 전부 값을 가진 행만 고른다. 사이트에 따라 `preferred`·
-`hiring_process`·`etc_info` 처럼 빈 것이 정상인 칸이 있어(`app/api/review_filter.py` 의
-`EMPTY_NOTES`) 실제로 이 조건을 통과하는 건은 전체의 일부일 수 있다 — 그것이 이 화면의
-목적이다. 조건을 완화하지 않는다. 느슨하게 하면 "완성" 이라는 말이 거짓말이 된다.
+것, 직무 분류 둘 포함) 중 값이 있는 칸 수를 세어 임계치(`_THRESHOLD`) 이상이면 완성으로
+본다. 사이트에 따라 `preferred`·`hiring_process`·`etc_info` 처럼 빈 것이 정상인 칸이
+있어서(`app/api/review_filter.py` 의 `EMPTY_NOTES`) 열여섯 칸 전부를 요구하면 통과하는
+건이 지나치게 적어진다 — 2026-08-29 운영자 요청으로 100% 에서 80% 로 낮췄다.
 
 사람이 고친 값(`job_field_overrides`)은 여기서 보지 않는다. 목록은 `normalized_jobs` 원
 컬럼만 본다 — 상세를 열면(검수 모달을 그대로 재사용한다) 보정이 반영된 값이 보인다. 목록
@@ -26,6 +26,7 @@
 
 from __future__ import annotations
 
+import math
 import sqlite3
 from typing import Annotated
 
@@ -41,10 +42,17 @@ router = APIRouter(tags=["ui"], include_in_schema=False)
 # 한 번에 불러오는 건수. 너무 크면 스크롤 한 번에 다 오고, 너무 작으면 요청이 잦다
 PAGE_SIZE = 20
 
-# 완성 조건. NORMALIZED_FIELDS 전부가 비어 있지 않아야 한다
-_COMPLETE_WHERE = " AND ".join(
-    f"({name} IS NOT NULL AND trim({name}) != '')" for name in NORMALIZED_FIELDS
+# 완성으로 볼 최소 채움 비율. 100% 는 사이트별로 정상적으로 비는 칸 때문에 통과하는 건이
+# 거의 없어서 낮췄다(2026-08-29)
+_THRESHOLD = 0.8
+_REQUIRED_FILLED = math.ceil(len(NORMALIZED_FIELDS) * _THRESHOLD)
+
+# 채워진 칸 수를 세는 SQL 조각. 열여섯 칸 중 이 값이 _REQUIRED_FILLED 이상이면 완성이다
+_FILLED_COUNT_SQL = " + ".join(
+    f"(CASE WHEN {name} IS NOT NULL AND trim({name}) != '' THEN 1 ELSE 0 END)"
+    for name in NORMALIZED_FIELDS
 )
+_COMPLETE_WHERE = f"({_FILLED_COUNT_SQL}) >= {_REQUIRED_FILLED}"
 
 
 def _rows(conn: sqlite3.Connection, after: int | None) -> list[sqlite3.Row]:
