@@ -13,10 +13,6 @@
     <thead>
       <tr>
         <th scope="col">회사명</th>
-        {# 검수 화면에도 `모회사` 열이 있고 그쪽은 크롤러가 정한
-           `normalized_jobs.parent_company` 다. 이 칸은 사람이 적는 `companies.parent_name`
-           이라 두 화면의 값이 다를 수 있고, 이름표가 같으면 그 차이가 고장으로 읽힌다 #}
-        <th scope="col" title="여기서 사람이 적는 값이다. 검수 화면의 모회사 열은 크롤러가 정한 다른 값이다">모회사 (사람이 적음)</th>
         <th scope="col">공고 수</th>
         <th scope="col">로고</th>
       </tr>
@@ -26,9 +22,9 @@
       {% include "fragments/company_row.html" %}
       {% else %}
       {% if filtered %}
-      {{ empty_row(4, "이 조건에 걸린 회사가 없다. 조건을 풀면 전체가 다시 나온다") }}
+      {{ empty_row(3, "이 조건에 걸린 회사가 없다. 조건을 풀면 전체가 다시 나온다") }}
       {% else %}
-      {{ empty_row(4, "회사 행이 아직 없다. 수집한 공고가 정규화되면 그 회사명으로 행이 생긴다") }}
+      {{ empty_row(3, "회사 행이 아직 없다. 수집한 공고가 정규화되면 그 회사명으로 행이 생긴다") }}
       {% endif %}
       {% endfor %}
     </tbody>

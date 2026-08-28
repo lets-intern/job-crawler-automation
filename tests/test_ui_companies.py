@@ -116,6 +116,7 @@ def test_회사_화면이_목록_조각을_부른다(client: TestClient) -> None
 
 
 def test_목록이_저장된_회사를_그린다(client: TestClient, conn: sqlite3.Connection) -> None:
+    """모회사 열은 2026-08-29 에 뺐다 — 크롤러 등록 화면이 그 값을 필수로 받는다."""
     companies.ensure(conn, "삼성SDS", "삼성전자")
     companies.set_logo_url(conn, "삼성SDS", "https://cdn.test/sds.png")
     conn.commit()
@@ -123,7 +124,6 @@ def test_목록이_저장된_회사를_그린다(client: TestClient, conn: sqlit
     body = client.get("/ui/companies").text
 
     assert "삼성SDS" in body
-    assert "삼성전자" in body
     assert "https://cdn.test/sds.png" in body
 
 
@@ -618,89 +618,16 @@ def test_붙여넣기_길이_저장소를_거치지_않는다고_화면에_적�
     assert "우리 저장소를 거치지 않는다" in body
 
 
-def test_모회사_이름을_사람이_고친다(client: TestClient, conn: sqlite3.Connection) -> None:
-    add_job(conn, "삼성SDS", 1)
-    conn.commit()
-
-    body = client.put(
-        "/ui/companies/parent", data={"name": "삼성SDS", "parent_name": " 삼성전자 "}
-    ).text
-
-    stored = companies.read(conn, "삼성SDS")
-    assert stored is not None and stored.parent_name == "삼성전자"
-    assert "모회사를 삼성전자 로 고쳤다" in body
-
-
-def test_고친_모회사가_다음_정규화에_덮이지_않는다(
-    client: TestClient, conn: sqlite3.Connection
-) -> None:
-    """6.8.V. 정규화는 공고마다 회사 행을 보장하는데, 있는 행을 덮으면 고친 값이 도로 돌아간다."""
-    add_job(conn, "삼성SDS", 1)
-    conn.commit()
-    client.put("/ui/companies/parent", data={"name": "삼성SDS", "parent_name": "삼성전자"})
-
-    add_job(conn, "삼성SDS", 2)
-    conn.commit()
-
-    stored = companies.read(conn, "삼성SDS")
-    assert stored is not None and stored.parent_name == "삼성전자"
-
-
-def test_모회사를_비우면_지운다(client: TestClient, conn: sqlite3.Connection) -> None:
-    companies.ensure(conn, "토스", "비바리퍼블리카")
-    conn.commit()
-
-    body = client.put("/ui/companies/parent", data={"name": "토스", "parent_name": "  "}).text
-
-    stored = companies.read(conn, "토스")
-    assert stored is not None and stored.parent_name is None
-    assert "모회사를 지웠다" in body
-
-
-def test_자기_자신을_모회사로_적지_않는다(client: TestClient, conn: sqlite3.Connection) -> None:
-    """자기 자신을 적으면 화면이 그 행을 모회사가 따로 있는 회사로 읽는다."""
-    companies.ensure(conn, "토스")
-    conn.commit()
-
-    body = client.put("/ui/companies/parent", data={"name": "토스", "parent_name": "토스"}).text
-
-    assert "이름을 받지 않았다" in body
-    stored = companies.read(conn, "토스")
-    assert stored is not None and stored.parent_name is None
-
-
-def test_없는_회사의_모회사는_고치지_않는다(client: TestClient) -> None:
-    response = client.put(
-        "/ui/companies/parent", data={"name": "없는회사", "parent_name": "삼성전자"}
-    )
-
-    assert response.status_code == 200
-    assert "회사 행이 없다" in response.text
-
-
-def test_목록에_모회사_고치는_폼이_있다(client: TestClient, conn: sqlite3.Connection) -> None:
-    add_job(conn, "토스", 1)
+def test_모회사_열과_고치는_길은_더_이상_없다(client: TestClient, conn: sqlite3.Connection) -> None:
+    """2026-08-29 결정. 크롤러 등록 화면이 모회사 이름을 필수로 받으면서 이 화면에서 사람이
+    따로 고치는 자리는 필요 없어졌다 — 남기면 두 화면의 모회사 값이 갈리기만 한다."""
+    companies.ensure(conn, "삼성SDS", "삼성전자")
     conn.commit()
 
     body = client.get("/ui/companies").text
 
-    assert 'hx-put="/ui/companies/parent"' in body
-    assert 'name="parent_name"' in body
+    assert "모회사" not in body
+    assert 'hx-put="/ui/companies/parent"' not in body
 
-
-def test_이_화면의_모회사가_검수_화면의_것과_다른_값임을_적는다(
-    client: TestClient, conn: sqlite3.Connection
-) -> None:
-    """두 화면에 같은 이름의 칸이 있고, 값은 다를 수 있다.
-
-    이쪽은 사람이 적는 `companies.parent_name` 이고 검수 화면은 크롤러가 정한
-    `normalized_jobs.parent_company` 다. 이름표가 둘 다 `모회사` 이기만 하면 같은 회사가
-    두 화면에서 다르게 보이는 것이 고장으로 읽힌다 (`.claude/docs/data-model.md`).
-    """
-    add_job(conn, "토스", 1)
-    conn.commit()
-
-    body = client.get("/ui/companies").text
-
-    assert ">모회사 (사람이 적음)</th>" in body
-    assert "검수 화면의 모회사 열은 크롤러가 정한 값이라 여기와 다를 수 있다" in body
+    response = client.put("/ui/companies/parent", data={"name": "삼성SDS", "parent_name": "x"})
+    assert response.status_code == 404
