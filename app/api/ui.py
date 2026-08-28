@@ -223,6 +223,25 @@ def format_time(value: Any) -> str:
     return f"{shown.strftime('%Y-%m-%d %H:%M:%S')} {shown.strftime('%Z')}".strip()
 
 
+def collapse_blank_lines(value: Any) -> str:
+    """연속된 빈 줄을 하나로 접는다. 화면에 그리는 이 순간만 접고 저장값은 그대로 둔다.
+
+    분류가 낸 값(주요 업무·자격요건 등)에는 규칙(`app/normalize/rules.py`)을 태우지
+    않는다 — "있는 글자를 그대로 옮긴다" 는 분류의 원칙이라, 원문의 빈 줄이 여러 줄이면
+    그대로 옮겨 적힌다. 그 값 자체를 고치면 원문과 달라지므로, 여기서는 **읽기 전용
+    미리보기 화면에서 보여줄 때만** 접는다(`app/templates/fragments/complete_preview.html`).
+    """
+    if not value:
+        return ""
+    lines = [line.rstrip() for line in str(value).splitlines()]
+    collapsed: list[str] = []
+    for line in lines:
+        if line == "" and collapsed and collapsed[-1] == "":
+            continue
+        collapsed.append(line)
+    return "\n".join(collapsed).strip()
+
+
 def next_step(reason: str) -> str:
     """그 실패에서 운영자가 할 수 있는 다음 행동. 모르는 사유면 빈 문자열이다."""
     return NEXT_STEPS.get(reason, "")
@@ -367,6 +386,7 @@ templates.env.globals["next_step"] = next_step
 templates.env.globals["mode_word"] = mode_word
 templates.env.globals["reason_word"] = reason_word
 templates.env.filters["as_time"] = format_time
+templates.env.filters["tidy_text"] = collapse_blank_lines
 
 
 def render_error(request: Request, reason: str, message: str) -> HTMLResponse:

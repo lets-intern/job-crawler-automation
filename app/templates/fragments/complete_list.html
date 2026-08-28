@@ -8,7 +8,7 @@
    공용 모달을 연다 — 이 화면 전용 읽기 전용 미리보기(`GET /ui/complete/{id}/preview`)를
    연다. 고치는 기능은 없다 #}
 {% if is_first_page %}
-<div id="complete-cards" class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+<div id="complete-cards" class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
   {% if not cards %}
   <p class="col-span-full notice notice-idle">
     아직 열여섯 칸 중 80% 이상 채워진 공고가 없다. 분류를 아직 돌리지 않았다는 뜻이다.
@@ -22,26 +22,26 @@
           hx-target="#app-modal-body" hx-swap="innerHTML"
           class="block overflow-hidden rounded-lg border border-slate-200 bg-white text-left shadow-sm hover:border-slate-400 hover:shadow"
           title="공고 미리보기">
-    <div class="flex aspect-[4/3] items-center justify-center bg-slate-100">
+    <div class="relative flex h-24 items-center justify-center bg-slate-100">
       {% if row.logo_url %}
       <img src="{{ row.logo_url }}" alt="{{ row.company or row.parent_company }} 로고"
-           class="h-full w-full object-contain p-6" loading="lazy">
+           class="h-full w-full object-contain p-4" loading="lazy">
+      {% endif %}
+      {% if card.d_day %}
+      <span class="badge absolute right-2 top-2 {% if card.d_day == '마감' %}badge-idle{% else %}badge-warn{% endif %}">{{ card.d_day }}</span>
       {% endif %}
     </div>
     <div class="p-3">
-      <div class="flex flex-wrap items-center justify-between gap-2">
-        <p class="mb-0 text-xs text-slate-500">
-          {{ row.employment_type }}{% if row.job_major %} · {{ row.job_major }}{% endif %}
-          {% if row.career_level %} · {{ row.career_level }}{% endif %}
-        </p>
-        {% if card.d_day %}
-        <span class="badge {% if card.d_day == '마감' %}badge-idle{% else %}badge-warn{% endif %}">{{ card.d_day }}</span>
-        {% endif %}
-      </div>
-      <p class="mt-2 truncate text-sm font-semibold text-slate-900">
+      {% if row.job_role or row.job_minor %}
+      <p class="mb-0 truncate text-xs text-slate-500">
+        {% if row.job_role %}#{{ row.job_role }}{% endif %}
+        {% if row.job_minor %} #{{ row.job_minor }}{% endif %}
+      </p>
+      {% endif %}
+      <p class="mt-1 truncate text-sm font-semibold text-slate-900">
         {{ row.company or row.parent_company }}
       </p>
-      <p class="mt-1 text-sm font-bold text-slate-900">{{ row.title }}</p>
+      <p class="mt-1 line-clamp-2 text-sm font-bold text-slate-900">{{ row.title }}</p>
     </div>
   </button>
 {% endfor %}
