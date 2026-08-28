@@ -7,10 +7,10 @@
 <div class="modal-body">
   <div class="modal-head">
     <div class="flex items-start gap-3">
-      <div class="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md bg-slate-100">
+      <div class="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-white">
         {% if job.logo_url %}
         <img src="{{ job.logo_url }}" alt="{{ job.company or job.parent_company }} 로고"
-             class="h-full w-full object-contain p-1.5">
+             class="h-full w-full object-contain p-0.5">
         {% endif %}
       </div>
       <div class="min-w-0">

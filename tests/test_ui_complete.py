@@ -5,9 +5,9 @@
 | 확인 | 깨지면 |
 |---|---|
 | 네비게이션에 완성 공고가 있다 | 화면을 찾을 방법이 없다 |
-| 80% 이상 찬 건만 나온다 | 완성 기준이 거짓말이 된다 |
-| 80% 미만이면 빠진다 | 미완성 건이 완성으로 보인다 |
-| 20% 안쪽으로 비어도 완성이다 | 100% 를 요구해 통과하는 건이 지나치게 적어진다 |
+| 60% 이상 찬 건만 나온다 | 완성 기준이 거짓말이 된다 |
+| 60% 미만이면 빠진다 | 미완성 건이 완성으로 보인다 |
+| 40% 안쪽으로 비어도 완성이다 | 100% 를 요구해 통과하는 건이 지나치게 적어진다 |
 | 카드가 읽기 전용 미리보기를 연다 | 이 화면에서 고칠 수 있게 보인다 |
 | 로고가 있으면 카드·미리보기에 나온다 | 소비 측이 볼 모양과 다르게 보인다 |
 | 미리보기에 본문 섹션이 나온다 | 본문을 확인할 방법이 없다 |
@@ -41,7 +41,7 @@ def insert_job(
     job_major: str = "IT·개발",
     blank_count: int = 0,
 ) -> None:
-    """`blank_count` 만큼 칸을 비운다. `complete=False` 면 80% 미만이 되도록 넉넉히 비운다."""
+    """`blank_count` 만큼 칸을 비운다. `complete=False` 면 60% 미만이 되도록 넉넉히 비운다."""
     conn.execute(
         """
         INSERT INTO raw_jobs (id, workflow_id, source_url, raw_data_json, content_hash)
@@ -53,10 +53,24 @@ def insert_job(
     values["job_major"] = job_major
     values["title"] = f"공고 {raw_job_id}"
     values["company"] = "엘지전자"
-    # title/company/job_major 는 카드 확인에 쓰므로 비우지 않는다. 16칸의 80% 는 12.8 ->
-    # 13칸 이상이 있어야 완성이다. 4칸을 비우면 12칸(75%)만 남아 미완성이 된다
-    blankable = ["deadline", "body", "requirements", "start_date", "duties", "preferred"]
-    blanks = 4 if not complete else blank_count
+    # title/company/job_role/job_major 는 카드 확인에 쓰므로 비우지 않는다. 16칸의 60% 는
+    # 9.6 -> 10칸 이상이 있어야 완성이다. 일곱 칸을 비우면 아홉 칸(56.25%)만 남아 미완성이
+    # 된다
+    blankable = [
+        "deadline",
+        "body",
+        "requirements",
+        "start_date",
+        "duties",
+        "preferred",
+        "hiring_process",
+        "etc_info",
+        "work_location",
+        "career_level",
+        "employment_type",
+        "job_minor",
+    ]
+    blanks = 7 if not complete else blank_count
     for name in blankable[:blanks]:
         values[name] = ""
     columns = list(NORMALIZED_FIELDS)
@@ -123,11 +137,11 @@ def test_완성된_건만_나온다(client: TestClient, conn: sqlite3.Connection
     assert "공고 2" not in body
 
 
-def test_스무프로_안쪽으로_비어도_완성으로_본다(
+def test_마흔프로_안쪽으로_비어도_완성으로_본다(
     client: TestClient, conn: sqlite3.Connection
 ) -> None:
-    """열여섯 칸 중 셋만 비면(13/16 = 81.25%) 여전히 완성이다."""
-    insert_job(conn, 1, complete=True, blank_count=3)
+    """열여섯 칸 중 여섯만 비면(10/16 = 62.5%) 여전히 완성이다."""
+    insert_job(conn, 1, complete=True, blank_count=6)
 
     body = client.get("/ui/complete").text
 
@@ -135,7 +149,7 @@ def test_스무프로_안쪽으로_비어도_완성으로_본다(
 
 
 def test_비율이_기준_밑이면_빠진다(client: TestClient, conn: sqlite3.Connection) -> None:
-    """넷이 비면(12/16 = 75%) 80% 기준에 못 미쳐 빠진다."""
+    """일곱이 비면(9/16 = 56.25%) 60% 기준에 못 미쳐 빠진다."""
     insert_job(conn, 1, complete=False)
 
     body = client.get("/ui/complete").text
@@ -225,4 +239,4 @@ def test_커서_뒤로는_그_id보다_작은_것만_온다(client: TestClient, 
 def test_완성된_건이_없으면_안내를_적는다(client: TestClient) -> None:
     body = client.get("/ui/complete").text
 
-    assert "80% 이상 채워진 공고가 없다" in body
+    assert "60% 이상 채워진 공고가 없다" in body
