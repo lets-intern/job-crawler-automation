@@ -1,4 +1,4 @@
-"""검수 모달의 원문 (10.1).
+"""검수 모달의 원문 (10.1, 10.2).
 
 실사이트에 나가지 않는다. 저장된 행을 넣고 화면 경로로만 연다.
 
@@ -11,6 +11,8 @@
 | 원문은 입력 요소가 아니다 | append-only 인 수집분을 화면에서 고치려 든다 |
 | 원문을 폼에 실어 보내도 보정이 생기지 않는다 | 고칠 수 없는 값이 저장 경로로 새어 든다 |
 | 저장 경로가 `raw_jobs` 를 건드리지 않는다 | 원문이 사람 손을 타 근거가 아니게 된다 |
+| 원문이 없으면 무엇으로 분류됐는지 적는다 | 빈 자리가 아무것도 말하지 않는다 |
+| 상세가 API 인 사이트는 사유를 따로 적는다 | 다시 수집하면 붙을 줄 알고 기다린다 |
 """
 
 from __future__ import annotations
@@ -29,10 +31,14 @@ from app.api import crawlers as crawlers_api
 from app.main import app
 
 LIST_URL = "https://static.example.test/"
+API_LIST_URL = "https://api.example.test/"
 
 # 원문에만 있는 글자. 본문에는 없어서, 화면에 나오면 원문에서 온 것이 확실하다
 SOURCE_MARK = "원문 표식 A9"
 SOURCE_TEXT = f"{SOURCE_MARK}\n회사 예시\n근무지 판교\n마감 2026-09-30"
+
+# 화면 문구는 줄바꿈과 들여쓰기를 사이에 두고 나온다. 문장으로 견주려면 공백을 접는다
+SPACES = re.compile(r"\s+")
 
 INPUT_TAG = re.compile(r"<(?:input|textarea)\b[^>]*>")
 TEXTAREA_BODY = re.compile(r"<textarea\b[^>]*>(.*?)</textarea>", re.DOTALL)
@@ -74,6 +80,29 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
             """,
             (raw_id, f"공고 {raw_id}", f"본문 {raw_id}", f"{LIST_URL}{raw_id}"),
         )
+    # 상세가 API 인 사이트. 앞으로 수집하는 건에도 원문이 없다
+    connection.execute(
+        """
+        INSERT INTO crawlers (id, name, list_url, status, detail_mode)
+        VALUES (2, 'API 상세', ?, 'promoted', 'api')
+        """,
+        (API_LIST_URL,),
+    )
+    connection.execute("INSERT INTO workflows (id, crawler_id, name) VALUES (2, 2, 'API 상세')")
+    connection.execute(
+        """
+        INSERT INTO raw_jobs (id, workflow_id, source_url, raw_data_json, content_hash)
+        VALUES (3, 2, ?, json_object('title', '공고 3', 'body', '본문 3'), 'hash-3')
+        """,
+        (f"{API_LIST_URL}3",),
+    )
+    connection.execute(
+        """
+        INSERT INTO normalized_jobs (raw_job_id, company, title, body, source_url)
+        VALUES (3, '예시', '공고 3', '본문 3', ?)
+        """,
+        (f"{API_LIST_URL}3",),
+    )
     try:
         yield connection
     finally:
@@ -100,6 +129,11 @@ def modal(client: TestClient, raw_job_id: int) -> str:
     response = client.get(f"/ui/review/modal/{raw_job_id}")
     assert response.status_code == 200
     return response.text
+
+
+def flat(html: str) -> str:
+    """문장 하나로 견주기 위해 공백을 접는다."""
+    return SPACES.sub(" ", html)
 
 
 def test_원문이_있으면_모달에_그대로_나온다(client: TestClient) -> None:
@@ -142,3 +176,27 @@ def test_저장_경로가_원문을_건드리지_않는다(client: TestClient, c
     after = str(conn.execute("SELECT raw_data_json FROM raw_jobs WHERE id = 1").fetchone()[0])
     assert after == before
     assert json.loads(after)["source_text"] == SOURCE_TEXT
+
+
+def test_원문이_없으면_무엇으로_분류됐는지_적는다(client: TestClient) -> None:
+    """빈 자리로 두면 원문이 없는 건과 아직 열어 보지 않은 건이 같아 보인다."""
+    text = flat(modal(client, 2))
+
+    assert "이 건은 본문으로 분류됐다" in text
+    assert "다시 수집하면 원문이 붙고" in text
+
+
+def test_상세가_API_인_사이트는_사유를_따로_적는다(client: TestClient) -> None:
+    """앞으로 수집하는 건에도 원문이 없다. 재수집을 기다릴 일이 아니다."""
+    text = flat(modal(client, 3))
+
+    assert "이 건은 본문으로 분류됐다" in text
+    assert "상세를 API 로 받아 원문을 뽑지 않는다" in text
+    assert "다시 수집해도 붙지 않는다" in text
+    assert "다시 수집하면 원문이 붙고" not in text
+
+
+def test_원문이_있는_건에는_본문으로_분류됐다고_적지_않는다(client: TestClient) -> None:
+    text = flat(modal(client, 1))
+
+    assert "이 건은 본문으로 분류됐다" not in text

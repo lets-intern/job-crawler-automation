@@ -66,6 +66,7 @@ from app.api.review_filter import (
     workflow_label,
 )
 from app.api.ui import render, render_page
+from app.crawler.collect import API
 from app.normalize.engine import OVERRIDABLE_FIELDS
 
 router = APIRouter(tags=["ui"], include_in_schema=False)
@@ -187,7 +188,7 @@ def _read_overrides(conn: sqlite3.Connection, raw_job_ids: list[int]) -> dict[in
     return found
 
 
-def _read_source(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, str]:
+def _read_source(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, Any]:
     """그 수집 건의 원문. `raw_jobs.raw_data_json` 의 `source_text` 키다 (side Push 8).
 
     `_COLUMNS` 에 넣지 않는다. 원문은 `normalized_jobs` 의 칸이 아니고, 표는 원문을 보여주지
@@ -196,16 +197,37 @@ def _read_source(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, str]:
     JSON 은 파이썬에서 푼다. `json_extract` 는 값이 JSON 이 아니면 그 자리에서 실패하고,
     그러면 원문 하나 때문에 모달 전체가 열리지 않는다 — 원문이 없는 것은 화면이 말할 수 있는
     상태이고, 모달이 안 열리는 것은 아니다.
+
+    크롤러의 상세 경로를 함께 낸다. 원문이 없는 이유가 둘이고, 화면이 그 둘을 갈라 적어야
+    하기 때문이다. 상세가 API 인 사이트는 앞으로도 원문을 뽑지 않는다 — 응답 전체가 다른
+    공고까지 담고 본문의 부모 객체가 하나로 정해지지 않는다
+    (`.claude/site-recipes/source-text-container.md`). 나머지는 원문을 뽑기 전에 모은 건이라
+    다시 수집하면 붙는다. 갈라 적지 않으면 기다리면 되는 건과 기다려도 안 되는 건이 화면에서
+    같아 보인다.
     """
-    row = conn.execute("SELECT raw_data_json FROM raw_jobs WHERE id = ?", (raw_job_id,)).fetchone()
+    row = conn.execute(
+        """
+        SELECT r.raw_data_json  AS raw_data_json,
+               c.detail_mode    AS detail_mode
+          FROM raw_jobs r
+          LEFT JOIN workflows w ON w.id = r.workflow_id
+          LEFT JOIN crawlers c ON c.id = w.crawler_id
+         WHERE r.id = ?
+        """,
+        (raw_job_id,),
+    ).fetchone()
     if row is None:
-        return {"text": ""}
+        return {"text": "", "api_detail": False}
+    api_detail = str(row["detail_mode"] or "") == API
     try:
         data = json.loads(str(row["raw_data_json"]))
     except (TypeError, ValueError):
-        return {"text": ""}
+        return {"text": "", "api_detail": api_detail}
     text = data.get("source_text") if isinstance(data, dict) else None
-    return {"text": str(text) if isinstance(text, str) else ""}
+    return {
+        "text": str(text) if isinstance(text, str) else "",
+        "api_detail": api_detail,
+    }
 
 
 def _read_job(conn: sqlite3.Connection, raw_job_id: int) -> sqlite3.Row | None:
