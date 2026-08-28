@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from typing import Any
+from uuid import uuid4
 
 import boto3
 from botocore.config import Config as BotoConfig
@@ -130,6 +131,76 @@ def upload_image(config: StorageConfig, *, data: bytes, name: str) -> str:
     return config.public_url(key)
 
 
+@dataclass(frozen=True)
+class CheckResult:
+    """연결 확인 한 번의 결과. 실패했으면 어느 걸음에서인지가 같이 온다."""
+
+    ok: bool
+    step: str
+    reason: str
+    message: str
+
+
+# 확인이 만드는 객체. 로고와 섞이지 않게 접두어를 둔다. 지우기까지 성공하면 남지 않는다
+CHECK_PREFIX = "_check/"
+CHECK_BODY = b"job-crawler storage check"
+
+
+def check(config: StorageConfig) -> CheckResult:
+    """작은 객체를 넣고, 읽고, 지운다. 저장된 설정으로 부른다.
+
+    걸음을 나눠 부르는 이유는 사유를 가르기 위해서다. 넣기에서 죽은 것과 읽기에서 죽은 것은
+    같은 `AccessDenied` 라도 고치는 자리가 다르다 — 앞은 쓰기 권한, 뒤는 읽기 권한이다.
+
+    던지지 않는다. 이 함수를 부르는 자리가 화면이고, 화면은 실패도 그려야 한다.
+    """
+    if not config.configured:
+        return CheckResult(
+            ok=False,
+            step="설정",
+            reason="not_configured",
+            message="버킷과 키를 먼저 저장한다. 확인은 저장된 값으로 한다",
+        )
+
+    key = f"{CHECK_PREFIX}{uuid4().hex}.txt"
+    step = "연결"
+    try:
+        s3 = client(config)
+        step = "넣기"
+        s3.put_object(Bucket=config.bucket, Key=key, Body=CHECK_BODY, ContentType="text/plain")
+        step = "읽기"
+        body = s3.get_object(Bucket=config.bucket, Key=key)["Body"].read()
+        if body != CHECK_BODY:
+            return CheckResult(
+                ok=False,
+                step=step,
+                reason="mismatch",
+                message="넣은 것과 읽은 것이 다르다. 같은 이름의 다른 객체를 읽고 있다",
+            )
+        step = "지우기"
+        s3.delete_object(Bucket=config.bucket, Key=key)
+    except (ClientError, BotoCoreError) as exc:
+        error = translate(exc, config)
+        logger.info("저장소 연결 확인 실패: %s 에서 %s", step, error.reason)
+        return CheckResult(ok=False, step=step, reason=error.reason, message=error.message)
+    except Exception as exc:  # noqa: BLE001 - 화면이 부르는 자리다. 무엇이 와도 문장으로 답한다
+        logger.warning("저장소 연결 확인이 예상 밖으로 실패했다: %s", exc)
+        return CheckResult(
+            ok=False,
+            step=step,
+            reason="failed",
+            message=f"{type(exc).__name__}: {exc}",
+        )
+
+    where = config.endpoint or f"{config.region} 지역의 S3"
+    return CheckResult(
+        ok=True,
+        step="지우기",
+        reason="ok",
+        message=f"버킷 `{config.bucket}` 에 넣고 읽고 지웠다 ({where})",
+    )
+
+
 def translate(exc: Exception, config: StorageConfig) -> StorageError:
     """SDK 예외를 고칠 방법이 갈리는 사유로 옮긴다.
 
@@ -151,7 +222,7 @@ def translate(exc: Exception, config: StorageConfig) -> StorageError:
         if code in ("AccessDenied", "403", "Forbidden"):
             return StorageError(
                 "denied",
-                f"버킷 `{config.bucket}` 에 쓸 권한이 없다. 키는 닿았고 권한이 막혔다",
+                f"버킷 `{config.bucket}` 에 대한 권한이 없다. 키는 닿았고 권한이 막혔다",
             )
         return StorageError("failed", f"저장소가 거절했다 ({code}): {exc}")
 
