@@ -27,6 +27,11 @@
     않았으니 다시 올린다. 밖에 올려 둔 주소를 붙여넣은 것이면 그대로 두어도 된다 — 주소가
     어디서 왔는지는 저장하지 않아 둘을 화면에서 가리지 못한다.
   </p>
+  <p class="text-sm text-slate-600">
+    자회사가 있는 사이트는 모회사도 자기 행을 따로 갖는다. 자회사에 로고가 없을 때 미리보기는
+    모회사 로고로 대신 채운다 — 그 모회사 로고는 자회사 목록이 아니라
+    <span class="font-semibold text-slate-900">모회사 로고</span> 탭에서 넣는다.
+  </p>
   {# 조회 조건. 표 영역만 갈아 끼운다.
 
      조건 둘을 함께 걸면 "로고가 없으면서 공고가 여러 개인 회사" 만 남는다 — 그것이 등록할
@@ -37,6 +42,16 @@
         hx-disabled-elt="find button[type=submit]">
     <fieldset>
       <legend>조회 조건</legend>
+      <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
+        <label for="company-group-subsidiary">
+          <input id="company-group-subsidiary" name="group" type="radio" value="subsidiary" checked>
+          자회사 로고
+        </label>
+        <label for="company-group-parent">
+          <input id="company-group-parent" name="group" type="radio" value="parent">
+          모회사 로고
+        </label>
+      </p>
       <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
         <label for="company-no-logo">
           <input id="company-no-logo" name="no_logo" type="checkbox" value="on">

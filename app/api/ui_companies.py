@@ -72,7 +72,12 @@ ORDER BY job_count DESC, c.name
 
 # 로고가 비었다고 볼 값. NULL 로 지우는 것이 정상 경로지만(`app/companies.py`), 빈 문자열이
 # 들어온 행이 `로고 있음` 으로 걸러지면 그 회사는 이 목록에서 영영 사라진다
-_NO_LOGO = "WHERE c.logo_url IS NULL OR c.logo_url = ''"
+_NO_LOGO = "c.logo_url IS NULL OR c.logo_url = ''"
+
+# 다른 회사 행이 이 이름을 모회사로 적어 뒀으면 "진짜 모회사" 행이다. 자회사가 없는 사이트의
+# 회사(예: 토스)는 자기 이름으로만 행이 생기고 아무도 그 이름을 모회사로 적지 않으니 여기 걸리지
+# 않는다 — 그런 행은 자회사 목록 쪽에 그대로 남는다(`app/companies.py::register`)
+_IS_PARENT_GROUP = "EXISTS (SELECT 1 FROM companies c2 WHERE c2.parent_name = c.name)"
 
 
 def _select(
@@ -90,16 +95,28 @@ def _select(
     ]
 
 
-def rows(conn: sqlite3.Connection, *, no_logo: bool = False, min_jobs: int = 0) -> list[CompanyRow]:
+def rows(
+    conn: sqlite3.Connection,
+    *,
+    no_logo: bool = False,
+    min_jobs: int = 0,
+    parent_only: bool = False,
+) -> list[CompanyRow]:
     """조건에 걸린 회사. 공고 많은 순이다. 읽기 전용이다.
 
-    조건 둘은 함께 걸린다. `로고 없음` 과 `공고 N건 이상` 을 같이 걸면 로고가 없으면서 공고가
-    여러 개인 회사만 남고, 그것이 곧 등록할 목록이다.
+    `parent_only` 가 참이면 다른 회사가 모회사로 가리키는 행만, 거짓이면(기본) 그런 행을 뺀
+    나머지(자회사 + 자회사가 없는 단독 회사)만 나온다 — 화면의 두 탭이 이 값으로 갈린다.
+
+    나머지 조건은 함께 걸린다. `로고 없음` 과 `공고 N건 이상` 을 같이 걸면 로고가 없으면서
+    공고가 여러 개인 회사만 남고, 그것이 곧 등록할 목록이다.
     """
     threshold = max(min_jobs, 0)
+    conditions = [_IS_PARENT_GROUP if parent_only else f"NOT {_IS_PARENT_GROUP}"]
+    if no_logo:
+        conditions.append(_NO_LOGO)
     return _select(
         conn,
-        _NO_LOGO if no_logo else "",
+        "WHERE " + " AND ".join(conditions),
         "HAVING job_count >= ?" if threshold else "",
         (threshold,) if threshold else (),
     )
@@ -135,6 +152,7 @@ def company_list_fragment(
     conn: Annotated[sqlite3.Connection, Depends(get_connection)],
     no_logo: Annotated[str, Query()] = "",
     min_jobs: Annotated[str, Query()] = "",
+    group: Annotated[str, Query()] = "subsidiary",
 ) -> HTMLResponse:
     """조건에 걸린 회사 목록. 행이 없으면 무엇을 하면 생기는지 적는다.
 
@@ -143,15 +161,20 @@ def company_list_fragment(
 
     `min_jobs` 도 문자열이다. 숫자 칸을 비우면 빈 값이 오는데, 정수로 받으면 그것이 422 가
     되어 조건을 지우려던 조작이 오류 조각으로 돌아온다. 빈 값은 조건 없음이다.
+
+    `group` 은 라디오 버튼이다. `parent` 가 아니면 전부(오타 포함) 자회사 탭으로 본다 —
+    잘못된 값으로 모회사 행이 섞여 나오는 쪽보다 안전하다.
     """
     threshold = int(min_jobs) if min_jobs.strip().isdigit() else 0
-    matched = rows(conn, no_logo=bool(no_logo), min_jobs=threshold)
+    parent_only = group == "parent"
+    matched = rows(conn, no_logo=bool(no_logo), min_jobs=threshold, parent_only=parent_only)
     return render(
         request,
         "fragments/company_list.html",
         rows=matched,
         total_jobs=sum(row.job_count for row in matched),
         filtered=bool(no_logo) or threshold > 0,
+        parent_only=parent_only,
         **_row_context(store.read_config(conn)),
     )
 

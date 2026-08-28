@@ -232,7 +232,7 @@ def test_걸린_회사_수와_공고_합계를_적는다(client: TestClient, con
 
     body = client.get("/ui/companies", params={"min_jobs": "2"}).text
 
-    assert "조건에 걸린 회사" in body
+    assert "조건에 걸린 자회사" in body
     assert "2곳, 공고 합계 5건" in body
 
 
@@ -616,6 +616,51 @@ def test_붙여넣기_길이_저장소를_거치지_않는다고_화면에_적�
     body = client.get("/ui/companies").text
 
     assert "우리 저장소를 거치지 않는다" in body
+
+
+def test_모회사_탭은_다른_회사가_가리키는_행만_보여준다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """`register()` 가 만드는 진짜 모회사 행만 나온다. 자회사가 없는 단독 회사는 아무도
+    가리키지 않으니 여기 나오지 않는다."""
+    companies.register(conn, "삼성SDS", "삼성전자")
+    companies.register(conn, "토스", "")
+    conn.commit()
+
+    subsidiary_body = client.get("/ui/companies").text
+    parent_body = client.get("/ui/companies", params={"group": "parent"}).text
+
+    assert "삼성SDS" in subsidiary_body
+    assert "삼성전자" not in subsidiary_body
+    assert "토스" in subsidiary_body
+
+    assert "삼성전자" in parent_body
+    assert "삼성SDS" not in parent_body
+    assert "토스" not in parent_body
+
+
+def test_모회사_탭에_로고_저장_폼이_있다(client: TestClient, conn: sqlite3.Connection) -> None:
+    companies.register(conn, "삼성SDS", "삼성전자")
+    conn.commit()
+
+    body = client.get("/ui/companies", params={"group": "parent"}).text
+
+    assert 'hx-put="/ui/companies/logo"' in body
+    assert 'value="삼성전자"' in body
+
+
+def test_모회사_행이_없으면_생기는_때를_말한다(client: TestClient) -> None:
+    body = client.get("/ui/companies", params={"group": "parent"}).text
+
+    assert "자회사가 있는 사이트가 수집되면" in body
+
+
+def test_화면에_자회사_모회사_탭이_있다(client: TestClient) -> None:
+    body = client.get("/companies").text
+
+    assert 'name="group"' in body
+    assert 'value="subsidiary"' in body
+    assert 'value="parent"' in body
 
 
 def test_모회사_열과_고치는_길은_더_이상_없다(client: TestClient, conn: sqlite3.Connection) -> None:

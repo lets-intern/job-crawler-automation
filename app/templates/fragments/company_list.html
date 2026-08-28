@@ -6,9 +6,13 @@
 <div class="table-scroll">
   <table class="data-table">
     <caption>
-      {% if filtered %}조건에 걸린 회사{% else %}회사{% endif %}
+      {% if parent_only %}모회사{% elif filtered %}조건에 걸린 자회사{% else %}자회사{% endif %}
       {{ rows | length }}곳, 공고 합계 {{ total_jobs }}건.
+      {% if parent_only %}
+      자회사가 이 이름을 모회사로 적어 둔 행만 나온다
+      {% else %}
       공고 많은 순이다 — 로고 하나가 몇 건에 붙는지가 무엇을 먼저 등록할지를 정한다
+      {% endif %}
     </caption>
     <thead>
       <tr>
@@ -21,7 +25,9 @@
       {% for row in rows %}
       {% include "fragments/company_row.html" %}
       {% else %}
-      {% if filtered %}
+      {% if parent_only %}
+      {{ empty_row(3, "모회사 행이 아직 없다. 자회사가 있는 사이트가 수집되면 그 모회사 이름으로 행이 생긴다") }}
+      {% elif filtered %}
       {{ empty_row(3, "이 조건에 걸린 회사가 없다. 조건을 풀면 전체가 다시 나온다") }}
       {% else %}
       {{ empty_row(3, "회사 행이 아직 없다. 수집한 공고가 정규화되면 그 회사명으로 행이 생긴다") }}
