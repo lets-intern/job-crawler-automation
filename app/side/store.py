@@ -35,7 +35,10 @@ ACTIVE = "active"
 PAUSED = "paused"
 STATUSES: tuple[str, ...] = (ACTIVE, PAUSED)
 
-TRIGGER_KINDS: tuple[str, ...] = ("interval", "after_crawl", "manual")
+# 주기로 도는 실행 시점. 스케줄러가 잡으로 등록하는 것은 이것 하나다 (`app/scheduler.py`).
+# 나머지 둘은 낱말이 필요한 자리가 아직 없어 이름을 두지 않는다
+INTERVAL = "interval"
+TRIGGER_KINDS: tuple[str, ...] = (INTERVAL, "after_crawl", "manual")
 
 # 종류마다 받는 대상 범위가 다르다. 앞의 것이 그 종류의 기본값이다 (PRD 2·3 절).
 #
