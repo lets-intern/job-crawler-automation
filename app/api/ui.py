@@ -52,6 +52,7 @@ NAV: tuple[tuple[str, str], ...] = (
     ("/", "크롤러 등록"),
     ("/tests", "테스트 실행"),
     ("/workflows", "워크플로우"),
+    ("/side", "부가 워크플로우"),
     ("/rules", "정규화 규칙"),
     ("/review", "데이터 검수"),
     ("/companies", "회사"),
@@ -371,6 +372,16 @@ def tests_page(request: Request) -> HTMLResponse:
 @router.get("/workflows", response_class=HTMLResponse)
 def workflows_page(request: Request) -> HTMLResponse:
     return render_page(request, "pages/workflows.html")
+
+
+@router.get("/side", response_class=HTMLResponse)
+def side_page(request: Request) -> HTMLResponse:
+    """부가 워크플로우 화면. 크롤링과 따로 도는 작업을 여기서 등록하고 돌린다.
+
+    `/workflows` 와 같은 층이다. 운영 설정의 하위로 넣지 않는 이유는 여기에 등록·주기·실행·
+    이력이 다 있기 때문이다 — 값을 한 번 넣어 두는 화면이 아니라 운영하는 화면이다.
+    """
+    return render_page(request, "pages/side.html")
 
 
 @router.get("/rules", response_class=HTMLResponse)
