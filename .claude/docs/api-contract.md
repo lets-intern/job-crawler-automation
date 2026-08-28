@@ -47,7 +47,8 @@ GET /api/jobs?updated_after=<ISO8601>&limit=100&cursor=<opaque>
   "items": [
     {
       "id": 1,
-      "company": "회사명",
+      "parent_company": "삼성전자",
+      "company": "삼성SDS",
       "title": "공고 제목",
       "job_role": "백엔드 개발",
       "deadline": "2026-09-30",
@@ -124,8 +125,27 @@ GET /api/jobs?updated_after=<ISO8601>&limit=100&cursor=<opaque>
 여덟 칸을 분류 결과로 덮어 `Permanent` 같은 사이트 표기는 `normalized_jobs` 에 남지 않는다.
 소비 측은 수집 시점을 따질 필요가 없다.
 
-`title`·`company`·`deadline`·`body`·`source_url` 은 수집이 채우고, 그중 앞의 넷은 대부분
-채워진다.
+**2026-08-28 에 회사명을 두 칸으로 갈랐다.** 한 칸에 "그 채용 사이트를 운영하는 기업" 과
+"그 공고가 말한 계열사" 가 겹쳐 앉아 있었고, 소비 측이 그 칸 하나를 보고 둘을 가릴 방법이
+없었다 (`migrations/0018_parent_company.sql`).
+
+| 필드 | 뜻 | 비는가 |
+|---|---|---|
+| parent_company | 그 채용 사이트를 운영하는 기업. 삼성 채용 사이트면 `삼성전자` | 거의 없다 |
+| company | 그 공고가 말한 계열사. 삼성 채용 사이트의 한 공고면 `삼성SDS` | 빈다 |
+
+**`company` 는 `null` 일 수 있다.** 계열사를 말하지 않는 사이트(토스·우아한형제들)에서는 늘
+`null` 이고, 그 자리를 모회사 이름으로 메우지 않는다. 메우면 두 칸이 같은 값이 되어 계열사를
+가르려고 칸을 늘린 일이 없던 일이 된다.
+
+회사 이름을 하나만 보여줄 자리라면 `parent_company` 를 쓴다. 계열사까지 가르려면 `company`
+가 있을 때만 그것을 쓰고, 없으면 모회사를 쓴다.
+
+`parent_company` 도 `null` 일 수 있다. 2026-08-28 이전에 정규화된 행은 재정규화하기 전까지
+그렇다 — 새로 들어오는 공고에서는 비지 않는다.
+
+`title`·`parent_company`·`company`·`deadline`·`body`·`source_url` 은 수집이 채운다. 그중
+`company` 만 위에 적은 이유로 자주 비고, 나머지는 대부분 채워진다.
 
 커서 기반이다. 소비 측이 한 번 폴링을 걸러도 다음에 이어서 받는다. 오프셋 기반이면 그 사이 삽입된
 행 때문에 건너뛰는 건이 생긴다.

@@ -36,7 +36,7 @@ MAX_LIMIT = 500
 STORED_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 _SELECT = """
-    SELECT id, company, title, job_role, deadline, body, requirements,
+    SELECT id, parent_company, company, title, job_role, deadline, body, requirements,
            start_date, employment_type, career_level, work_location,
            duties, preferred, hiring_process, etc_info,
            source_url, normalized_at
@@ -53,10 +53,16 @@ class JobOut(BaseModel):
     필드를 더한 것도 소비 측이 아직 붙지 않은 동안에만 할 수 있는 일이다
     (`.claude/docs/api-contract.md`).
 
+    0018 이 회사명을 두 칸으로 갈랐다. `parent_company` 는 그 채용 사이트를 운영하는 기업이고
+    거의 언제나 값이 있다. `company` 는 그 공고가 말한 계열사이고, 계열사를 말하지 않는
+    사이트에서는 `null` 이다 — 그 자리를 모회사 이름으로 메우지 않는다
+    (`migrations/0018_parent_company.sql`).
+
     사이트가 그 값을 주지 않으면 `null` 이다. 없는 값을 다른 값으로 채우지 않는다.
     """
 
     id: int
+    parent_company: str | None
     company: str | None
     title: str | None
     job_role: str | None
@@ -158,6 +164,7 @@ def _iso(stored: str) -> str:
 def _out(row: sqlite3.Row) -> JobOut:
     return JobOut(
         id=int(row["id"]),
+        parent_company=row["parent_company"],
         company=row["company"],
         title=row["title"],
         job_role=row["job_role"],

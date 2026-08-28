@@ -167,6 +167,9 @@ def test_item_shape_matches_contract(client: TestClient, conn: sqlite3.Connectio
     item = client.get("/api/jobs").json()["items"][0]
     assert set(item) == {
         "id",
+        # 0018 이 회사명을 두 칸으로 갈랐다. 모회사는 사이트를 운영하는 기업,
+        # 자회사는 그 공고가 말한 계열사다
+        "parent_company",
         "company",
         "title",
         # 0017 이 더한 직무. 제목에서 옮긴 자유 텍스트라 이 필드로는 거를 수 없다
@@ -405,3 +408,31 @@ def test_delivered_does_not_touch_normalized_at(
     client.post("/api/jobs/delivered", json={"ids": ids})
     after = conn.execute("SELECT normalized_at FROM normalized_jobs").fetchone()["normalized_at"]
     assert after == before
+
+
+def test_the_two_company_keys_mean_what_the_contract_says(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """모회사는 사이트를 운영하는 기업, 자회사는 그 공고가 말한 계열사다 (3.5.V)."""
+    seed(conn, 1)
+    conn.execute(
+        "UPDATE normalized_jobs SET parent_company = ?, company = ?", ("삼성전자", "삼성SDS")
+    )
+
+    item = client.get("/api/jobs").json()["items"][0]
+
+    assert item["parent_company"] == "삼성전자"
+    assert item["company"] == "삼성SDS"
+
+
+def test_the_subsidiary_goes_out_null_and_is_not_filled_with_the_parent(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """계열사를 말하지 않는 사이트다. 모회사 이름으로 메우면 두 칸이 같은 값이 된다."""
+    seed(conn, 1)
+    conn.execute("UPDATE normalized_jobs SET parent_company = ?, company = NULL", ("토스",))
+
+    item = client.get("/api/jobs").json()["items"][0]
+
+    assert item["parent_company"] == "토스"
+    assert item["company"] is None
