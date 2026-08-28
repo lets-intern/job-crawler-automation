@@ -2,7 +2,9 @@
 
 칸이 갈린 뒤로 합치는 일이 없다. 확인하는 것은 일곱이다.
 
-- `parent_company` 는 `crawlers.default_company`, 없으면 크롤러 이름이다
+- `parent_company` 는 `crawlers.default_company` 그대로다. 2026-08-29 부터 등록·수정 화면이
+  이 칸을 필수로 받으므로, 비어 있으면 크롤러 이름을 대신 쓰던 옛 동작(2026-08-26 결정)은
+  더 이상 쓰지 않는다 — 비어 있으면 그대로 NULL 이다
 - `company` 는 공고에서 뽑은 값 그대로다. 모회사가 그 자리를 메우지 않는다
 - 사이트가 회사명을 주지 않으면 `company` 는 NULL 이고 `parent_company` 만 남는다
 - 둘 다 없으면 둘 다 NULL 이다. 빈 문자열로 채우지 않는다
@@ -122,28 +124,30 @@ async def test_a_site_without_a_company_keeps_the_subsidiary_null(
         conn.close()
 
 
-async def test_the_crawler_name_fills_the_parent_when_the_operator_wrote_nothing(
-    tmp_path: pathlib.Path,
-) -> None:
-    """2026-08-26 결정. 비워 두는 것보다 상위 기업 이름이라도 있는 편이 낫다 (1.3)."""
+async def test_아무것도_안_적으면_모회사도_비어_있다(tmp_path: pathlib.Path) -> None:
+    """2026-08-29 결정이 2026-08-26 의 크롤러 이름 대체를 대신한다.
+
+    등록 화면이 이 칸을 필수로 받으므로 실제로는 일어나지 않지만, 화면을 거치지 않고 만든
+    행(CLI, 가져오기)까지 대비한다 — 그런 행은 짐작 없이 그냥 비워 둔다.
+    """
     conn = make_conn(tmp_path / "jobs.db", WITHOUT_COMPANY)
     try:
         await run_workflow(conn, 1, fetcher=stub_fetcher(), limit=2)
 
-        assert companies(conn) == [("그룹 채용", None), ("그룹 채용", None)]
+        assert companies(conn) == [(None, None), (None, None)]
     finally:
         conn.close()
 
 
-def test_the_crawler_name_is_the_fallback_for_the_parent(tmp_path: pathlib.Path) -> None:
-    """목록이 회사명을 주지 않는 사이트(토스·우아한형제들)를 위한 자리다 (1.3.V)."""
+def test_비어_있는_모회사는_크롤러_이름으로_대신하지_않는다(tmp_path: pathlib.Path) -> None:
+    """2026-08-29 결정. 등록 화면이 이 칸을 필수로 받으므로 짐작할 이유가 없다."""
     conn = _seeded(tmp_path, name="토스", default_company=None, parsed="")
     try:
-        assert read_parent_company(conn, 1) == "토스"
+        assert read_parent_company(conn, 1) is None
 
         fields = normalize_fields(_raw(""), [], read_parent_company(conn, 1))
 
-        assert fields[PARENT_COMPANY] == "토스"
+        assert fields[PARENT_COMPANY] is None
         assert fields["company"] is None
     finally:
         conn.close()

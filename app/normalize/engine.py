@@ -15,9 +15,15 @@
 
 ## 회사명은 두 칸이다
 
-`parent_company` 는 그 크롤러의 `crawlers.default_company` 고, 비어 있으면 **크롤러 이름**
-이다. 둘 다 없을 때만 NULL 이다 — 빈 문자열로 채우지 않는다. 크롤러 이름까지 내려가는 것은
-목록이 회사명을 주지 않는 사이트(토스·우아한형제들)를 위한 것이다 (2026-08-26 결정).
+`parent_company` 는 그 크롤러의 `crawlers.default_company`, **오직 그것뿐이다.** 비어 있으면
+NULL 이다 — 크롤러 이름으로 대신 채우지 않는다.
+
+**2026-08-26 에는 비어 있으면 크롤러 이름을 대신 썼다.** 목록이 회사명을 주지 않는
+사이트(토스·우아한형제들)를 위한 것이었지만, 그러면 모회사가 운영자가 적은 값인지 시스템이
+추측한 값인지 화면에서 갈리지 않았다. 2026-08-29 에 크롤러 등록 화면이 이 칸을 필수로
+바꾸면서(빈 값으로 저장할 수 없다) 그 추측이 필요 없어졌다 — 모회사는 언제나 **설정한 값**
+이다. 이 결정 전에 등록돼 비어 있던 행은 `migrations/0022_backfill_default_company.sql`
+이 그 시점의 크롤러 이름으로 한 번 채웠다. 그 뒤로 새로 만들거나 비운 행은 없다.
 
 `company` 는 `raw_data_json.company` 그대로이고, 뽑히지 않았으면 NULL 이다. **모회사 이름으로
 채우지 않는다.** 채우면 두 칸이 같은 값이 되어 칸을 가른 일이 없던 일이 된다. 자회사가 비어
@@ -240,17 +246,14 @@ def apply_classification(
 def read_parent_company(conn: sqlite3.Connection, raw_job_id: int) -> str | None:
     """그 공고를 모은 크롤러가 말하는 모회사. 없으면 None 이다. 읽기 전용이다.
 
-    운영자가 크롤러에 적어 둔 `crawlers.default_company` 가 먼저고, 그것도 비어 있으면
-    **크롤러 이름**을 쓴다. 토스·우아한형제들은 목록이 회사명을 주지 않는데, 비워 두는 것보다
-    상위 기업 이름이라도 있는 편이 낫다 (2026-08-26 결정).
-
-    `crawlers.name` 은 NOT NULL 이라 이 값이 비는 경우는 사실상 없다. 그래서 두 칸 중 늘
-    채워져 있는 쪽이고, 소비 측이 회사를 하나만 읽어야 한다면 이쪽이다
-    (`.claude/docs/api-contract.md`).
+    **운영자가 크롤러 등록·수정 화면에 적은 `crawlers.default_company` 그대로다.** 크롤러
+    이름으로 대신 채우지 않는다 — 2026-08-29 부터 그 화면이 이 칸을 필수로 받으므로, 새로
+    만든 행에는 빈 값이 없다. 이 화면 이전에 만들어져 비어 있던 행은
+    `migrations/0022_backfill_default_company.sql` 이 한 번 채웠다.
     """
     row = conn.execute(
         """
-        SELECT c.default_company AS default_company, c.name AS name
+        SELECT c.default_company AS default_company
           FROM raw_jobs r
           JOIN workflows w ON w.id = r.workflow_id
           JOIN crawlers c ON c.id = w.crawler_id
@@ -258,13 +261,10 @@ def read_parent_company(conn: sqlite3.Connection, raw_job_id: int) -> str | None
         """,
         (raw_job_id,),
     ).fetchone()
-    if row is None:
+    if row is None or row["default_company"] is None:
         return None
-    for column in ("default_company", "name"):
-        value = row[column]
-        if value is not None and str(value).strip():
-            return str(value)
-    return None
+    value = str(row["default_company"]).strip()
+    return value or None
 
 
 def read_raw(conn: sqlite3.Connection, raw_job_id: int) -> tuple[str, dict[str, object]]:
