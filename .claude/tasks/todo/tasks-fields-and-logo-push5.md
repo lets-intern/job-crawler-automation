@@ -32,11 +32,11 @@
         - [x] 5.2.V 검증(로컬): `local-env` 로 띄워 MinIO 콘솔에 닿는지 확인.
               `docker compose up -d minio` 후 콘솔(:9001) 200, S3 헬스(:9000) 200,
               api 컨테이너에서 `http://minio:9000` 200
-    - [ ] 5.3 설정 저장소. `s3_endpoint`·`s3_region`·`s3_bucket`·`s3_access_key`·
+    - [x] 5.3 설정 저장소. `s3_endpoint`·`s3_region`·`s3_bucket`·`s3_access_key`·
           `s3_secret_key`·`s3_public_base` 를 `app_settings` 에 넣는다. 새 표를 만들지 않는다.
           주소는 `http`/`https` 여야 하고 버킷은 비어 있을 수 없다
-        - [ ] 5.3.V 검증(스키마): 저장하고 다시 읽어 값이 그대로인지, 범위 밖 값이 사유와 함께
-              거절되는지 pytest
+        - [x] 5.3.V 검증(스키마): 저장하고 다시 읽어 값이 그대로인지, 범위 밖 값이 사유와 함께
+              거절되는지 pytest. `tests/test_storage_settings.py` 15개 통과
     - [ ] 5.4 업로드 클라이언트. S3 호환 SDK 하나를 쓰고 `endpoint_url` 이 비면 SDK 가 지역으로
           주소를 만들게 둔다 — 주소 형식을 운영자가 고르게 하지 않는다. 받는 것은 이미지뿐이고
           크기 상한을 둔다. 형식과 상한을 여기서 정해 화면에 적는다
