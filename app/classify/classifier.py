@@ -252,8 +252,13 @@ async def classify_body(
             last_error = exc
             continue
 
-        # 받은 값을 그 자리에서 원문에 돌려 본다. 못 찾은 칸은 버린다. 제목까지 보는 것은
-        # `job_role` 이 거기서 오기 때문이다 (`app/classify/grounding.py`)
+        # 받은 값을 그 자리에서 **보낸 그 글**에 돌려 본다. 못 찾은 칸은 버린다. 보낸 것과
+        # 다른 값에 돌려 보면 옳게 뽑은 칸이 버려진다 — 원문으로 물어 놓고 본문에 돌려 보면
+        # 본문 밖 이름표에서 온 근무지가 통째로 사라진다. 제목까지 보는 것은 `job_role` 이
+        # 거기서 오기 때문이다 (`app/classify/grounding.py`).
+        #
+        # 넘기는 것은 자르기 전 값이다. 모델이 본 것은 앞 `MAX_BODY_CHARS` 자뿐이라, 전체에
+        # 돌려 보면 검사가 넓어질 뿐 좁아지지 않는다
         grounded = ground(fields, body, title)
         if grounded.dropped:
             logger.warning(
