@@ -1,0 +1,95 @@
+{# 새 부가 워크플로우를 만드는 폼. 목록 아래에 상시 있고, 만든 뒤에는 목록만 다시 그려진다.
+
+   `종류` 를 바꾸면 대상 범위 목록이 바뀌어야 해서(`app/side/store.py` 의 `SCOPES`), 그 select 의
+   `change` 가 이 폼 전체를 다시 부른다. `hx-include="closest form"` 이 지금까지 적은 이름 같은
+   값을 함께 보내 종류만 바뀌어도 사라지지 않는다.
+
+   `target_scope` 로 `all` 을 고르고 처음 제출하면 저장하지 않고 대상 건수를 보여주는 같은
+   폼을 다시 돌려준다. 그 응답에는 숨은 칸 `confirmed=1` 이 실린 두 번째 제출 버튼이 있다 #}
+{% from "macros.html" import failure, wait %}
+<form id="side-new-form" hx-post="/ui/side" hx-target="#side-list" hx-swap="innerHTML"
+      hx-disabled-elt="find button">
+  <fieldset>
+    <legend>새 부가 워크플로우</legend>
+
+    {% if error %}
+    {{ failure("", error.message, "만들지 못했다") }}
+    {% endif %}
+
+    <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
+      <span>
+        <label for="side-new-kind" class="block">종류</label>
+        <select id="side-new-kind" name="kind"
+                hx-get="/ui/side/new-form" hx-target="#side-new-form" hx-swap="outerHTML"
+                hx-include="closest form" hx-trigger="change">
+          {% for value, label in kinds %}
+          <option value="{{ value }}" {% if value == kind %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </span>
+      <span>
+        <label for="side-new-name" class="block">이름</label>
+        <input id="side-new-name" name="name" type="text" required
+               value="{{ values.get('name', '') }}" placeholder="무엇을 하는 워크플로우인지">
+      </span>
+      <span>
+        <label for="side-new-trigger" class="block">실행 시점</label>
+        <select id="side-new-trigger" name="trigger_kind">
+          {% for value, label in trigger_kinds %}
+          <option value="{{ value }}" {% if value == values.get('trigger_kind', 'manual') %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </span>
+      <span>
+        <label for="side-new-interval" class="block">주기(분)</label>
+        <input id="side-new-interval" name="interval_minutes" type="number" min="1"
+               value="{{ values.get('interval_minutes') or default_interval }}" class="w-24">
+        <span class="block text-xs text-slate-500">실행 시점이 주기가 아니면 쓰지 않는다</span>
+      </span>
+    </p>
+
+    <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
+      <span>
+        <label for="side-new-scope" class="block">대상 범위</label>
+        <select id="side-new-scope" name="target_scope"
+                hx-get="/ui/side/new-form" hx-target="#side-new-form" hx-swap="outerHTML"
+                hx-include="closest form" hx-trigger="change">
+          {% for value, label in scopes %}
+          <option value="{{ value }}" {% if value == picked_scope %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </span>
+      {% if picked_scope == "recent" %}
+      <span>
+        <label for="side-new-days" class="block">최근 며칠</label>
+        <input id="side-new-days" name="target_days" type="number" min="1"
+               value="{{ values.get('target_days', '') }}" class="w-24" required>
+      </span>
+      {% endif %}
+      <span>
+        <label for="side-new-batch" class="block">1회 상한 건수</label>
+        <input id="side-new-batch" name="batch_limit" type="number" min="1"
+               value="{{ values.get('batch_limit') or default_batch_limit }}" class="w-24">
+      </span>
+    </p>
+
+    {% if confirm_all %}
+    <p class="notice notice-warn">
+      <span class="font-semibold">확인이 필요하다</span> — 전체 다시는 이미 분류된 것까지
+      {{ confirm_count }}건을 처음부터 다시 돈다. 약 {{ "{:,}".format(confirm_tokens) }} 토큰이
+      나간다. 계속할까.
+    </p>
+    <input type="hidden" name="confirmed" value="1">
+    <button type="submit">확인하고 만들기</button>
+    {{ wait("만드는 중") }}
+    {% else %}
+    <button type="submit">만들기</button>
+    {{ wait("만드는 중") }}
+    {% endif %}
+
+    <p class="text-sm text-slate-600">
+      새로 만든 워크플로우는 <span class="font-semibold text-slate-900">멈춤</span>으로
+      시작한다. 대상 범위를 확인하고 한 번 돌려 본 뒤 목록에서 켠다.
+    </p>
+  </fieldset>
+</form>

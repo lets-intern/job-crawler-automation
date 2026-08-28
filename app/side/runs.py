@@ -191,6 +191,19 @@ def latest(conn: sqlite3.Connection, side_workflow_id: int) -> SideRun | None:
     return None if row is None else _from_row(row)
 
 
+def recent(conn: sqlite3.Connection, side_workflow_id: int, *, limit: int = 10) -> list[SideRun]:
+    """그 워크플로우의 최근 실행들. 새것부터. 읽기 전용이다.
+
+    화면의 실행 이력이 보는 값이다. `latest` 는 한 건뿐이라 "성공·실패·건너뜀이 섞여 왔는가"
+    를 볼 수 없다.
+    """
+    rows = conn.execute(
+        f"SELECT {_COLUMNS} FROM side_runs WHERE side_workflow_id = ? ORDER BY id DESC LIMIT ?",
+        (side_workflow_id, limit),
+    ).fetchall()
+    return [_from_row(row) for row in rows]
+
+
 def open_run(conn: sqlite3.Connection, side_workflow_id: int) -> SideRun | None:
     """그 워크플로우에서 아직 돌고 있는 실행. 없으면 None 이다. 읽기 전용이다.
 

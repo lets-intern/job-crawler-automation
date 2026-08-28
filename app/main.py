@@ -27,6 +27,7 @@ from app.api import (
     ui_rules_preview,
     ui_runs,
     ui_settings,
+    ui_side,
     ui_storage,
     ui_tests,
     ui_workflows,
@@ -99,6 +100,7 @@ app.include_router(ui_rules_preview.router)
 app.include_router(review_filter.router)
 app.include_router(review.router)
 app.include_router(ui_companies.router)
+app.include_router(ui_side.router)
 app.include_router(ui_settings.router)
 app.include_router(ui_notify.router)
 app.include_router(ui_storage.router)

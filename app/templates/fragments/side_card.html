@@ -1,0 +1,189 @@
+{# 부가 워크플로우 하나. 설정을 보여주는 자리와 고치는 자리가 같다 — 두면 지금 보는 값과
+   고치는 값이 다른 화면이 되고, 어느 것이 저장된 값인지 헷갈린다
+   (`app/templates/fragments/workflow_card.html` 과 같은 판단).
+
+   도는 동안에는 2초마다 자기 자신을 다시 부른다. 그동안 설정 폼은 잠근다 — 그 사이에 카드가
+   갈리면 입력하던 값이 날아간다. #}
+{% from "macros.html" import badge, blank, failure, notice_box, state, wait %}
+<article id="side-row-{{ card.workflow.id }}" class="rounded-md border border-l-4 border-slate-200 border-l-slate-300 bg-slate-50 p-4"
+         {% if card.running %}hx-get="/ui/side/{{ card.workflow.id }}/card" hx-trigger="every 2s"
+         hx-target="#side-row-{{ card.workflow.id }}" hx-swap="outerHTML"{% endif %}>
+  <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+    <h3 class="mb-0 text-base font-semibold text-slate-900">{{ card.workflow.name }}</h3>
+    <span class="text-xs text-slate-500">{{ card.kind_label }} · 부가 워크플로우 {{ card.workflow.id }}</span>
+    {% if card.workflow.status == "active" %}
+    {{ badge("켜짐", tone="ok") }}
+    {% else %}
+    {{ badge("멈춤") }}
+    {% endif %}
+    {% if card.running %}
+    <span class="badge badge-warn animate-pulse">실행 중</span>
+    {% endif %}
+  </div>
+
+  <p class="mt-1 text-sm text-slate-700">
+    {{ card.trigger_label }} · 대상: {{ card.scope_label }}{% if card.workflow.target_days %}({{ card.workflow.target_days }}일){% endif %}
+    · 1회 상한 {{ card.workflow.batch_limit }}건
+  </p>
+
+  <dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
+    <div>
+      <dt class="mt-0 text-xs font-medium text-slate-500">마지막 실행</dt>
+      <dd class="text-sm text-slate-800">{{ card.workflow.last_run_at | as_time or "실행한 적 없음" }}</dd>
+    </div>
+    <div>
+      <dt class="mt-0 text-xs font-medium text-slate-500">최근 결과</dt>
+      <dd class="text-sm">
+        {% if card.latest_run_label %}{{ state(card.latest_run_label) }}{% else %}{{ blank("기록 없음") }}{% endif %}
+      </dd>
+    </div>
+    {% if card.latest_run and card.latest_run.status %}
+    <div>
+      <dt class="mt-0 text-xs font-medium text-slate-500">최근 처리·실패</dt>
+      <dd class="text-sm tabular-nums text-slate-800">
+        대상 {{ card.latest_run.target_count }} · 처리 {{ card.latest_run.processed_count }} ·
+        실패 {{ card.latest_run.failed_count }}
+      </dd>
+    </div>
+    {% endif %}
+  </dl>
+
+  {% if card.latest_run and card.latest_run.status == "failed" and card.latest_run.error_message %}
+  <p class="mt-3 break-keep rounded border border-red-200 bg-white px-3 py-2 text-sm text-red-800">
+    <span class="font-semibold">실패 사유</span> — {{ card.latest_run.error_message }}
+  </p>
+  {% endif %}
+
+  {% if card.message %}
+  <p class="mt-2 text-sm font-medium text-slate-900">{{ card.message }}</p>
+  {% endif %}
+  {% if card.error %}
+  {{ failure("", card.error.message, "저장하지 못했다") }}
+  {% endif %}
+
+  {% if card.confirm_all %}
+  <p class="notice notice-warn">
+    <span class="font-semibold">확인이 필요하다</span> — 전체 다시는 이미 분류된 것까지
+    {{ card.confirm_count }}건을 처음부터 다시 돈다{% if card.confirm_tokens %}. 약
+    {{ "{:,}".format(card.confirm_tokens) }} 토큰이 나간다{% endif %}. 계속하려면 아래에서 대상
+    범위를 그대로 두고 저장을 다시 누른다.
+  </p>
+  {% endif %}
+
+  <form class="mt-3 flex flex-wrap items-end gap-x-3 gap-y-2 border-t border-slate-200 pt-3"
+        hx-patch="/ui/side/{{ card.workflow.id }}"
+        hx-target="#side-row-{{ card.workflow.id }}" hx-swap="outerHTML"
+        hx-disabled-elt="find button">
+    {% if card.running %}
+    <p class="w-full text-sm font-medium text-amber-800">실행 중에는 설정을 잠근다. 끝나면 풀린다</p>
+    {% endif %}
+    <span>
+      <label for="side-name-{{ card.workflow.id }}" class="block text-xs font-medium text-slate-600">이름</label>
+      <input id="side-name-{{ card.workflow.id }}" name="name" type="text" required
+             value="{{ card.form_values.name }}" {% if card.running %}disabled{% endif %}>
+    </span>
+    <span>
+      <label for="side-trigger-{{ card.workflow.id }}" class="block text-xs font-medium text-slate-600">실행 시점</label>
+      <select id="side-trigger-{{ card.workflow.id }}" name="trigger_kind" {% if card.running %}disabled{% endif %}>
+        {% for value, label in card.trigger_kinds %}
+        <option value="{{ value }}" {% if value == card.form_values.trigger_kind %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </span>
+    <span>
+      <label for="side-interval-{{ card.workflow.id }}" class="block text-xs font-medium text-slate-600">주기(분)</label>
+      <input id="side-interval-{{ card.workflow.id }}" name="interval_minutes" type="number" min="1"
+             value="{{ card.form_values.interval_minutes }}" class="w-24" {% if card.running %}disabled{% endif %}>
+    </span>
+    <span>
+      <label for="side-scope-{{ card.workflow.id }}" class="block text-xs font-medium text-slate-600">대상 범위</label>
+      <select id="side-scope-{{ card.workflow.id }}" name="target_scope" {% if card.running %}disabled{% endif %}>
+        {% for value, label in card.scopes %}
+        <option value="{{ value }}" {% if value == card.form_values.target_scope %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </span>
+    <span>
+      <label for="side-days-{{ card.workflow.id }}" class="block text-xs font-medium text-slate-600">최근 며칠</label>
+      <input id="side-days-{{ card.workflow.id }}" name="target_days" type="number" min="1"
+             value="{{ card.form_values.target_days }}" class="w-20"
+             placeholder="대상이 최근 N일일 때만" {% if card.running %}disabled{% endif %}>
+    </span>
+    <span>
+      <label for="side-batch-{{ card.workflow.id }}" class="block text-xs font-medium text-slate-600">1회 상한</label>
+      <input id="side-batch-{{ card.workflow.id }}" name="batch_limit" type="number" min="1"
+             value="{{ card.form_values.batch_limit }}" class="w-20" {% if card.running %}disabled{% endif %}>
+    </span>
+    {% if card.confirm_all %}<input type="hidden" name="confirmed" value="1">{% endif %}
+    <button type="submit" {% if card.running %}disabled{% endif %}>
+      {% if card.confirm_all %}확인하고 저장{% else %}설정 저장{% endif %}
+    </button>
+    {{ wait("저장하는 중") }}
+  </form>
+
+  <div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+    {% if card.workflow.status == "active" %}
+    <button type="button" hx-patch="/ui/side/{{ card.workflow.id }}/status" hx-vals='{"status": "paused"}'
+            hx-target="#side-row-{{ card.workflow.id }}" hx-swap="outerHTML"
+            hx-disabled-elt="this" hx-indicator="closest div"
+            hx-confirm="부가 워크플로우 {{ card.workflow.id }} 를 멈춘다. 주기가 있어도 다음 차례에 돌지 않는다. 계속할까"
+            {% if card.running %}disabled{% endif %}>멈추기</button>
+    {% else %}
+    <button type="button" hx-patch="/ui/side/{{ card.workflow.id }}/status" hx-vals='{"status": "active"}'
+            hx-target="#side-row-{{ card.workflow.id }}" hx-swap="outerHTML"
+            hx-disabled-elt="this" hx-indicator="closest div"
+            {% if card.running %}disabled{% endif %}>켜기</button>
+    {% endif %}
+    <button type="button" hx-post="/ui/side/{{ card.workflow.id }}/run"
+            hx-target="#side-row-{{ card.workflow.id }}" hx-swap="outerHTML"
+            hx-disabled-elt="this" hx-indicator="closest div"
+            hx-confirm="부가 워크플로우 {{ card.workflow.id }} 를 지금 1회 실행한다. 멈춰 있어도 손으로는 돈다. 계속할까"
+            {% if card.running %}disabled{% endif %}>지금 실행</button>
+    <button type="button" hx-delete="/ui/side/{{ card.workflow.id }}"
+            hx-target="#side-list" hx-swap="innerHTML"
+            hx-disabled-elt="this" hx-indicator="closest div"
+            hx-confirm="부가 워크플로우 {{ card.workflow.id }} 와 그 실행 이력을 지운다. 되돌릴 수 없다. 그 작업이 만든 데이터(분류 결과)는 지워지지 않는다. 계속할까"
+            {% if card.running %}disabled{% endif %}
+            title="설정과 실행 이력만 지운다. 분류 결과는 그대로 남는다">지우기</button>
+    {{ wait("처리하는 중") }}
+  </div>
+
+  <details class="mt-3">
+    <summary class="cursor-pointer text-sm font-medium text-slate-700">실행 이력 ({{ card.history | length }}건)</summary>
+    {% if card.history %}
+    <div class="table-scroll">
+    <table class="data-table mt-2">
+      <thead>
+        <tr>
+          <th scope="col">시작</th>
+          <th scope="col">누가</th>
+          <th scope="col">결과</th>
+          <th scope="col" class="num">대상</th>
+          <th scope="col" class="num">처리</th>
+          <th scope="col" class="num">실패</th>
+          <th scope="col">비고</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for run in card.history %}
+        <tr>
+          <td>{{ run.started_at | as_time }}</td>
+          <td>{{ run.trigger }}</td>
+          <td>
+            {% if run.status is none %}{{ state("실행 중", tone="warn") }}
+            {% else %}{{ state(card.run_status_labels.get(run.status, run.status)) }}{% endif %}
+          </td>
+          <td class="num">{{ run.target_count }}</td>
+          <td class="num">{{ run.processed_count }}</td>
+          <td class="num">{{ run.failed_count }}</td>
+          <td class="cell-text">{{ run.note or run.error_message or "" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p class="mt-2 text-sm text-slate-600">아직 실행한 적이 없다.</p>
+    {% endif %}
+  </details>
+</article>
