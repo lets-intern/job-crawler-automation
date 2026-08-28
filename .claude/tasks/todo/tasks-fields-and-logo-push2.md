@@ -25,8 +25,11 @@
           갈린다
         - [x] 2.1.V 검증(파서): 사이트별 건수를 표로 남긴다.
               `tests/test_job_role_source.py` 21건 통과. 표는 아래와 그 파일 첫머리에 있다
-    - [ ] 2.2 마이그레이션으로 `normalized_jobs.job_role` 을 더한다
-        - [ ] 2.2.V 검증(스키마): 적용·역적용
+    - [x] 2.2 마이그레이션으로 `normalized_jobs.job_role` 을 더한다.
+          `job_classifications.job_role` 과 `job_field_overrides.field_name` 의 CHECK 도
+          같은 마이그레이션이 넓힌다 — 앞은 분류가 낸 값이 앉는 자리이고, 뒤가 없으면
+          자유 텍스트인 이 칸을 사람이 고칠 수 없다
+        - [x] 2.2.V 검증(스키마): 적용·역적용. `pytest tests/test_migrations.py` 74건 통과
     - [ ] 2.3 `EXTRACT_FIELDS` 와 응답 스키마에 `job_role` 을 더하고 프롬프트에 칸 설명을
           적는다. 뽑는 칸이므로 있는 글자를 그대로 옮기고 없으면 빈 문자열이다
         - [ ] 2.3.V 검증(정규화): 픽스처로 값이 채워지는지, 없는 공고는 비는지 pytest

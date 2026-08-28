@@ -141,6 +141,7 @@ SQLite 파일 하나. 경로는 `DATABASE_PATH` 가 정하고 Docker named volum
 | career_level | 경력 구분. 신입 / 경력 |
 | work_location | 근무지 |
 | headcount | 모집인원 |
+| job_role | 직무. 제목에서 뽑는 자유 텍스트다. 닫힌 목록이 아니다 |
 | duties | 주요 업무 |
 | preferred | 우대 조건 |
 | hiring_process | 전형 절차 |
@@ -218,6 +219,7 @@ append-only 인 `raw_jobs` 에 매달아야 몇 번을 다시 정규화해도 �
 | raw_job_id | 어느 수집 건의 분류인지. `normalized_jobs.id` 가 아니다. 유일하다 |
 | job_category, work_location, career_level, employment_type, headcount | |
 | duties, preferred, hiring_process, requirements, department, etc_info | |
+| job_role | 0017 이 더했다. 값이 본문이 아니라 제목에서 온다 |
 | dropped_fields | 모델이 냈지만 근거가 없어 버린 칸 이름. 쉼표로 잇는다 |
 | evidence_json | 판정 칸을 그렇게 고른 근거 문장. `{"career_level": "본문 문장"}` |
 | model | 그때의 모델 ID |

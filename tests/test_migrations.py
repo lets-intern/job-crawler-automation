@@ -82,6 +82,8 @@ EXPECTED_COLUMNS = {
         "preferred",
         "hiring_process",
         "etc_info",
+        # 0017 이 더한 직무. 제목에서 뽑는 자유 텍스트다
+        "job_role",
     },
     "normalization_rules": {
         "id",
@@ -143,6 +145,7 @@ ALL_VERSIONS = [
     "0014",
     "0015",
     "0016",
+    "0017",
 ]
 
 
@@ -978,3 +981,118 @@ def test_the_three_come_back_empty_on_down(conn: sqlite3.Connection) -> None:
     row = conn.execute(f"SELECT {', '.join(DROPPED_COLUMNS)} FROM normalized_jobs").fetchone()
     assert [row[name] for name in DROPPED_COLUMNS] == [None] * len(DROPPED_COLUMNS)
     assert conn.execute("SELECT count(*) AS n FROM normalized_jobs").fetchone()["n"] == 1
+
+
+def _at_0016(connection: sqlite3.Connection) -> None:
+    """0017 직전 상태로 만든다. 직무 칸이 아직 없는 스키마다."""
+    db.migrate_up(connection)
+    db.migrate_down(connection, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0017"))
+
+
+def test_job_role_is_added_to_both_tables(conn: sqlite3.Connection) -> None:
+    """분류가 앉히는 자리와 소비 측이 읽는 자리 둘 다에 있어야 값이 끝까지 간다."""
+    _at_0016(conn)
+    assert "job_role" not in _columns(conn, "normalized_jobs")
+    assert "job_role" not in _columns(conn, "job_classifications")
+
+    db.migrate_up(conn)
+
+    assert "job_role" in _columns(conn, "normalized_jobs")
+    assert "job_role" in _columns(conn, "job_classifications")
+
+
+def test_job_role_starts_empty_and_leaves_the_other_values_alone(
+    conn: sqlite3.Connection,
+) -> None:
+    """칸만 더한다. 있던 공고가 사라지거나 남은 칸의 값이 바뀌면 안 된다."""
+    _at_0016(conn)
+    _seed_raw_job(conn)
+    conn.execute(
+        """
+        INSERT INTO normalized_jobs
+               (raw_job_id, company, title, deadline, body, requirements, source_url)
+        VALUES (1, '한화생명', '마케팅 기획', '2026-08-25', '본문', '자격요건',
+                'https://example.test/1')
+        """
+    )
+    before = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
+
+    db.migrate_up(conn)
+
+    after = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
+    assert [tuple(row) for row in after] == [tuple(row) for row in before]
+    assert conn.execute("SELECT job_role FROM normalized_jobs").fetchone()["job_role"] is None
+
+
+def test_job_role_can_be_corrected_by_hand(conn: sqlite3.Connection) -> None:
+    """자유 텍스트라 틀리게 뽑힐 여지가 가장 큰 칸이다. 고칠 길이 없으면 안 된다."""
+    db.migrate_up(conn)
+    _seed_raw_job(conn)
+
+    conn.execute(
+        "INSERT INTO job_field_overrides (raw_job_id, field_name, value) VALUES (1, ?, ?)",
+        ("job_role", "백엔드 개발"),
+    )
+
+    row = conn.execute("SELECT field_name, value FROM job_field_overrides").fetchone()
+    assert (row["field_name"], row["value"]) == ("job_role", "백엔드 개발")
+
+
+def test_the_job_role_migration_keeps_the_overrides_it_did_not_add(
+    conn: sqlite3.Connection,
+) -> None:
+    """표를 다시 만드는 마이그레이션이다. 있던 보정이 id 까지 그대로 넘어와야 한다."""
+    _at_0016(conn)
+    _seed_raw_job(conn)
+    conn.execute(
+        "INSERT INTO job_field_overrides (raw_job_id, field_name, value) VALUES (1, ?, ?)",
+        ("title", "사람이 고친 제목"),
+    )
+    before = conn.execute("SELECT id, created_at FROM job_field_overrides").fetchone()
+
+    db.migrate_up(conn)
+
+    after = conn.execute(
+        "SELECT id, field_name, value, created_at FROM job_field_overrides"
+    ).fetchall()
+    assert len(after) == 1
+    assert after[0]["id"] == before["id"]
+    assert after[0]["value"] == "사람이 고친 제목"
+    assert after[0]["created_at"] == before["created_at"]
+
+
+def test_the_job_role_down_drops_the_column_and_its_corrections(
+    conn: sqlite3.Connection,
+) -> None:
+    """되돌리면 직무 값과 직무에 걸린 보정만 사라진다. 나머지는 그대로다."""
+    db.migrate_up(conn)
+    _seed_raw_job(conn)
+    conn.executemany(
+        "INSERT INTO job_field_overrides (raw_job_id, field_name, value) VALUES (1, ?, ?)",
+        [("title", "사람이 고친 제목"), ("job_role", "백엔드 개발")],
+    )
+
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0017"))
+
+    assert "job_role" not in _columns(conn, "normalized_jobs")
+    assert "job_role" not in _columns(conn, "job_classifications")
+    rows = conn.execute("SELECT field_name FROM job_field_overrides").fetchall()
+    assert [row["field_name"] for row in rows] == ["title"]
+    assert conn.execute("SELECT count(*) AS n FROM raw_jobs").fetchone()["n"] == 1
+
+
+def test_the_job_role_down_keeps_the_corrections_of_the_dropped_columns(
+    conn: sqlite3.Connection,
+) -> None:
+    """0016 이 지운 셋의 보정 행은 되돌릴 때 필요하다. CHECK 를 좁히면 여기서 떨어진다."""
+    db.migrate_up(conn)
+    _seed_raw_job(conn)
+    conn.execute(
+        "INSERT INTO job_field_overrides (raw_job_id, field_name, value) VALUES (1, ?, ?)",
+        ("department", "사람이 고친 부서"),
+    )
+
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0017"))
+
+    rows = conn.execute("SELECT field_name FROM job_field_overrides").fetchall()
+    assert [row["field_name"] for row in rows] == ["department"]
