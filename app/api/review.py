@@ -33,6 +33,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 import sqlite3
 from typing import Annotated, Any
@@ -186,6 +187,27 @@ def _read_overrides(conn: sqlite3.Connection, raw_job_ids: list[int]) -> dict[in
     return found
 
 
+def _read_source(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, str]:
+    """그 수집 건의 원문. `raw_jobs.raw_data_json` 의 `source_text` 키다 (side Push 8).
+
+    `_COLUMNS` 에 넣지 않는다. 원문은 `normalized_jobs` 의 칸이 아니고, 표는 원문을 보여주지
+    않는데 한 페이지 100건의 상세 전문을 함께 실어 오게 된다. 모달을 열 때 한 건만 읽는다.
+
+    JSON 은 파이썬에서 푼다. `json_extract` 는 값이 JSON 이 아니면 그 자리에서 실패하고,
+    그러면 원문 하나 때문에 모달 전체가 열리지 않는다 — 원문이 없는 것은 화면이 말할 수 있는
+    상태이고, 모달이 안 열리는 것은 아니다.
+    """
+    row = conn.execute("SELECT raw_data_json FROM raw_jobs WHERE id = ?", (raw_job_id,)).fetchone()
+    if row is None:
+        return {"text": ""}
+    try:
+        data = json.loads(str(row["raw_data_json"]))
+    except (TypeError, ValueError):
+        return {"text": ""}
+    text = data.get("source_text") if isinstance(data, dict) else None
+    return {"text": str(text) if isinstance(text, str) else ""}
+
+
 def _read_job(conn: sqlite3.Connection, raw_job_id: int) -> sqlite3.Row | None:
     """그 수집 건의 확정 행. 재정규화로 여러 번 만들어졌다면 가장 최근 것이 화면의 값이다."""
     return conn.execute(
@@ -247,6 +269,7 @@ def _modal_response(
         request,
         "fragments/review_modal.html",
         job=job,
+        source=_read_source(conn, raw_job_id),
         fields=[_cell(job, field, overrides) for field in OVERRIDABLE_FIELDS],
         override_count=len(overrides),
         drafts=drafts or {},

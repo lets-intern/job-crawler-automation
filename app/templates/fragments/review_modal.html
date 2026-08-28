@@ -100,6 +100,26 @@
     </table>
     </div>
 
+    {# 수집한 원문. 상세 페이지에서 본문 노드의 부모를 그대로 편 글자다
+       (`raw_jobs.raw_data_json.source_text`, side Push 8).
+
+       읽기만 한다. `raw_jobs` 는 append-only 라 이 자리에 고칠 칸을 두면 안 되고
+       (`.claude/rules/data-safety.md`), 폼 안이라 `readonly` 입력으로 두면 값은 그대로
+       제출된다 — 고칠 수 없는 값 수천 자가 저장 요청마다 따라다닌다. 그래서 입력 요소가
+       아니라 `pre` 다.
+
+       바닥의 `원문 열기` 는 상세 페이지 주소를 여는 것이고, 이것은 그 페이지에서 수집해 둔
+       글자다. 둘은 다른 것이라 이름을 갈라 적는다 #}
+    {% if source.text %}
+    <div class="mt-5 border-t border-slate-200 pt-4">
+      <p class="text-sm font-semibold text-slate-900">수집한 원문</p>
+      <p class="mt-1 text-xs text-slate-500">
+        수집한 그대로다. 고치는 칸이 아니다 — 분류는 원문이 있으면 이 글을 읽는다.
+      </p>
+      <pre class="max-h-64 overflow-y-auto">{{ source.text }}</pre>
+    </div>
+    {% endif %}
+
     {% for field in fields %}
     <div class="mt-5 border-t border-slate-200 pt-4">
       <div class="flex flex-wrap items-center gap-2">
