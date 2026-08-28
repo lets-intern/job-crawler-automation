@@ -59,10 +59,10 @@ def test_위_네비게이션은_묶음_넷뿐이다() -> None:
     assert [label for _, label in NAV] == ["수집", "정규화", "데이터 확인", "운영 설정"]
 
 
-def test_묶음_안의_화면을_전부_합치면_일곱이다() -> None:
-    """줄어든 것은 위 줄뿐이다. 화면 자체는 그대로 일곱 + 운영 설정이다."""
+def test_묶음_안의_화면을_전부_합치면_여덟이다() -> None:
+    """줄어든 것은 위 줄뿐이다. 화면 자체는 여덟 + 운영 설정이다(0025 가 완성 공고를 더했다)."""
     grouped = sum(len(members) for _, _, members in NAV_GROUPS)
-    assert grouped == 7
+    assert grouped == 8
 
 
 def test_부가_워크플로우는_수집이_아니라_정규화_묶음에_있다() -> None:

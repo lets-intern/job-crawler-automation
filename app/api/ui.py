@@ -81,6 +81,7 @@ NAV_GROUPS: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
         "데이터 확인",
         (
             ("/review", "데이터 확인"),
+            ("/complete", "완성 공고"),
             ("/companies", "회사 로고"),
         ),
     ),
