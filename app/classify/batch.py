@@ -1,4 +1,4 @@
-"""분류 실행. 본문이 있고 아직 분류되지 않은 공고를 찾아 돈다.
+"""분류 실행. 보낼 글이 있고 아직 분류되지 않은 공고를 찾아 돈다.
 
 **수집과 따로 돈다.** 같은 실행에서 이어 돌리면 SK 103건일 때 실행이 9분 가까이 길어지고,
 분류가 실패하면 수집까지 실패로 보인다. 수집은 본문까지만 하고, 나누는 것은 여기가 한다
@@ -153,7 +153,7 @@ async def classify_pending(
     client: Any | None = None,
     settings: Settings | None = None,
 ) -> ClassifyProgress:
-    """본문이 있고 아직 분류되지 않은 공고를 상한만큼 돈다."""
+    """원문이나 본문이 있고 아직 분류되지 않은 공고를 상한만큼 돈다."""
     return await classify_ids(
         conn,
         pending_ids(conn, bounded(limit)),

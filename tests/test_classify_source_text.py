@@ -1,4 +1,6 @@
-"""분류가 무엇을 읽고, 무엇에 근거를 돌려 보고, 어디서 자르는지 본다 (9.1.V ~ 9.3.V).
+"""분류가 무엇을 읽고, 무엇에 근거를 돌려 보고, 어디서 자르고, 무엇을 대상으로 삼는지 본다.
+
+9.1.V ~ 9.4.V 다.
 
 Push 8 이 상세 원문을 `raw_jobs.raw_data_json.source_text` 에 넣었다. 분류는 그것을 읽고,
 없으면 본문으로 떨어진다. **폴백이 검사의 요점이다** — 원문은 2026-08-28 이후 수집분에만
@@ -26,7 +28,12 @@ from app.classify.batch import ClassifyProgress, classify_ids
 from app.classify.classifier import MAX_BODY_CHARS, classify_body
 from app.classify.grounding import NO_EVIDENCE, NOT_IN_SOURCE, ground
 from app.classify.schema import RESPONSE_FIELDS
-from app.classify.store import read_classification, read_source
+from app.classify.store import (
+    pending_count,
+    pending_ids,
+    read_classification,
+    read_source,
+)
 from app.config import Settings
 from tests.test_selector_generator import FakeClient
 from tests.test_source_text import HTML_DETAIL, parsed
@@ -201,3 +208,19 @@ def test_상한은_잰_원문_전부를_담는다() -> None:
     길이 = {site: len(parsed(site).source_text) for site in HTML_DETAIL}
 
     assert max(길이.values()) <= MAX_BODY_CHARS, 길이
+
+
+def test_원문만_있고_본문이_빈_건도_대상이다(conn: sqlite3.Connection) -> None:
+    """대상 조건이 본문만 보면 이 건이 조용히 빠진다. 보낼 글이 있는데 영영 안 돈다."""
+    insert(conn, 3, title="공고 3", body="", source_text=SOURCE)
+
+    assert pending_ids(conn) == [3, 2, 1]
+    assert pending_count(conn) == 3
+
+
+def test_원문도_본문도_없으면_대상이_아니다(conn: sqlite3.Connection) -> None:
+    """나눌 것이 없는 건까지 부르면 그 호출은 통째로 버리는 돈이다."""
+    insert(conn, 4, title="공고 4")
+
+    assert 4 not in pending_ids(conn)
+    assert pending_count(conn) == 2

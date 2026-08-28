@@ -36,7 +36,10 @@ _CLASSIFY_TEXT = f"coalesce(nullif({_SOURCE_TEXT}, ''), {_BODY}, '')"
 
 
 def pending_ids(conn: sqlite3.Connection, limit: int | None = None) -> list[int]:
-    """본문이 있고 아직 분류되지 않은 공고. **최근 수집한 것부터다.** 읽기 전용이다.
+    """보낼 글이 있고 아직 분류되지 않은 공고. **최근 수집한 것부터다.** 읽기 전용이다.
+
+    조건은 "원문이나 본문이 있다" 이다. 본문 하나만 보면, 원문은 뽑았는데 본문이 빈 건이
+    대상에서 조용히 빠진다 — 그 건은 보낼 글이 있는데도 영영 분류되지 않는다.
 
     `limit` 은 한 번에 도는 건수의 상한이다. 640건을 한 번에 돌리면 멈출 수가 없다
     (`.claude/tasks/memos/보류/llm-classify/prd-llm-classify.md`).
@@ -54,7 +57,7 @@ def pending_ids(conn: sqlite3.Connection, limit: int | None = None) -> list[int]
           FROM raw_jobs r
           LEFT JOIN job_classifications c ON c.raw_job_id = r.id
          WHERE c.raw_job_id IS NULL
-           AND coalesce({_BODY}, '') <> ''
+           AND {_CLASSIFY_TEXT} <> ''
          ORDER BY r.id DESC{bound}
         """,
         params,
@@ -63,14 +66,18 @@ def pending_ids(conn: sqlite3.Connection, limit: int | None = None) -> list[int]
 
 
 def pending_count(conn: sqlite3.Connection) -> int:
-    """아직 분류되지 않은 공고 수. 화면이 "몇 건 남았나" 로 읽는다."""
+    """아직 분류되지 않은 공고 수. 화면이 "몇 건 남았나" 로 읽는다.
+
+    `pending_ids` 와 같은 조건이어야 한다. 갈리면 화면의 남은 건수와 실제로 도는 건수가
+    다르다.
+    """
     row = conn.execute(
         f"""
         SELECT count(*) AS n
           FROM raw_jobs r
           LEFT JOIN job_classifications c ON c.raw_job_id = r.id
          WHERE c.raw_job_id IS NULL
-           AND coalesce({_BODY}, '') <> ''
+           AND {_CLASSIFY_TEXT} <> ''
         """
     ).fetchone()
     return int(row["n"])
