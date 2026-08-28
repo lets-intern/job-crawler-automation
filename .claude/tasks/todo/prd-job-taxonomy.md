@@ -1,7 +1,7 @@
 # PRD: 직무를 정해진 분류 체계로 나눈다
 
 > 작성일: 2026-08-28
-> 기준 버전: `feat/fields-and-logo` (fields-and-logo 7 Push 완료 시점)
+> 기준 버전: `feat/fields-and-logo` (fields-and-logo 7 Push, side-workflows 11 Push 완료 시점)
 > 근거: `seeds/job-taxonomy-zighang-20260828.json`, `.claude/rules/llm.md`
 
 ## 목표
@@ -166,6 +166,8 @@ job_taxonomy
 **모델이 296개 중에서 실제로 고르는가.** 확인하지 못했다 — 2026-08-28 기준 Gemini 크레딧
 고갈, Qwen 미결제, Claude·GPT 키 없음이라 실호출이 막혀 있다. 목록이 이만큼 길 때 판정이
 쓸 만한지는 실측이 필요하고, 나쁘면 대분류를 먼저 좁히는 두 단계로 되돌릴 수 있다.
+
+**주** (2026-08-28 갱신): Gemini 크레딧은 이후 반영됐다. Push 3 실측에서 다시 확인한다.
 
 **`job_role` 과 겹치는가.** `job_role` 은 제목에서 그대로 뽑은 자유 텍스트이고 이 두 칸은
 판정이다. 셋이 다 필요한지는 값이 쌓인 뒤에 본다.
