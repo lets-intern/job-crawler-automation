@@ -177,6 +177,19 @@ def attach_note(row: CompanyRow, *, cleared: bool) -> str:
     )
 
 
+@dataclass(frozen=True)
+class Refusal:
+    """받지 않은 값 하나. 낱말과 문장을 갖는다 — 사유마다 고치는 자리가 다르다."""
+
+    reason: str
+    message: str
+    title: str = "저장하지 못했다"
+
+
+# 받는 주소 형식. 저장소 설정의 공개 주소와 같은 규칙이다 (`app/storage/settings.py`)
+_SCHEMES = ("http://", "https://")
+
+
 @router.put("/ui/companies/logo", response_class=HTMLResponse)
 def save_logo_fragment(
     request: Request,
@@ -184,7 +197,13 @@ def save_logo_fragment(
     name: Annotated[str, Form()],
     logo_url: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
-    """로고 주소를 그 회사 행에 적는다. 고친 줄 하나만 돌려준다.
+    """이미 어딘가에 올려 둔 주소를 그 회사 행에 적는다. 고친 줄 하나만 돌려준다.
+
+    **우리 저장소를 거치지 않는다.** 파일은 남의 곳에 있고 우리는 주소만 갖는다. 그래서 그
+    주소가 사라지면 로고도 사라지고, 그것을 알 방법은 화면에서 미리보기가 깨지는 것뿐이다.
+
+    형식을 서버에서 본다. 브라우저의 `type="url"` 은 화면을 지나는 값만 막고, `javascript:`
+    로 시작하는 값이 저장되면 그것이 곧 목록의 링크가 된다.
 
     회사명을 주소가 아니라 폼 값으로 받는다. 이름에 슬래시나 물음표가 든 회사가 하나라도
     생기면 주소에 넣은 이름은 다른 경로로 읽힌다.
@@ -193,15 +212,24 @@ def save_logo_fragment(
     따라 그 회사가 목록에서 빠져 무엇이 저장됐는지 확인할 자리가 없어진다.
     """
     cleaned = logo_url.strip()
-    try:
-        companies.set_logo_url(conn, name, cleaned)
-    except companies.CompanyNotFoundError as exc:
-        return render_error(request, "not_found", str(exc))
     row = read_row(conn, name)
-    if row is None:  # pragma: no cover - 방금 고친 행이 사라지는 경로는 없다
-        return render_error(request, "not_found", f"회사 행이 없다: {name!r}")
-    logger.info("회사 로고를 적었다: %s -> %r (공고 %d건)", row.name, cleaned, row.job_count)
-    return _row(request, conn, row, message=attach_note(row, cleared=not cleaned))
+    if row is None:
+        return render_error(request, "not_found", f"회사 행이 없다: {name.strip()!r}")
+    if cleaned and not cleaned.startswith(_SCHEMES):
+        return _row(
+            request,
+            conn,
+            row,
+            error=Refusal(
+                "invalid_input",
+                f"로고 주소는 http:// 나 https:// 로 시작해야 한다: {cleaned!r}",
+                "주소를 받지 않았다",
+            ),
+        )
+    companies.set_logo_url(conn, row.name, cleaned)
+    saved = read_row(conn, row.name) or row
+    logger.info("회사 로고를 적었다: %s -> %r (공고 %d건)", saved.name, cleaned, saved.job_count)
+    return _row(request, conn, saved, message=attach_note(saved, cleared=not cleaned))
 
 
 def _row(
@@ -210,7 +238,7 @@ def _row(
     row: CompanyRow,
     *,
     message: str = "",
-    error: s3.StorageError | None = None,
+    error: Refusal | None = None,
 ) -> HTMLResponse:
     """줄 하나를 돌려준다. 성공도 실패도 그 자리에 남는다."""
     return render(
@@ -254,7 +282,7 @@ def upload_logo_fragment(
         public_url = s3.upload_image(config, data=data, name=f"{UPLOAD_PREFIX}{uuid4().hex}")
     except s3.StorageError as exc:
         logger.info("로고를 올리지 못했다: %s / %s", exc.reason, exc.message)
-        return _row(request, conn, row, error=exc)
+        return _row(request, conn, row, error=Refusal(exc.reason, exc.message, "올리지 못했다"))
 
     companies.set_logo_url(conn, row.name, public_url)
     saved = read_row(conn, row.name) or row

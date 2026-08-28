@@ -1,4 +1,4 @@
-"""회사 화면 (6.1.V ~ 6.6.V).
+"""회사 화면 (6.1.V ~ 6.7.V).
 
 보는 것은 넷이다. 네비게이션에 자리가 생겼는지, 그 주소가 열리면서 목록 조각을 부르는지,
 행이 없을 때 화면이 "없음" 으로 끝내지 않고 언제 생기는지 말하는지, 그리고 공고 수가
@@ -550,3 +550,63 @@ def test_화면이_받는_형식과_상한을_적는다(client: TestClient) -> N
     assert s3.ACCEPTED in body
     assert s3.MAX_IMAGE_LABEL in body
     assert "SVG 는 받지 않는다" in body
+
+
+def test_밖에_올려_둔_주소를_붙여넣으면_저장되고_미리보기가_뜬다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """우리 저장소를 거치지 않는 길이다. 파일은 남의 곳에 있고 우리는 주소만 갖는다."""
+    save_storage(conn, "http://localhost:9000/logos")
+    add_job(conn, "당근", 1)
+    conn.commit()
+
+    body = client.put(
+        "/ui/companies/logo",
+        data={"name": "당근", "logo_url": "https://cdn.elsewhere.test/daangn.png"},
+    ).text
+
+    stored = companies.read(conn, "당근")
+    assert stored is not None and stored.logo_url == "https://cdn.elsewhere.test/daangn.png"
+    assert '<img src="https://cdn.elsewhere.test/daangn.png"' in body
+
+
+def test_http_로_시작하지_않는_주소는_받지_않는다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """브라우저의 type=url 은 화면을 지나는 값만 막는다. 저장되면 그것이 곧 목록의 링크다."""
+    companies.ensure(conn, "당근")
+    conn.commit()
+
+    body = client.put(
+        "/ui/companies/logo",
+        data={"name": "당근", "logo_url": "javascript:alert(1)"},
+    ).text
+
+    assert "주소를 받지 않았다" in body
+    assert "http:// 나 https:// 로 시작해야 한다" in body
+    stored = companies.read(conn, "당근")
+    assert stored is not None and stored.logo_url is None
+
+
+def test_거절해도_그_회사의_옛_주소는_그대로다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    companies.ensure(conn, "당근")
+    companies.set_logo_url(conn, "당근", "https://cdn.elsewhere.test/old.png")
+    conn.commit()
+
+    client.put("/ui/companies/logo", data={"name": "당근", "logo_url": "ftp://x/y.png"})
+
+    stored = companies.read(conn, "당근")
+    assert stored is not None and stored.logo_url == "https://cdn.elsewhere.test/old.png"
+
+
+def test_붙여넣기_길이_저장소를_거치지_않는다고_화면에_적힌다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    companies.ensure(conn, "당근")
+    conn.commit()
+
+    body = client.get("/ui/companies").text
+
+    assert "우리 저장소를 거치지 않는다" in body
