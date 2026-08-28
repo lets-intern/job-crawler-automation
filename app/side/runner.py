@@ -289,6 +289,37 @@ def start(
     return _row(conn, taken.run_id)
 
 
+def trigger_after_crawl(conn: sqlite3.Connection, *, new_count: int) -> None:
+    """크롤 실행이 끝난 자리에서 부른다. 새 공고가 있을 때만 `after_crawl` 분류를 잇는다.
+
+    `app/crawler/runner.py` 의 실행 끝, `notify_new_jobs` 를 부르는 것과 같은 자리다
+    (`app/notify/new_jobs.py`). 그 모듈과 같은 규칙 셋을 따른다.
+
+    **적재 건수가 0 이면 아무것도 하지 않는다.** 신규가 하루 0~1건이라 이 조건이 없으면
+    대상 없는 실행이 사이트 수만큼 쌓인다 (PRD 6절).
+
+    **여기서 예외가 나가지 않는다.** 부르는 자리가 크롤 실행의 끝이라, 분류 쪽 사고 하나가
+    수집을 실패로 만들면 안 된다. 워크플로우 하나가 걸려도 나머지는 계속 돈다 — 하나가
+    실패했다고 전부 건너뛰면 그 이유를 알 길이 없다.
+
+    `import app.db` 를 함수 안에서 한다. 이 모듈이 최상단에서 `app.db` 를 물면 이 모듈을
+    임포트하는 모든 자리가 그 무게를 진다 — 실제로 쓰는 곳은 이 함수 하나뿐이다.
+    """
+    if new_count <= 0:
+        return
+    from app import db
+
+    for workflow in store.list_all(conn):
+        if workflow.kind != store.CLASSIFY:
+            continue
+        if workflow.trigger_kind != "after_crawl" or workflow.status != store.ACTIVE:
+            continue
+        try:
+            start(conn, db.connect, workflow.id, trigger=AFTER_CRAWL)
+        except Exception:
+            logger.exception("수집 직후 분류 워크플로우 %s 를 걸지 못했다", workflow.id)
+
+
 def _work(
     connect: ConnectFactory, taken: Claim, client: Any | None, settings: Settings | None
 ) -> None:

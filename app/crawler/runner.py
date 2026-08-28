@@ -68,6 +68,7 @@ from app.selector.schema import (
     validate_selectors,
 )
 from app.settings import FIRST_RUN_LIMIT, read_int
+from app.side.runner import trigger_after_crawl
 
 logger = logging.getLogger(__name__)
 
@@ -250,6 +251,9 @@ async def run_workflow(
             if item.state == STORED
         ],
     )
+    # 새 공고가 있을 때만 `after_crawl` 분류를 잇는다. 실패해도 이 실행은 그대로다 —
+    # 알림과 같은 이유다 (`app/side/runner.py` 의 `trigger_after_crawl`)
+    trigger_after_crawl(conn, new_count=result.new_count)
     return result
 
 
