@@ -7,6 +7,7 @@
    카드 자체가 버튼이다. `data-modal-open` 이 클릭을 잡고 `app/templates/base.html` 의
    공용 모달을 연다 — 이 화면 전용 읽기 전용 미리보기(`GET /ui/complete/{id}/preview`)를
    연다. 고치는 기능은 없다 #}
+{% from "fragments/complete_card.html" import complete_card %}
 {% if is_first_page %}
 <div id="complete-cards" class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
   {% if not cards %}
@@ -16,34 +17,7 @@
   {% endif %}
 {% endif %}
 {% for card in cards %}
-  {% set row = card.row %}
-  <button type="button" id="complete-open-{{ row.id }}" data-modal-open
-          hx-get="/ui/complete/{{ row.id }}/preview"
-          hx-target="#app-modal-body" hx-swap="innerHTML"
-          class="block overflow-hidden rounded-lg border border-slate-200 bg-white text-left shadow-sm hover:border-slate-400 hover:shadow"
-          title="공고 미리보기">
-    <div class="relative flex h-36 items-center justify-center bg-white">
-      {% if row.logo_url %}
-      <img src="{{ row.logo_url }}" alt="{{ row.company or row.parent_company }} 로고"
-           class="h-full w-full object-contain p-1" loading="lazy">
-      {% endif %}
-      {% if card.d_day %}
-      <span class="badge absolute right-2 top-2 {% if card.d_day == '마감' %}badge-idle{% else %}badge-warn{% endif %}">{{ card.d_day }}</span>
-      {% endif %}
-    </div>
-    <div class="p-3">
-      <p class="mb-0 truncate text-sm font-semibold text-slate-900">
-        {{ row.company or row.parent_company }}
-      </p>
-      <p class="mt-1 line-clamp-2 text-sm font-bold text-slate-900">{{ row.title }}</p>
-      {% set tags = [row.job_major, row.job_minor, row.employment_type, row.career_level] | select | list %}
-      {% if tags %}
-      <p class="mb-0 mt-2 truncate text-xs text-slate-500">
-        {% for tag in tags %}#{{ tag }}{% if not loop.last %} {% endif %}{% endfor %}
-      </p>
-      {% endif %}
-    </div>
-  </button>
+  {{ complete_card(card, "complete-open") }}
 {% endfor %}
 {% if next_after %}
 <div id="complete-sentinel" hx-get="/ui/complete?after={{ next_after }}" hx-trigger="revealed"

@@ -55,8 +55,9 @@ def client(path: pathlib.Path, conn: sqlite3.Connection) -> Iterator[TestClient]
         app.dependency_overrides.clear()
 
 
-def test_위_네비게이션은_묶음_넷뿐이다() -> None:
-    assert [label for _, label in NAV] == ["수집", "정규화", "데이터 확인", "운영 설정"]
+def test_위_네비게이션은_다섯이다() -> None:
+    """대시보드는 하위 화면이 없어 `/settings` 처럼 묶이지 않고 맨 앞에 직접 얹힌다."""
+    assert [label for _, label in NAV] == ["대시보드", "수집", "정규화", "데이터 확인", "운영 설정"]
 
 
 def test_묶음_안의_화면을_전부_합치면_아홉이다() -> None:
@@ -77,9 +78,9 @@ def test_부가_워크플로우는_수집이_아니라_정규화_묶음에_있�
 @pytest.mark.parametrize(
     ("path_", "group_path"),
     [
-        ("/", "/"),
-        ("/tests", "/"),
-        ("/workflows", "/"),
+        ("/crawlers", "/crawlers"),
+        ("/tests", "/crawlers"),
+        ("/workflows", "/crawlers"),
         ("/rules", "/rules"),
         ("/side", "/rules"),
         ("/taxonomy", "/rules"),
@@ -99,7 +100,7 @@ def test_묶인_화면은_위에서_자기_묶음이_켜진다(
 @pytest.mark.parametrize(
     ("path_", "own_label"),
     [
-        ("/", "크롤러 등록"),
+        ("/crawlers", "크롤러 등록"),
         ("/tests", "테스트 실행"),
         ("/workflows", "워크플로우"),
         ("/rules", "정규화 규칙"),
@@ -119,8 +120,8 @@ def test_묶인_화면은_두_번째_줄에서_자기_자리가_켜진다(
 
 
 def test_묶음_안의_다른_화면도_두_번째_줄에서_보인다(client: TestClient) -> None:
-    """`/` 에 있어도 같은 묶음의 나머지가 눈에 보여야, 늘어난 화면을 찾을 수 있다."""
-    body = client.get("/").text
+    """`/crawlers` 에 있어도 같은 묶음의 나머지가 눈에 보여야, 늘어난 화면을 찾을 수 있다."""
+    body = client.get("/crawlers").text
 
     for member_path, label in next(members for _, name, members in NAV_GROUPS if name == "수집"):
         assert f'href="{member_path}"' in body
@@ -133,3 +134,13 @@ def test_운영_설정은_묶이지_않고_그대로다(client: TestClient) -> N
     assert '<a href="/settings" aria-current="page"' in body
     # 운영 설정은 자기 하위 메뉴(SETTINGS_NAV)만 그린다. 두 번째 묶음 줄과 섞이지 않는다
     assert "정규화 규칙" not in body
+
+
+def test_대시보드는_묶이지_않고_그대로다(client: TestClient) -> None:
+    """대시보드도 `/settings` 와 같은 이유로 묶이지 않는다 — 하위 화면이 없다."""
+    body = client.get("/").text
+
+    assert '<a href="/" aria-current="page"' in body
+    # 두 번째 묶음 줄(`group_nav`) 자체가 없다. 화면 초기 응답에는 조각이 아직 안 들어와
+    # 자주 쓰는 화면 목록의 문구와 섞일 걱정 없이 마크업으로 바로 확인할 수 있다
+    assert '<nav class="mt-2">' not in body

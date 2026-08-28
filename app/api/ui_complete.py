@@ -86,13 +86,15 @@ def _d_day(deadline: str | None) -> str | None:
     return f"D-{delta}"
 
 
-def _rows(conn: sqlite3.Connection, after: int | None) -> list[sqlite3.Row]:
+def _rows(
+    conn: sqlite3.Connection, after: int | None, *, limit: int = PAGE_SIZE
+) -> list[sqlite3.Row]:
     params: list[object] = []
     where = _COMPLETE_WHERE
     if after is not None:
         where += " AND n.id < ?"
         params.append(after)
-    params.append(PAGE_SIZE)
+    params.append(limit)
     return conn.execute(
         f"""
         SELECT n.id, n.raw_job_id, n.parent_company, n.company, n.title, n.job_role,
@@ -107,6 +109,21 @@ def _rows(conn: sqlite3.Connection, after: int | None) -> list[sqlite3.Row]:
         """,
         params,
     ).fetchall()
+
+
+def completed_count(conn: sqlite3.Connection) -> int:
+    """지금까지 완성으로 판정된 공고 수. 대시보드 지표가 이 값을 그대로 쓴다."""
+    row = conn.execute(
+        f"SELECT count(*) AS n FROM normalized_jobs n WHERE {_COMPLETE_WHERE}"
+    ).fetchone()
+    return int(row["n"])
+
+
+def recent_completed(conn: sqlite3.Connection, limit: int) -> list[dict[str, object]]:
+    """가장 최근 완성 공고. 목록 카드(`cards`)와 같은 모양이라 대시보드가 같은 카드
+    마크업을 그대로 재사용할 수 있다."""
+    rows = _rows(conn, None, limit=limit)
+    return [{"row": row, "d_day": _d_day(row["deadline"])} for row in rows]
 
 
 def _read_detail(conn: sqlite3.Connection, normalized_id: int) -> sqlite3.Row | None:

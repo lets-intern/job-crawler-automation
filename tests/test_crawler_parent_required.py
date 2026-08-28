@@ -99,7 +99,7 @@ def test_default_company_를_아예_안_보내도_거절된다(client: TestClien
 
 
 def test_등록_화면의_입력칸에_필수_표시가_있다(client: TestClient) -> None:
-    body = client.get("/").text
+    body = client.get("/crawlers").text
 
     assert "모회사 이름 (필수)" in body
     assert 'id="crawler-company"' in body

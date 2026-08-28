@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% from "macros.html" import empty %}
+{% block title %}대시보드{% endblock %}
+{% block heading %}대시보드{% endblock %}
+{% block content %}
+<section>
+  <div id="dashboard-summary" hx-get="/ui/dashboard" hx-trigger="load" hx-swap="innerHTML">
+    {{ empty("불러오는 중") }}
+  </div>
+</section>
+<section>
+  <h3>최근 로그</h3>
+  <p class="text-sm text-slate-600">
+    이 프로세스가 방금 낸 로그 최근 줄이다. 재시작하면 빈다 — 지난 로그를 찾을 때는
+    <code>docker compose logs</code>를 본다.
+  </p>
+  <div id="dashboard-logs" hx-get="/ui/dashboard/logs" hx-trigger="load, every 3s" hx-swap="innerHTML">
+    {{ empty("불러오는 중") }}
+  </div>
+</section>
+{% endblock %}

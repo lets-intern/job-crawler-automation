@@ -22,6 +22,7 @@ from app.api import (
     ui_companies,
     ui_complete,
     ui_crawlers,
+    ui_dashboard,
     ui_deliver,
     ui_llm,
     ui_notify,
@@ -39,10 +40,20 @@ from app.api import (
 from app.config import get_settings
 from app.crawler.fetcher import close_fetcher
 from app.crawler.runner import close_orphan_runs
+from app.log_ring import handler as _log_ring_handler
 from app.scheduler import get_scheduler, shutdown_scheduler
 from app.side.runs import close_orphans as close_orphan_side_runs
 
 logger = logging.getLogger(__name__)
+
+# 대시보드의 실시간 로그가 읽는 자리. `app` 로거 아래는 전부 기본이 `NOTSET` 이라 이 한
+# 줄이 없으면 부모(루트, 기본 WARNING)를 따라가 `logger.info` 호출이 버퍼에 닿지 않는다.
+# 모듈이 다시 임포트돼도(리로드 없는 한 프로세스 안에서는 일어나지 않지만) 핸들러가
+# 두 번 붙지 않게 막는다 — 붙으면 로그 줄마다 화면에 두 번씩 나온다.
+_app_logger = logging.getLogger("app")
+_app_logger.setLevel(logging.INFO)
+if _log_ring_handler not in _app_logger.handlers:
+    _app_logger.addHandler(_log_ring_handler)
 
 
 @asynccontextmanager
@@ -94,6 +105,7 @@ app.include_router(classify.router)
 app.include_router(side.router)
 # 화면. API 라우터 뒤에 붙인다 — `/api/...` 가 먼저 잡힌다
 app.include_router(ui.router)
+app.include_router(ui_dashboard.router)
 app.include_router(ui_crawlers.router)
 app.include_router(ui_tests.router)
 app.include_router(ui_workflows.router)

@@ -58,12 +58,16 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 # 사이트를 가져오는 일이 아니라 이미 가져온 데이터를 가공하는 일이라, 그 자리는 틀렸다 —
 # raw_jobs 를 만드는 것이 수집이고 그것을 읽어 normalized_jobs 를 채우거나 고치는 것이
 # 정규화다. 부가 워크플로우는 후자다.
+#
+# "수집" 묶음의 대표 주소는 `/` 가 아니라 `/crawlers` 다 — 루트는 대시보드가 가져갔다
+# (2026-08-29 결정, `app/api/ui_dashboard.py`). 대시보드는 화면 하나뿐이라 두 번째 줄
+# 메뉴가 필요 없어서 `NAV_GROUPS` 에 묶지 않고 `NAV` 에 직접 얹는다 — `/settings` 와 같다.
 NAV_GROUPS: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
     (
-        "/",
+        "/crawlers",
         "수집",
         (
-            ("/", "크롤러 등록"),
+            ("/crawlers", "크롤러 등록"),
             ("/tests", "테스트 실행"),
             ("/workflows", "워크플로우"),
         ),
@@ -90,7 +94,11 @@ NAV_GROUPS: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
 
 # 네비게이션. 경로와 이름은 여기 한 곳에서만 정한다. 묶음의 이름과 대표 주소는
 # `NAV_GROUPS` 에서 그대로 가져온다 — 두 곳에 따로 적으면 화면 하나가 늘 때 한쪽만 넓어진다
+#
+# 대시보드(`/`)는 `NAV_GROUPS` 어디에도 없다. `/settings` 와 같은 이유다 — 묶여야 할
+# 하위 화면이 없는 화면 하나는 두 번째 줄 메뉴를 만들 이유가 없다
 NAV: tuple[tuple[str, str], ...] = (
+    ("/", "대시보드"),
     *((path, label) for path, label, _ in NAV_GROUPS),
     ("/settings", "운영 설정"),
 )
@@ -435,7 +443,7 @@ def install_ui_error_handlers(app: FastAPI) -> None:
         return render_error(request, "server_error", f"{type(exc).__name__}: {exc}")
 
 
-@router.get("/", response_class=HTMLResponse)
+@router.get("/crawlers", response_class=HTMLResponse)
 def crawlers_page(request: Request) -> HTMLResponse:
     return render_page(request, "pages/crawlers.html")
 
