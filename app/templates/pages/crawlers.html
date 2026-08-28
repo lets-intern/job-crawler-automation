@@ -39,11 +39,13 @@
         <input id="crawler-name" name="name" type="text" size="40" class="w-full max-w-md">
       </p>
       <p>
-        <label for="crawler-company">회사명 (선택)</label>
+        <label for="crawler-company">모회사 이름 (필수)</label>
         <br>
-        <input id="crawler-company" name="default_company" type="text" size="40" class="w-full max-w-md">
+        <input id="crawler-company" name="default_company" type="text" size="40" required class="w-full max-w-md">
         <br>
-        <span class="text-sm text-slate-500">공고에서 회사명을 뽑지 못한 건에만 쓰인다. 페이지에 회사명이 있는 사이트는 비워 둔다.</span>
+        <span class="text-sm text-slate-500">이 크롤러가 속한 모회사다. 계열사가 하나뿐인 사이트도 그 회사 이름을 그대로 적는다 —
+        비워 두면 등록이 거절된다. 공고에서 뽑히는 자회사명(있으면)과는 다른 칸이고,
+        모회사는 여기서 적은 값 그대로 쓰인다.</span>
       </p>
       <p>
         <button type="submit">등록</button>

@@ -193,7 +193,10 @@ def test_화면_경로도_같은_기본값을_쓴다(
     client: TestClient, conn: sqlite3.Connection, called_with: list[str]
 ) -> None:
     """조각 라우트가 자기 기본값을 따로 들고 있으면 화면과 API 가 갈린다."""
-    response = client.post("/ui/crawlers", data={"list_url": LIST_URL, "detail_url": DETAIL_URL})
+    response = client.post(
+        "/ui/crawlers",
+        data={"list_url": LIST_URL, "detail_url": DETAIL_URL, "default_company": "테스트"},
+    )
 
     assert response.status_code == 200
     assert modes(conn) == ["static"]

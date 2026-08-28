@@ -213,7 +213,9 @@ def test_화면_결과에_건너뜀_이_단어로_나온다(
 ) -> None:
     """실패로 적으면 운영자는 고칠 곳으로 읽는다 (`.claude/rules/writing.md`)."""
     stub_discoverer(found=False)
-    html = client.post("/ui/crawlers", data={"list_url": LIST_URL}).text
+    html = client.post(
+        "/ui/crawlers", data={"list_url": LIST_URL, "default_company": "테스트"}
+    ).text
 
     assert "건너뜀" in html
     # 12.4 에서 문구가 "확인하지 않은 필드" 에서 바뀌었다. 셀렉터가 비어 건너뛴 것까지

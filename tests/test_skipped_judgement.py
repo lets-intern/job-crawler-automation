@@ -174,7 +174,10 @@ def test_the_screen_marks_the_three_judgements_as_words(client: TestClient) -> N
     payload["detail"]["requirements"] = "div.no-such-requirements"
     use_generator(payload)
 
-    html = client.post("/ui/crawlers", data={"list_url": LIST_URL, "detail_url": DETAIL_URL}).text
+    html = client.post(
+        "/ui/crawlers",
+        data={"list_url": LIST_URL, "detail_url": DETAIL_URL, "default_company": "테스트"},
+    ).text
 
     rows = {}
     for chunk in html.split("<tr>")[1:]:
@@ -196,7 +199,10 @@ def test_the_screen_separates_the_skipped_fields_from_the_failed_ones(
     payload["detail"]["requirements"] = "div.no-such-requirements"
     use_generator(payload)
 
-    html = client.post("/ui/crawlers", data={"list_url": LIST_URL, "detail_url": DETAIL_URL}).text
+    html = client.post(
+        "/ui/crawlers",
+        data={"list_url": LIST_URL, "detail_url": DETAIL_URL, "default_company": "테스트"},
+    ).text
 
     fix_line = next(line for line in html.splitlines() if "손으로 고쳐야 하는 필드" in line)
     skip_line = next(line for line in html.splitlines() if "건너뛴 필드" in line)

@@ -320,7 +320,10 @@ def test_저장한_경로는_등록_판정이_덮어쓰지_않는다(
             list_count=12,
         )
     )
-    client.post("/ui/crawlers", data={"list_url": LIST_URL, "detail_url": DETAIL_URL})
+    client.post(
+        "/ui/crawlers",
+        data={"list_url": LIST_URL, "detail_url": DETAIL_URL, "default_company": "테스트"},
+    )
 
     row = conn.execute(
         "SELECT list_mode, detail_mode FROM crawlers WHERE id = ?", (crawler_id,)
@@ -342,7 +345,10 @@ def test_등록_결과에_정해진_경로와_근거가_나온다(
         )
     )
 
-    html = client.post("/ui/crawlers", data={"list_url": LIST_URL, "detail_url": DETAIL_URL}).text
+    html = client.post(
+        "/ui/crawlers",
+        data={"list_url": LIST_URL, "detail_url": DETAIL_URL, "default_company": "테스트"},
+    ).text
 
     assert "정해진 경로" in html
     assert "정적 목록에서 항목 12건과 상세 주소를 찾았다" in html
@@ -365,7 +371,10 @@ def test_알아낸_상세_API_는_설정까지_함께_저장된다(
         )
     )
 
-    html = client.post("/ui/crawlers", data={"list_url": LIST_URL, "detail_url": DETAIL_URL}).text
+    html = client.post(
+        "/ui/crawlers",
+        data={"list_url": LIST_URL, "detail_url": DETAIL_URL, "default_company": "테스트"},
+    ).text
 
     row = conn.execute("SELECT * FROM crawlers ORDER BY id DESC LIMIT 1").fetchone()
     assert (row["list_mode"], row["detail_mode"]) == ("playwright", "api")
@@ -388,7 +397,10 @@ def test_경로를_못_정해도_등록은_남고_사유가_보인다(
         )
     )
 
-    html = client.post("/ui/crawlers", data={"list_url": LIST_URL, "detail_url": DETAIL_URL}).text
+    html = client.post(
+        "/ui/crawlers",
+        data={"list_url": LIST_URL, "detail_url": DETAIL_URL, "default_company": "테스트"},
+    ).text
 
     assert conn.execute("SELECT COUNT(*) FROM crawlers").fetchone()[0] == 1
     assert "detail_unreachable" in html
@@ -400,7 +412,10 @@ def test_판정_중_예외가_나도_등록은_끝난다(client: TestClient, con
     """브라우저가 없는 배포에서도 등록은 되고, 못 알아냈다는 사실만 화면에 남는다."""
     use_stubs(RuntimeError("Chromium 을 띄우지 못했다"))
 
-    response = client.post("/ui/crawlers", data={"list_url": LIST_URL, "detail_url": DETAIL_URL})
+    response = client.post(
+        "/ui/crawlers",
+        data={"list_url": LIST_URL, "detail_url": DETAIL_URL, "default_company": "테스트"},
+    )
 
     assert response.status_code == 200
     assert conn.execute("SELECT COUNT(*) FROM crawlers").fetchone()[0] == 1
