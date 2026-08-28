@@ -70,6 +70,7 @@ from app.api.ui import render, render_page
 from app.classify.store import read_suggestions, read_suggestions_batch
 from app.crawler.collect import API
 from app.normalize.engine import OVERRIDABLE_FIELDS
+from app.taxonomy import list_majors
 
 router = APIRouter(tags=["ui"], include_in_schema=False)
 
@@ -473,6 +474,9 @@ def review_filters_fragment(
         "fragments/review_filters.html",
         workflows=workflows,
         companies=[row["name"] for row in companies],
+        # 켜진 대분류만 고를 수 있게 낸다(5.2). 꺼진 대분류로 이미 분류된 공고는 이 목록에
+        # 없어도 조회 조건 값 자체는 그대로 받는다 — `read_filter` 가 표에 대지 않는다
+        job_majors=[major.name for major in list_majors(conn, enabled_only=True)],
         page_sizes=PAGE_SIZES,
         default_page_size=DEFAULT_PAGE_SIZE,
         deadline_states=DEADLINE_STATES,
