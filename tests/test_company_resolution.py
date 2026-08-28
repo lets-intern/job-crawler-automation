@@ -1,12 +1,12 @@
-"""정규화 단계의 회사명 해결 테스트.
+"""정규화 단계의 회사명 두 칸 테스트.
 
-확인하는 것은 넷이다.
+칸이 갈린 뒤로 합치는 일이 없다. 확인하는 것은 다섯이다.
 
-- 파싱값이 있으면 파싱값이 이기고 `company_source='parsed'` 다
-- 파싱값이 없으면 운영자값을 쓰고 `company_source='operator'` 다
-- 운영자값도 없으면 크롤러 이름을 쓰고 `company_source='operator'` 다 (1.3)
-- 그 셋이 다 없으면 `company` 와 `company_source` 가 모두 NULL 이다
-- 계열사 두 건이 섞인 목록에서 두 건이 서로 다른 회사명을 받는다
+- `parent_company` 는 `crawlers.default_company`, 없으면 크롤러 이름이다
+- `company` 는 공고에서 뽑은 값 그대로다. 모회사가 그 자리를 메우지 않는다
+- 사이트가 회사명을 주지 않으면 `company` 는 NULL 이고 `parent_company` 만 남는다
+- 둘 다 없으면 둘 다 NULL 이다. 빈 문자열로 채우지 않는다
+- 계열사 두 건이 섞인 목록에서 두 건이 서로 다른 자회사를, 같은 모회사를 받는다
 
 픽스처로 돈다. 실사이트에 나가지 않는다.
 """
@@ -21,12 +21,9 @@ from typing import Any
 from app import db
 from app.crawler.runner import run_workflow
 from app.normalize.engine import (
-    COMPANY_SOURCE,
-    OPERATOR,
-    PARSED,
+    PARENT_COMPANY,
     normalize_fields,
-    read_default_company,
-    resolve_company,
+    read_parent_company,
 )
 from app.normalize.rules import build_rule
 from tests.test_company_selector import (
@@ -54,119 +51,121 @@ def add_rule(
 
 
 def companies(conn: sqlite3.Connection) -> list[tuple[str | None, str | None]]:
+    """(모회사, 자회사) 짝. 순서가 칸의 넓은 쪽부터인 것은 화면과 계약 문서와 같다."""
     rows = conn.execute(
-        "SELECT company, company_source FROM normalized_jobs ORDER BY raw_job_id"
+        "SELECT parent_company, company FROM normalized_jobs ORDER BY raw_job_id"
     ).fetchall()
-    return [(row["company"], row["company_source"]) for row in rows]
+    return [(row["parent_company"], row["company"]) for row in rows]
 
 
-def test_parsed_value_wins_over_the_operator_value() -> None:
-    assert resolve_company({"company": "삼성SDS"}, "삼성전자") == ("삼성SDS", PARSED)
+def test_the_parsed_value_and_the_operator_value_no_longer_compete() -> None:
+    """두 값이 한 칸을 두고 다투던 자리다. 이제 각자의 칸에 앉는다."""
+    fields = normalize_fields({"company": "삼성SDS"}, [], "삼성전자")
+
+    assert (fields[PARENT_COMPANY], fields["company"]) == ("삼성전자", "삼성SDS")
 
 
-def test_operator_value_is_used_when_nothing_was_parsed() -> None:
-    assert resolve_company({"company": "   "}, "삼성전자") == ("삼성전자", OPERATOR)
-    assert resolve_company({}, "삼성전자") == ("삼성전자", OPERATOR)
+def test_the_subsidiary_stays_empty_when_the_site_did_not_name_one() -> None:
+    """이 Push 의 핵심이다. 모회사 이름이 자회사 칸으로 새어 들어가면 안 된다."""
+    for raw in ({}, {"company": ""}):
+        fields = normalize_fields(raw, [], "삼성전자")
+
+        assert fields[PARENT_COMPANY] == "삼성전자"
+        assert fields["company"] is None
 
 
-def test_neither_source_leaves_both_empty() -> None:
-    assert resolve_company({}, None) == ("", None)
-    assert resolve_company({"company": ""}, "   ") == ("", None)
+def test_a_blank_parsed_company_is_the_trim_rule_s_job() -> None:
+    """`company` 는 이제 다른 필드와 똑같다. 공백만 든 값을 비우는 것은 규칙이 한다.
+
+    해결 단계가 공백을 판정하던 자리가 사라졌다. 그 판정을 여기 남겨 두면 `company` 하나만
+    다른 필드와 다르게 동작하고, 그 차이는 규칙을 고칠 때 드러난다
+    (`seeds/normalization-rules.json` 의 `company` trim 규칙이 우선순위 0 이다).
+    """
+    fields = normalize_fields({"company": "   "}, [build_rule("company", "trim", {})], "삼성전자")
+
+    assert fields[PARENT_COMPANY] == "삼성전자"
+    assert fields["company"] is None
 
 
-async def test_two_affiliates_on_one_site_get_different_companies(
+def test_neither_column_is_filled_with_an_empty_string() -> None:
+    """빈 문자열은 "회사명이 있다" 와 구분되지 않는다. 값 없음은 NULL 하나로만 나타난다."""
+    fields = normalize_fields({"company": ""}, [], None)
+    assert (fields[PARENT_COMPANY], fields["company"]) == (None, None)
+
+    blank = normalize_fields({"company": ""}, [], "   ")
+    assert blank[PARENT_COMPANY] is None
+
+
+async def test_two_affiliates_on_one_site_get_different_subsidiaries(
     tmp_path: pathlib.Path,
 ) -> None:
-    """이 Push 의 이유다. 사이트 하나에 계열사 공고가 섞여도 공고마다 회사명이 따로 붙는다."""
+    """사이트 하나에 계열사 공고가 섞여도 공고마다 자회사가 따로 붙고, 모회사는 같다."""
     conn = make_conn(tmp_path / "jobs.db", WITH_COMPANY, default_company="삼성전자")
     try:
         await run_workflow(conn, 1, fetcher=stub_fetcher(), limit=2)
 
-        assert companies(conn) == [("삼성SDS", PARSED), ("삼성전기(주)", PARSED)]
+        assert companies(conn) == [("삼성전자", "삼성SDS"), ("삼성전자", "삼성전기(주)")]
     finally:
         conn.close()
 
 
-async def test_operator_value_fills_a_site_without_a_company(tmp_path: pathlib.Path) -> None:
+async def test_a_site_without_a_company_keeps_the_subsidiary_null(
+    tmp_path: pathlib.Path,
+) -> None:
+    """옛 동작이면 두 건 모두 `삼성전자` 였다. 그것이 계열사를 가르는 값을 지우고 있었다."""
     conn = make_conn(tmp_path / "jobs.db", WITHOUT_COMPANY, default_company="삼성전자")
     try:
         await run_workflow(conn, 1, fetcher=stub_fetcher(), limit=2)
 
-        assert companies(conn) == [("삼성전자", OPERATOR), ("삼성전자", OPERATOR)]
+        assert companies(conn) == [("삼성전자", None), ("삼성전자", None)]
     finally:
         conn.close()
 
 
-async def test_the_crawler_name_fills_it_when_neither_source_has_one(
+async def test_the_crawler_name_fills_the_parent_when_the_operator_wrote_nothing(
     tmp_path: pathlib.Path,
 ) -> None:
-    """2026-08-26 결정. 비워 두는 것보다 상위 기업 이름이라도 있는 편이 낫다 (1.3).
-
-    `crawlers.name` 은 NOT NULL 이라, 워크플로우가 수집한 공고의 회사명은 이제 비지 않는다.
-    사이트가 준 값인지 우리가 채운 값인지는 `company_source` 가 그대로 가른다.
-    """
+    """2026-08-26 결정. 비워 두는 것보다 상위 기업 이름이라도 있는 편이 낫다 (1.3)."""
     conn = make_conn(tmp_path / "jobs.db", WITHOUT_COMPANY)
     try:
         await run_workflow(conn, 1, fetcher=stub_fetcher(), limit=2)
 
-        assert companies(conn) == [("그룹 채용", OPERATOR), ("그룹 채용", OPERATOR)]
+        assert companies(conn) == [("그룹 채용", None), ("그룹 채용", None)]
     finally:
         conn.close()
 
 
-def test_nothing_at_all_still_stays_null() -> None:
-    """빈 문자열로 채우지 않는다. 빈 문자열은 "회사명이 있다" 와 구분되지 않는다."""
-    assert resolve_company({"company": ""}, None) == ("", None)
-
-
-async def test_rules_apply_to_the_resolved_company(tmp_path: pathlib.Path) -> None:
-    """ "삼성전기(주)" 를 "삼성전기" 로 맞추는 것은 mapping 규칙의 일이다."""
-    conn = make_conn(tmp_path / "jobs.db", WITH_COMPANY)
-    try:
-        add_rule(conn, "company", "mapping", {"map": {"삼성전기(주)": "삼성전기"}})
-
-        await run_workflow(conn, 1, fetcher=stub_fetcher(), limit=2)
-
-        assert companies(conn) == [("삼성SDS", PARSED), ("삼성전기", PARSED)]
-    finally:
-        conn.close()
-
-
-def test_a_rule_that_empties_the_company_clears_the_source() -> None:
-    """남은 값이 없는데 출처만 적혀 있으면 읽는 쪽이 헷갈린다."""
-    rule = build_rule("company", "regex", {"pattern": ".*", "replacement": ""})
-
-    fields = normalize_fields({"company": "삼성SDS"}, [rule])
-
-    assert fields["company"] is None
-    assert fields[COMPANY_SOURCE] is None
-
-
-def test_the_crawler_name_fills_the_company_when_nothing_else_does(
-    tmp_path: pathlib.Path,
-) -> None:
+def test_the_crawler_name_is_the_fallback_for_the_parent(tmp_path: pathlib.Path) -> None:
     """목록이 회사명을 주지 않는 사이트(토스·우아한형제들)를 위한 자리다 (1.3.V)."""
     conn = _seeded(tmp_path, name="토스", default_company=None, parsed="")
+    try:
+        assert read_parent_company(conn, 1) == "토스"
 
-    assert read_default_company(conn, 1) == "토스"
-    fields = normalize_fields(_raw(""), [], read_default_company(conn, 1))
-    assert fields["company"] == "토스"
-    assert fields[COMPANY_SOURCE] == OPERATOR
+        fields = normalize_fields(_raw(""), [], read_parent_company(conn, 1))
+
+        assert fields[PARENT_COMPANY] == "토스"
+        assert fields["company"] is None
+    finally:
+        conn.close()
 
 
 def test_what_the_operator_wrote_beats_the_crawler_name(tmp_path: pathlib.Path) -> None:
     conn = _seeded(tmp_path, name="토스", default_company="비바리퍼블리카", parsed="")
+    try:
+        assert read_parent_company(conn, 1) == "비바리퍼블리카"
+    finally:
+        conn.close()
 
-    assert read_default_company(conn, 1) == "비바리퍼블리카"
 
-
-def test_what_the_site_gave_beats_both(tmp_path: pathlib.Path) -> None:
-    """계열사 구분은 파싱값만 할 수 있다. 크롤러 이름이 그것을 덮으면 안 된다."""
+def test_the_parsed_value_never_reaches_the_parent_column(tmp_path: pathlib.Path) -> None:
+    """계열사 구분은 파싱값만 할 수 있다. 그 값이 모회사 칸으로 올라가면 구분이 사라진다."""
     conn = _seeded(tmp_path, name="삼성", default_company="삼성전자", parsed="삼성SDS")
+    try:
+        fields = normalize_fields(_raw("삼성SDS"), [], read_parent_company(conn, 1))
 
-    fields = normalize_fields(_raw("삼성SDS"), [], read_default_company(conn, 1))
-    assert fields["company"] == "삼성SDS"
-    assert fields[COMPANY_SOURCE] == PARSED
+        assert (fields[PARENT_COMPANY], fields["company"]) == ("삼성전자", "삼성SDS")
+    finally:
+        conn.close()
 
 
 def _raw(company: str) -> dict[str, str]:

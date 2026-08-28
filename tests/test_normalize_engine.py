@@ -98,7 +98,7 @@ def test_trim_collapses_whitespace() -> None:
 
     fields = normalize_fields({"title": "  파이썬  \n  백엔드 개발자 "}, [rule])
 
-    assert set(fields) == {*NORMALIZED_FIELDS, "company_source"}
+    assert set(fields) == {*NORMALIZED_FIELDS, "parent_company"}
     assert fields["title"] == "파이썬 백엔드 개발자"
     assert [name for name, value in fields.items() if value is not None] == ["title"]
 

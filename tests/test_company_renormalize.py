@@ -1,12 +1,12 @@
 """운영자값을 고친 뒤 재정규화하는 경로 테스트.
 
-이 분리의 값이 여기서 확인된다. 운영자가 회사명을 잘못 넣었으면 `crawlers.default_company` 를
+이 분리의 값이 여기서 확인된다. 운영자가 모회사를 잘못 넣었으면 `crawlers.default_company` 를
 고치고 재정규화하면 끝이고, `raw_jobs` 는 건드릴 일이 없다.
 
 확인하는 것은 넷이다.
 
-- 운영자값으로 확정했던 행만 새 값을 받는다
-- 파싱값으로 확정한 행은 운영자값을 고쳐도 그대로다
+- 모회사 칸은 크롤러의 새 값을 받는다
+- 공고에서 뽑은 자회사 칸은 운영자가 무엇을 적든 움직이지 않는다
 - `raw_jobs` 는 바이트 단위로 그대로다
 - `delivered_at` 은 그대로다. 지우면 소비 측에 같은 데이터가 다시 간다
 
@@ -25,7 +25,6 @@ import pytest
 from app import db
 from app.crawler.runner import run_workflow
 from app.normalize.backfill import BackfillProgress, renormalize
-from app.normalize.engine import OPERATOR, PARSED
 from tests.test_company_selector import (
     LIST_URL,
     WITH_COMPANY,
@@ -36,7 +35,7 @@ from tests.test_normalize_engine import raw_snapshot
 
 DELIVERED_AT = "2026-08-20T09:00:00+00:00"
 
-# 파싱값이 나오는 크롤러와 나오지 않는 크롤러. 같은 목록 URL 을 봐도 워크플로우가 다르면
+# 자회사가 뽑히는 크롤러와 뽑히지 않는 크롤러. 같은 목록 URL 을 봐도 워크플로우가 다르면
 # 적재는 각각 따로 쌓인다
 PARSED_WORKFLOW = 1
 OPERATOR_WORKFLOW = 2
@@ -76,7 +75,7 @@ def rows_by_workflow(conn: sqlite3.Connection, workflow_id: int) -> list[sqlite3
     return list(
         conn.execute(
             """
-            SELECT n.id AS id, n.company AS company, n.company_source AS company_source,
+            SELECT n.id AS id, n.company AS company, n.parent_company AS parent_company,
                    n.delivered_at AS delivered_at
               FROM normalized_jobs n
               JOIN raw_jobs r ON r.id = n.raw_job_id
@@ -92,9 +91,9 @@ def set_default_company(conn: sqlite3.Connection, crawler_id: int, value: str) -
     conn.execute("UPDATE crawlers SET default_company = ? WHERE id = ?", (value, crawler_id))
 
 
-async def test_only_operator_rows_follow_the_new_value(conn: sqlite3.Connection) -> None:
+async def test_the_parent_column_follows_the_new_value(conn: sqlite3.Connection) -> None:
     await collect(conn)
-    assert [row["company"] for row in rows_by_workflow(conn, OPERATOR_WORKFLOW)] == [
+    assert [row["parent_company"] for row in rows_by_workflow(conn, OPERATOR_WORKFLOW)] == [
         "현대오토에버",
         "현대오토에버",
     ]
@@ -104,15 +103,17 @@ async def test_only_operator_rows_follow_the_new_value(conn: sqlite3.Connection)
     renormalize(conn, BackfillProgress())
 
     after = rows_by_workflow(conn, OPERATOR_WORKFLOW)
-    assert [row["company"] for row in after] == ["현대모비스", "현대모비스"]
-    assert [row["company_source"] for row in after] == [OPERATOR, OPERATOR]
+    assert [row["parent_company"] for row in after] == ["현대모비스", "현대모비스"]
+    # 이 사이트는 회사명을 주지 않는다. 모회사를 고쳐도 자회사 칸은 빈 채로 있어야 한다
+    assert [row["company"] for row in after] == [None, None]
     # 새 행이 생기는 것이 아니라 있던 행이 갱신된다
     assert [row["id"] for row in after] == before
 
 
-async def test_parsed_rows_do_not_move_when_the_operator_value_changes(
+async def test_the_subsidiary_column_does_not_move_when_the_operator_value_changes(
     conn: sqlite3.Connection,
 ) -> None:
+    """한쪽을 고치는 일이 다른 쪽을 건드리지 않는다. 칸을 가른 이유가 그것이다."""
     await collect(conn)
 
     set_default_company(conn, 1, "엉뚱한 회사")
@@ -120,7 +121,7 @@ async def test_parsed_rows_do_not_move_when_the_operator_value_changes(
 
     after = rows_by_workflow(conn, PARSED_WORKFLOW)
     assert [row["company"] for row in after] == ["삼성SDS", "삼성전기(주)"]
-    assert [row["company_source"] for row in after] == [PARSED, PARSED]
+    assert [row["parent_company"] for row in after] == ["엉뚱한 회사", "엉뚱한 회사"]
 
 
 async def test_renormalizing_leaves_raw_jobs_byte_identical(conn: sqlite3.Connection) -> None:
@@ -159,5 +160,5 @@ async def test_clearing_the_operator_value_falls_back_to_the_crawler_name(
     renormalize(conn, BackfillProgress())
 
     after = rows_by_workflow(conn, OPERATOR_WORKFLOW)
-    assert [row["company"] for row in after] == [name, name]
-    assert [row["company_source"] for row in after] == [OPERATOR, OPERATOR]
+    assert [row["parent_company"] for row in after] == [name, name]
+    assert [row["company"] for row in after] == [None, None]

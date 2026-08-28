@@ -27,7 +27,7 @@ import pytest
 from app import db
 from app.crawler.runner import run_workflow
 from app.normalize.backfill import BackfillProgress, renormalize
-from app.normalize.engine import OPERATOR, OVERRIDABLE_FIELDS
+from app.normalize.engine import OVERRIDABLE_FIELDS
 from tests.test_normalize_engine import raw_snapshot
 from tests.test_normalize_pipeline import (
     LIST_URL,
@@ -161,18 +161,21 @@ async def test_override_is_applied_when_the_row_is_first_inserted(
     assert normalized(conn, 1)["title"] == HUMAN_TITLE
 
 
-async def test_company_override_keeps_the_rule_stage_source(conn: sqlite3.Connection) -> None:
-    """`company_source` 는 규칙 단계가 고른 출처다. 사람이 고쳤는지는 보정 행이 말한다."""
+async def test_company_override_does_not_touch_the_parent_column(
+    conn: sqlite3.Connection,
+) -> None:
+    """보정은 자회사 칸에만 걸린다. 모회사는 크롤러가 정하는 값이라 보정 대상이 아니다."""
     await collect(conn)
     before = normalized(conn, 1)
-    assert (before["company"], before["company_source"]) == (DEFAULT_COMPANY, OPERATOR)
+    # 이 사이트는 회사명을 주지 않는다. 자회사가 비고 모회사만 남는 것이 맞는 모양이다
+    assert (before["parent_company"], before["company"]) == (DEFAULT_COMPANY, None)
 
     set_override(conn, 1, "company", "사람이 정한 회사")
     run_renormalize(conn)
 
     row = normalized(conn, 1)
     assert row["company"] == "사람이 정한 회사"
-    assert row["company_source"] == OPERATOR
+    assert row["parent_company"] == DEFAULT_COMPANY
 
 
 async def test_empty_override_clears_the_field(conn: sqlite3.Connection) -> None:
@@ -185,7 +188,7 @@ async def test_empty_override_clears_the_field(conn: sqlite3.Connection) -> None
 
     row = normalized(conn, 1)
     assert row["company"] is None
-    assert row["company_source"] is None, "회사명이 없는데 출처만 남으면 읽는 쪽이 헷갈린다"
+    assert row["parent_company"] == DEFAULT_COMPANY, "자회사를 비운 것이 모회사를 지우지 않는다"
     assert row["work_location"] is None
 
 
