@@ -26,7 +26,13 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.classify.classifier import ClassifyError, chosen, classify_body
-from app.classify.store import pending_count, pending_ids, read_body, save_classification
+from app.classify.store import (
+    pending_count,
+    pending_ids,
+    read_body,
+    read_title,
+    save_classification,
+)
 from app.config import Settings
 from app.llm import settings as llm_settings
 from app.llm.base import Usage
@@ -189,6 +195,8 @@ async def classify_ids(
 
     for raw_job_id in raw_job_ids:
         body = read_body(conn, raw_job_id)
+        # 제목은 `job_role` 의 출처다. 본문만 보내면 그 칸이 영원히 빈다
+        title = read_title(conn, raw_job_id)
 
         def counted(usage: Usage) -> None:
             # 호출 하나가 행 하나다. 깨진 응답으로 한 번 더 물었으면 두 행이 남는다
@@ -197,7 +205,11 @@ async def classify_ids(
 
         try:
             result = await classify_body(
-                body, settings=resolved, client=resolved_client, on_call=counted
+                body,
+                title=title,
+                settings=resolved,
+                client=resolved_client,
+                on_call=counted,
             )
         except ClassifyError as exc:
             _note_failed_call(conn, provider.name, model, exc)

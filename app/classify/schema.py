@@ -4,14 +4,20 @@
 읽어도 되는 모양인지만 판정하고, 그 값이 본문에 근거가 있는지는 `app/classify/grounding.py`
 가 본다.
 
-칸은 `normalized_jobs` 에 이미 있는 여덟 개다. 새로 만들지 않는다
-(`migrations/0011_split_body_columns.sql`). 0016 이 부서·직군·모집인원을 뺐다
-(`migrations/0016_drop_department_category_headcount.sql`).
+칸은 `normalized_jobs` 에 이미 있는 아홉 개다. 새로 만들지 않는다
+(`migrations/0011_split_body_columns.sql`). 0016 이 부서·직군·모집인원을 뺐고
+(`migrations/0016_drop_department_category_headcount.sql`) 0017 이 직무를 더했다
+(`migrations/0017_job_role.sql`).
 
 ## 칸이 두 가지다
 
-**뽑는 칸**은 본문에 있는 글자를 그대로 가져온다. 옮긴 값은 본문에서 그대로 찾을 수 있어야
+**뽑는 칸**은 원문에 있는 글자를 그대로 가져온다. 옮긴 값은 원문에서 그대로 찾을 수 있어야
 하고, 없으면 빈 칸이다.
+
+`job_role` 만 원문이 본문이 아니라 **제목**이다. 열한 사이트 픽스처에서 제목이 직무를 말하는
+곳이 아홉이고 그중 본문이 같은 글자를 되풀이하는 곳은 셋뿐이었다
+(`tests/test_job_role_source.py`). 직무를 판정 칸으로 만들지 않는 것은 값이 자유 텍스트이기
+때문이다 — 닫힌 목록을 만들 수 있었으면 그것이 직군이고, 직군은 0016 이 지웠다.
 
 **판정하는 칸**은 본문을 읽고 정해진 값 중에서 고른다. `정규직 채용` 이라고 본문에 그대로
 적혀 있지 않은 공고가 많다 — 글자 일치를 요구하면 이 칸은 영원히 빈다. 매핑 방식의 채움률이
@@ -63,9 +69,9 @@ UNDECIDED: Final = "판단불가"
 
 
 class Classification(BaseModel):
-    """본문을 나눈 여덟 칸과, 판정 칸 둘의 근거 문장.
+    """공고 하나를 나눈 아홉 칸과, 판정 칸 둘의 근거 문장.
 
-    뽑는 칸은 자유 문자열이고 본문에 없으면 빈 문자열이다. 판정 칸은 `Literal` 이라 목록에
+    뽑는 칸은 자유 문자열이고 원문에 없으면 빈 문자열이다. 판정 칸은 `Literal` 이라 목록에
     없는 값이 애초에 응답에 담기지 못한다. `판단불가` 가 목록에 있는 것은 "본문만으로는 고를
     수 없다" 를 답할 자리가 있어야 하기 때문이다 — 자리가 없으면 모델은 아무거나 고른다.
     """
@@ -77,7 +83,8 @@ class Classification(BaseModel):
     career_level: Literal["판단불가", "신입", "경력", "무관"] = UNDECIDED
     career_level_evidence: str = ""
 
-    # 뽑는 칸. 본문에 있는 글자를 그대로 옮긴다
+    # 뽑는 칸. 원문에 있는 글자를 그대로 옮긴다. `job_role` 만 원문이 제목이다
+    job_role: str = ""
     work_location: str = ""
     duties: str = ""
     preferred: str = ""
@@ -92,8 +99,9 @@ JUDGE_FIELDS: tuple[str, ...] = ("employment_type", "career_level")
 # 판정 칸마다 따라오는 근거 문장. 컬럼이 아니라 검증과 보고를 위한 값이다
 EVIDENCE_FIELDS: tuple[str, ...] = tuple(f"{name}_evidence" for name in JUDGE_FIELDS)
 
-# 본문에 있는 글자를 그대로 가져오는 칸
+# 원문에 있는 글자를 그대로 가져오는 칸. `job_role` 은 제목에서, 나머지는 본문에서 온다
 EXTRACT_FIELDS: tuple[str, ...] = (
+    "job_role",
     "work_location",
     "duties",
     "preferred",

@@ -18,8 +18,9 @@ from collections.abc import Mapping, Sequence
 
 from app.classify.schema import CLASSIFY_FIELDS
 
-# `raw_jobs.raw_data_json` 에서 본문을 꺼내는 자리. JSON 함수는 SQLite 3.38+ 에 있다
+# `raw_jobs.raw_data_json` 에서 본문과 제목을 꺼내는 자리. JSON 함수는 SQLite 3.38+ 에 있다
 _BODY = "json_extract(r.raw_data_json, '$.body')"
+_TITLE = "json_extract(r.raw_data_json, '$.title')"
 
 
 def pending_ids(conn: sqlite3.Connection, limit: int | None = None) -> list[int]:
@@ -70,6 +71,19 @@ def read_body(conn: sqlite3.Connection, raw_job_id: int) -> str:
         (raw_job_id,),
     ).fetchone()
     return "" if row is None else str(row["body"])
+
+
+def read_title(conn: sqlite3.Connection, raw_job_id: int) -> str:
+    """그 공고의 제목. 없으면 빈 문자열이다. 읽기 전용이다.
+
+    `job_role` 이 여기서 온다. 본문에 없고 제목에만 있는 값이라 본문만 보내면 그 칸은 영원히
+    빈다 (`tests/test_job_role_source.py`).
+    """
+    row = conn.execute(
+        f"SELECT coalesce({_TITLE}, '') AS title FROM raw_jobs r WHERE r.id = ?",
+        (raw_job_id,),
+    ).fetchone()
+    return "" if row is None else str(row["title"])
 
 
 def read_classification(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, str]:

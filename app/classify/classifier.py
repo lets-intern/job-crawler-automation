@@ -1,11 +1,14 @@
-"""본문 하나를 여덟 칸으로 나눈다.
+"""공고 하나를 아홉 칸으로 나눈다.
 
-수집은 어느 사이트나 확실히 주는 여섯 칸만 한다. 나머지를 나누는 것은 본문을 읽는 이쪽 일이다
+수집은 어느 사이트나 확실히 주는 여섯 칸만 한다. 나머지를 나누는 것은 공고를 읽는 이쪽 일이다
 (`.claude/tasks/memos/보류/llm-classify/prd-llm-classify.md`).
 
 ## 칸이 두 가지다
 
-**뽑는 칸** 여섯은 본문 글자를 그대로 옮긴다. 옮긴 값은 본문에서 그대로 찾을 수 있어야 한다.
+**뽑는 칸** 일곱은 원문 글자를 그대로 옮긴다. 옮긴 값은 원문에서 그대로 찾을 수 있어야 한다.
+여섯은 본문에서 오고 `job_role` 하나만 **제목**에서 온다 — 열한 사이트에서 제목이 직무를
+말하는 곳이 아홉이고 그중 본문이 같은 글자를 되풀이하는 곳은 셋뿐이었다
+(`tests/test_job_role_source.py`).
 
 **판정하는 칸** 둘(고용형태·경력 구분)은 본문을 읽고 닫힌 목록에서 고른다. 목록은
 응답 스키마의 enum 으로 강제하고, 고른 값에는 근거 문장이 따라온다. 그 문장이 본문에 없으면
@@ -19,9 +22,10 @@
 받은 값은 `app/classify/grounding.py` 가 그 자리에서 본문에 돌려 보고, 근거를 못 찾은 칸은
 버리고 `dropped` 에 이름을 남긴다 (`.claude/rules/llm.md`).
 
-**보내는 것은 본문뿐이고 상한이 있다.** 원본 HTML 도 페이지도 보내지 않는다. 본문이 상한을
-넘으면 잘라 보내고 그 사실을 `notes` 에 남긴다. 자른 것으로 무엇을 놓쳤는지는 응답을 보는
-사람이 알아야 한다.
+**보내는 것은 제목과 본문뿐이고 상한이 있다.** 원본 HTML 도 페이지도 보내지 않는다. 본문이
+상한을 넘으면 잘라 보내고 그 사실을 `notes` 에 남긴다. 자른 것으로 무엇을 놓쳤는지는 응답을
+보는 사람이 알아야 한다. 제목은 자르지 않는다 — 한 줄이고, 그 한 줄이 `job_role` 의
+출처다.
 
 **깨진 응답만 1회 다시 묻는다.** 스키마에 없는 칸을 지어낸 응답은 다시 물어도 같은 답이 온다.
 
@@ -64,16 +68,19 @@ MAX_ATTEMPTS = 2
 MAX_BODY_CHARS = 12000
 
 _SYSTEM_INSTRUCTION = (
-    "너는 채용공고 본문을 정해진 칸으로 나눈다. "
-    "뽑는 칸에는 본문에 있는 글자만 그대로 옮기고, 판정하는 칸은 본문을 읽고 주어진 목록에서 "
+    "너는 채용공고를 정해진 칸으로 나눈다. "
+    "뽑는 칸에는 공고에 있는 글자만 그대로 옮기고, 판정하는 칸은 본문을 읽고 주어진 목록에서 "
     "고른 뒤 그렇게 고른 근거 문장을 본문에서 그대로 옮겨 적는다. "
     "요약하지 않고, 다듬지 않고, 없는 것을 지어내지 않는다."
 )
 
-_PROMPT = """아래는 채용공고 본문이다. 이것을 정해진 칸으로 나눈다.
+_PROMPT = """아래는 채용공고의 제목과 본문이다. 이것을 정해진 칸으로 나눈다.
 
-# 뽑는 칸 — 본문에 있는 글자를 그대로 옮긴다
+# 뽑는 칸 — 있는 글자를 그대로 옮긴다
 
+- job_role: 직무. **제목에서만 옮긴다.** 그 공고가 어떤 일을 할 사람을 뽑는지 제목이 말하는
+  부분이다. 회사명·연도·`경력사원 채용`·`영입` 같은 말은 빼고 직무를 가리키는 부분만 남긴다.
+  제목이 직무를 말하지 않으면(`전 직군 채용`, `신입사원 채용`) 빈 문자열로 둔다
 - duties: 주요 업무·담당 업무
 - requirements: 자격요건·지원자격
 - preferred: 우대사항
@@ -82,9 +89,9 @@ _PROMPT = """아래는 채용공고 본문이다. 이것을 정해진 칸으로 
 - etc_info: 위 어디에도 맞지 않는 나머지
 
 규칙:
-- **본문에 있는 글자를 그대로 옮긴다.** 말을 바꾸거나 요약하거나 정리하지 않는다. 옮긴 값은
-  본문에서 그대로 찾을 수 있어야 한다.
-- **본문에 없는 칸은 빈 문자열로 둔다.** 짐작해서 채우지 않는다.
+- **있는 글자를 그대로 옮긴다.** 말을 바꾸거나 요약하거나 정리하지 않는다. 옮긴 값은
+  원문에서 그대로 찾을 수 있어야 한다 — `job_role` 은 제목에서, 나머지 여섯은 본문에서.
+- **원문에 없는 칸은 빈 문자열로 둔다.** 짐작해서 채우지 않는다.
 - 여러 줄이면 본문의 줄 그대로 줄바꿈으로 잇는다. 한 칸에 들어갈 내용이 본문 여러 곳에
   흩어져 있으면 그 조각들을 줄바꿈으로 잇되, 없는 연결 문장을 지어내 붙이지 않는다.
 - 어느 칸에도 맞지 않는 내용만 etc_info 에 모은다. 본문 전체를 etc_info 에 넣지 않는다.
@@ -102,7 +109,11 @@ _PROMPT = """아래는 채용공고 본문이다. 이것을 정해진 칸으로 
 - 고른 칸마다 `employment_type_evidence` 처럼 `_evidence` 가 붙은 자리에 **그렇게 판단한
   근거가 되는 본문 문장을 그대로 옮겨 적는다.** 한 문장이면 된다. 본문에 없는 문장을 적지
   않는다. 근거를 적을 수 없으면 그 칸을 판단불가 로 둔다.
-- 회사명·공고 제목·모집 시작일·마감일은 어느 칸에도 넣지 않는다. 그 넷은 따로 수집한다.
+- 회사명·모집 시작일·마감일은 어느 칸에도 넣지 않는다. 그 셋은 따로 수집한다. 제목도
+  `job_role` 말고는 어느 칸에도 넣지 않는다.
+
+[제목]
+{title}
 
 [본문]
 {body}
@@ -133,7 +144,7 @@ class ClassifyError(RuntimeError):
 class ClassificationResult:
     """분류 한 건의 결과.
 
-    `fields` 는 여덟 칸 전부를 갖는다. 채우지 못한 칸은 빈 문자열이고, 근거를 찾지 못해 버린
+    `fields` 는 아홉 칸 전부를 갖는다. 채우지 못한 칸은 빈 문자열이고, 근거를 찾지 못해 버린
     칸도 빈 문자열이다 — 버린 칸의 이름은 `dropped` 에, 이유는 `reasons` 에 있다.
     """
 
@@ -175,8 +186,12 @@ def chosen(settings: Settings) -> tuple[Provider, str]:
         raise ClassifyError(exc.reason, str(exc)) from exc
 
 
-def build_prompt(body: str) -> tuple[str, list[str]]:
+def build_prompt(body: str, title: str = "") -> tuple[str, list[str]]:
     """보낼 프롬프트와 남길 메모. 상한을 넘긴 본문은 자르고 그 사실을 적는다.
+
+    `title` 이 `job_role` 의 출처다. 제목을 보내지 않으면 그 칸은 영원히 빈다. 제목이 없는
+    공고는 빈 줄이 들어가고, 모델은 옮길 것이 없어 빈 문자열을 낸다 — 수집이 제목을 못 뽑는
+    것은 수집의 실패이지 여기서 메울 일이 아니다 (`app/crawler/parser.py`).
 
     판정 칸의 목록을 프롬프트에도 적는다. 스키마의 enum 이 이미 강제하지만, 무엇 중에서
     고르는지 모르는 채로 고르면 목록에서 가장 가까운 값이 아니라 첫 값이 나온다. 목록의
@@ -188,17 +203,21 @@ def build_prompt(body: str) -> tuple[str, list[str]]:
         notes.append(f"본문이 {len(text)}자라 앞 {MAX_BODY_CHARS}자만 보냈다")
         text = text[:MAX_BODY_CHARS]
     choices = {name: " / ".join((*values, UNDECIDED)) for name, values in JUDGE_CHOICES.items()}
-    return _PROMPT.format(body=text, **choices), notes
+    return _PROMPT.format(body=text, title=title.strip(), **choices), notes
 
 
 async def classify_body(
     body: str,
     *,
+    title: str = "",
     settings: Settings | None = None,
     client: Any | None = None,
     on_call: Callable[[Usage], None] | None = None,
 ) -> ClassificationResult:
-    """본문 하나를 나눈다. 받은 값은 본문에 있는지 확인한 뒤에만 남는다.
+    """공고 하나를 나눈다. 받은 값은 원문에 있는지 확인한 뒤에만 남는다.
+
+    `title` 은 `job_role` 의 출처다. 비어 있어도 나머지 여덟 칸은 그대로 나오므로 분류가
+    실패하지 않는다 — 나눌 것이 없는 것은 본문이 빈 경우뿐이다.
 
     `on_call` 은 모델을 부를 때마다 그 호출의 비용으로 불린다. 깨진 응답으로 한 번 더 물으면
     두 번 불린다 — 부르는 쪽이 그것을 `llm_calls` 에 그대로 남겨야 토큰 합이 실제와 맞는다
@@ -210,7 +229,7 @@ async def classify_body(
     resolved = settings or get_settings()
     provider, model = chosen(resolved)
     resolved_client = client or build_client(resolved)
-    prompt, notes = build_prompt(body)
+    prompt, notes = build_prompt(body, title)
 
     last_error: ClassifySchemaError | None = None
     for attempt in range(1, MAX_ATTEMPTS + 1):

@@ -53,6 +53,12 @@ def body_of(site: str, fixture: str) -> str:
 
 
 BODY = body_of("카카오", "kakao-detail-P-14503-20260826.html")
+TITLE = "카카오비즈니스 파트너 플랫폼 PM (경력)"
+
+# 제목이 말하는 직무를 본문도 되풀이하는 사이트. 열한 곳 중 셋뿐이고 두산이 그 하나다
+# (`tests/test_job_role_source.py`)
+DOOSAN_BODY = body_of("두산", "doosan-detail-1000361539-20260826.html")
+DOOSAN_TITLE = "스튜디오셀위팀 광고영업 경력사원 채용"
 
 
 def response(**fields: str) -> str:
@@ -63,9 +69,9 @@ def settings_with_key() -> Settings:
     return Settings(gemini_api_key="테스트키", gemini_model="gemini-3.5-flash")
 
 
-async def classify(*texts: str, body: str = BODY) -> tuple:
+async def classify(*texts: str, body: str = BODY, title: str = TITLE) -> tuple:
     client = FakeClient(*texts)
-    result = await classify_body(body, settings=settings_with_key(), client=client)
+    result = await classify_body(body, title=title, settings=settings_with_key(), client=client)
     return result, client
 
 
@@ -185,13 +191,47 @@ async def test_an_empty_body_never_reaches_the_model() -> None:
     assert client.calls == []
 
 
-async def test_only_the_body_is_sent() -> None:
-    """원본 HTML 도 페이지도 보내지 않는다 (`.claude/rules/llm.md`)."""
+async def test_only_the_title_and_the_body_are_sent() -> None:
+    """원본 HTML 도 페이지도 보내지 않는다 (`.claude/rules/llm.md`).
+
+    제목이 하나 늘었다. `job_role` 의 출처라 보내지 않으면 그 칸이 영원히 빈다.
+    """
     _, client = await classify(response())
 
     prompt = client.calls[0]["contents"]
     assert BODY in prompt
+    assert TITLE in prompt
     assert "<html" not in prompt
+
+
+async def test_the_job_role_lands_in_its_column() -> None:
+    """제목이 말하는 직무가 그 칸에 들어간다 (2.3.V)."""
+    result, _ = await classify(response(job_role="광고영업"), body=DOOSAN_BODY, title=DOOSAN_TITLE)
+
+    assert result.fields["job_role"] == "광고영업"
+    assert result.dropped == []
+
+
+async def test_a_posting_whose_title_names_no_role_leaves_the_column_empty() -> None:
+    """`전 직군 채용` 같은 통합 공고다. 짐작해서 채우면 소비 측이 그것을 사실로 노출한다."""
+    result, _ = await classify(response(), title="토스인컴 전 직군 집중 채용 (~8/31)")
+
+    assert result.fields["job_role"] == ""
+    assert "job_role" not in result.filled
+    assert result.dropped == []
+
+
+async def test_a_posting_without_a_title_still_classifies() -> None:
+    """제목이 없으면 직무만 빈다. 나머지 여덟 칸은 그대로 나온다."""
+    result, _ = await classify(
+        response(
+            hiring_process="서류전형 > 1차 인터뷰 > 2차 인터뷰 > 처우 협의 > 최종 합격 및 입사"
+        ),
+        title="",
+    )
+
+    assert result.fields["job_role"] == ""
+    assert result.fields["hiring_process"].startswith("서류전형")
 
 
 def test_a_body_over_the_cap_is_cut_and_the_cut_is_written_down() -> None:
@@ -227,7 +267,7 @@ def test_grounding_keeps_an_empty_column_empty_without_calling_it_invented() -> 
     assert set(grounded.fields) == set(CLASSIFY_FIELDS)
 
 
-def test_the_two_kinds_of_columns_add_up_to_the_eight() -> None:
+def test_the_two_kinds_of_columns_add_up_to_the_nine() -> None:
     """칸이 늘거나 옮겨 다니면 여기서 걸린다."""
     assert set(EXTRACT_FIELDS) | set(JUDGE_FIELDS) == set(CLASSIFY_FIELDS)
     assert not set(EXTRACT_FIELDS) & set(JUDGE_FIELDS)

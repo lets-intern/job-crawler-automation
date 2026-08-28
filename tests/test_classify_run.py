@@ -378,3 +378,14 @@ def test_a_human_correction_still_wins_over_the_classification(
 
     row = conn.execute("SELECT work_location FROM normalized_jobs WHERE raw_job_id = 1").fetchone()
     assert row["work_location"] == "사람이 고친 근무지"
+
+
+async def test_the_run_sends_the_stored_title(conn: sqlite3.Connection) -> None:
+    """제목이 `job_role` 의 출처다. 실행이 본문만 보내면 그 칸은 영원히 빈다 (2.3.V)."""
+    client = FakeClient(GOOD, GOOD, GOOD)
+
+    await classify_pending(
+        conn, ClassifyProgress(), limit=10, client=client, settings=settings_with_key()
+    )
+
+    assert "공고 3" in client.calls[0]["contents"]
