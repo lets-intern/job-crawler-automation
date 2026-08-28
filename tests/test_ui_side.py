@@ -334,6 +334,31 @@ def test_전달_종류는_전체_다시를_골라도_확인을_거치지_않는�
 
 
 # ---------------------------------------------------------------------------
+# 7.4 전달 종류는 지금 실행이 잠겨 있다 — 보내는 코드가 아직 없다
+
+
+def test_전달_카드는_지금_실행_단추_대신_이유를_보여준다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    workflow = store.create(conn, kind="deliver", name="전달 준비")
+
+    body = client.get("/ui/side").text
+
+    assert "지금 실행 (아직 보낼 수 없음)" in body
+    assert f'hx-post="/ui/side/{workflow.id}/run"' not in body
+
+
+def test_분류_카드는_지금_실행_단추가_그대로_있다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    workflow = store.create(conn, kind="classify", name="분류 준비")
+
+    body = client.get("/ui/side").text
+
+    assert f'hx-post="/ui/side/{workflow.id}/run"' in body
+
+
+# ---------------------------------------------------------------------------
 # 5.5 지금 실행과 진행 상황
 
 

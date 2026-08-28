@@ -27,4 +27,16 @@
     {{ empty("목록을 불러오는 중") }}
   </div>
 </section>
+
+<section>
+  <h3>스프링 전달 설정</h3>
+  <p>
+    소비 측(잡보드)이 데이터를 받는 주소를 여기서 정한다. 지금 계약은 소비 측이
+    <code>/api/jobs</code> 를 폴링하는 것이고(`.claude/docs/api-contract.md`), 아래 설정은
+    나중에 우리가 먼저 보내는 방식으로 바뀔 때를 위해 자리만 만들어 둔 것이다.
+  </p>
+  <div id="deliver-form" hx-get="/ui/deliver" hx-trigger="load" hx-swap="innerHTML">
+    {{ empty("설정을 불러오는 중") }}
+  </div>
+</section>
 {% endblock %}
