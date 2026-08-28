@@ -13,11 +13,18 @@
   {# 숨기지 않고 알린다. 운영자가 모르고 남에게 주는 일만 막으면 된다
      (`.claude/tasks/todo/prd-llm-providers.md` 3장) #}
   <div class="notice notice-warn" role="alert">
-    <p><span class="font-semibold">주의</span> — 이 파일에 API 키가 들어 있습니다.</p>
+    <p><span class="font-semibold">주의</span> — 이 파일에 API 키와 저장소 키가 들어 있습니다.</p>
     <p class="mt-1">
       AI 제공자 화면에서 저장한 키가 파일 안에 그대로 들어갑니다. 파일을 받은 사람은 그 키로
       제공자 계정을 그대로 쓸 수 있고, <strong>데이터 파일 가져오기</strong> 로 다른 서버에
       올리면 키도 같이 옮겨집니다.
+    </p>
+    <p class="mt-1">
+      <span class="font-semibold">파일 저장소</span> 화면에서 저장한 접근 키와 비밀 키
+      (<code>s3_access_key</code>, <code>s3_secret_key</code>)도 같은 파일에 들어갑니다.
+      파일을 받은 사람은 그 키로 저장소의 파일을 읽고 지울 수 있습니다. 이쪽은
+      <strong>데이터 파일 가져오기</strong> 가 옮기지 않으므로 새 서버에서는 다시 넣어야
+      하지만, 파일에 들어 있다는 사실은 그대로입니다.
     </p>
     <p class="mt-1">
       새어 나간 뒤에 되돌리는 길은 키 재발급뿐입니다. 환경변수로만 넣어 둔 키는 DB 에 없으므로

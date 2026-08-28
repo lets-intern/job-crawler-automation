@@ -81,3 +81,16 @@ def test_export_names_the_file_with_a_timestamp(client: TestClient) -> None:
     disposition = response.headers["content-disposition"]
     assert "jobs-" in disposition
     assert ".db" in disposition
+
+
+def test_warning_names_the_storage_keys(client: TestClient) -> None:
+    """경고에 없는 비밀은 없는 것으로 읽힌다 (5.7).
+
+    저장소 키는 `app_settings` 에 있고, 내보내기는 DB 를 통째로 뜬다. 그래서 이 파일에
+    같이 실려 나간다. 화면이 그 사실을 이름으로 말한다.
+    """
+    body = client.get("/settings/export").text
+
+    assert "s3_access_key" in body
+    assert "s3_secret_key" in body
+    assert "저장소 키" in body
