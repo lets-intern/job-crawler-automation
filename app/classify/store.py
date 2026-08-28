@@ -359,3 +359,29 @@ def read_suggestions(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, dic
         str(row["field_name"]): {"value": str(row["value"]), "reason": str(row["reason"] or "")}
         for row in rows
     }
+
+
+def read_suggestions_batch(
+    conn: sqlite3.Connection, raw_job_ids: Sequence[int]
+) -> dict[int, dict[str, dict[str, str]]]:
+    """`read_suggestions` 의 여러 건 버전. 검수 표 한 페이지가 이것으로 N+1 조회를 피한다.
+
+    행마다 `read_suggestions` 를 부르면 한 페이지(최대 100건)에 조회가 100번 붙는다. 표는
+    "이 칸에 제안이 있다" 는 배지만 필요하지만, 모달과 같은 모양(값·이유)으로 돌려주는 것이
+    두 자리가 서로 다른 것을 반환하는 것보다 낫다 — 호출하는 쪽이 값을 쓰지 않으면 그만이다.
+    """
+    if not raw_job_ids:
+        return {}
+    marks = ",".join("?" for _ in raw_job_ids)
+    rows = conn.execute(
+        "SELECT raw_job_id, field_name, value, reason FROM job_field_suggestions"
+        f" WHERE raw_job_id IN ({marks})",
+        list(raw_job_ids),
+    ).fetchall()
+    found: dict[int, dict[str, dict[str, str]]] = {}
+    for row in rows:
+        found.setdefault(int(row["raw_job_id"]), {})[str(row["field_name"])] = {
+            "value": str(row["value"]),
+            "reason": str(row["reason"] or ""),
+        }
+    return found

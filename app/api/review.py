@@ -66,6 +66,7 @@ from app.api.review_filter import (
     workflow_label,
 )
 from app.api.ui import render, render_page
+from app.classify.store import read_suggestions, read_suggestions_batch
 from app.crawler.collect import API
 from app.normalize.engine import OVERRIDABLE_FIELDS
 
@@ -150,6 +151,7 @@ def _cell(
     job: sqlite3.Row,
     field: str,
     overrides: dict[str, str],
+    suggestions: dict[str, dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     """셀 하나가 그려지는 데 필요한 전부.
 
@@ -158,9 +160,15 @@ def _cell(
 
     보정 여부를 값의 참·거짓으로 판정하지 않는다. 빈 문자열은 "이 필드는 비어 있는 것이 맞다"
     는 사람의 판단이고, 보정이 없는 것과 다르다 (`migrations/0005_job_field_overrides.sql`).
+
+    `suggestions` 는 `job_field_suggestions` 에 남아 있는 값이다(`app/classify/store.py` 의
+    `read_suggestions`). 보정과 독립이다 — 값이 이미 사람 보정으로 확정돼 있으면서 동시에
+    새 제안이 붙어 있을 수 있어(원문을 다시 읽었더니 보정한 값과도 다른 경우), 둘 다 보여준다
+    (11.6, PRD 6절).
     """
     overridden = field in overrides
     rule_value = job[field] if field in job.keys() else None
+    suggestion = (suggestions or {}).get(field)
     return {
         "raw_job_id": int(job["raw_job_id"]),
         "field": field,
@@ -169,6 +177,9 @@ def _cell(
         "value": overrides[field] if overridden else rule_value,
         "overridden": overridden,
         "long": field in LONG_FIELDS,
+        "suggested": suggestion is not None,
+        "suggestion_value": suggestion["value"] if suggestion else "",
+        "suggestion_reason": suggestion["reason"] if suggestion else "",
     }
 
 
@@ -230,6 +241,23 @@ def _read_source(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, Any]:
     }
 
 
+def _upsert_override(conn: sqlite3.Connection, raw_job_id: int, field: str, value: str) -> None:
+    """`job_field_overrides` 에 값 하나를 넣거나 덮는다.
+
+    `save_review_job_fragment` 의 저장과 제안 수락(11.6) 이 같은 문장을 쓴다 — 사람이 손으로
+    고친 값과 제안을 수락해 만든 값은 같은 표의 같은 자리이지, 다른 경로가 아니다.
+    """
+    conn.execute(
+        """
+        INSERT INTO job_field_overrides (raw_job_id, field_name, value)
+             VALUES (?, ?, ?)
+        ON CONFLICT (raw_job_id, field_name)
+          DO UPDATE SET value = excluded.value, updated_at = datetime('now')
+        """,
+        (raw_job_id, field, value),
+    )
+
+
 def _read_job(conn: sqlite3.Connection, raw_job_id: int) -> sqlite3.Row | None:
     """그 수집 건의 확정 행. 재정규화로 여러 번 만들어졌다면 가장 최근 것이 화면의 값이다."""
     return conn.execute(
@@ -287,12 +315,13 @@ def _modal_response(
             message=f"수집 건 {raw_job_id} 의 정규화 행이 없다. 목록을 다시 불러 확인한다",
         )
     overrides = _read_overrides(conn, [raw_job_id]).get(raw_job_id, {})
+    suggestions = read_suggestions(conn, raw_job_id)
     response = render(
         request,
         "fragments/review_modal.html",
         job=job,
         source=_read_source(conn, raw_job_id),
-        fields=[_cell(job, field, overrides) for field in OVERRIDABLE_FIELDS],
+        fields=[_cell(job, field, overrides, suggestions) for field in OVERRIDABLE_FIELDS],
         override_count=len(overrides),
         drafts=drafts or {},
         focus_field=focus_field,
@@ -353,12 +382,19 @@ def review_table_fragment(
     # 적혀야 페이지가 갈려도 짝이 어디 있는지 찾을 수 있다
     groups = dup_groups(conn, picked)
     group_numbers = {group["key"]: group["number"] for group in groups}
-    overrides = _read_overrides(conn, [int(row["raw_job_id"]) for row in rows])
+    raw_job_ids = [int(row["raw_job_id"]) for row in rows]
+    overrides = _read_overrides(conn, raw_job_ids)
+    suggestions = read_suggestions_batch(conn, raw_job_ids)
     listed = [
         {
             "job": row,
             "cells": [
-                _cell(row, field, overrides.get(int(row["raw_job_id"]), {}))
+                _cell(
+                    row,
+                    field,
+                    overrides.get(int(row["raw_job_id"]), {}),
+                    suggestions.get(int(row["raw_job_id"]), {}),
+                )
                 for field in OVERRIDABLE_FIELDS
             ],
             "override_count": len(overrides.get(int(row["raw_job_id"]), {})),
@@ -533,15 +569,7 @@ async def save_review_job_fragment(
         if new == current:
             continue
         try:
-            conn.execute(
-                """
-                INSERT INTO job_field_overrides (raw_job_id, field_name, value)
-                     VALUES (?, ?, ?)
-                ON CONFLICT (raw_job_id, field_name)
-                  DO UPDATE SET value = excluded.value, updated_at = datetime('now')
-                """,
-                (raw_job_id, field, new),
-            )
+            _upsert_override(conn, raw_job_id, field, new)
         except sqlite3.DatabaseError as exc:
             # 실패 사유를 모달 안에 그대로 보여준다. 모달은 닫지 않고 고쳐 쓴 값도 입력에 남긴다
             return _modal_response(
@@ -575,4 +603,82 @@ async def save_review_job_fragment(
         changed_fields=tuple(changed),
         swap_row=True,
         close=True,
+    )
+
+
+# 제안 처리 두 가지. `drop` 처럼 값이 정해진 파라미터로 두지 않는다. 어느 필드의 제안인지가
+# 주소에 있으면 실수로 다른 필드의 제안을 지우는 요청을 만들 수 없다
+SUGGESTION_ACCEPT = "accept"
+SUGGESTION_REJECT = "reject"
+SUGGESTION_ACTIONS: tuple[str, ...] = (SUGGESTION_ACCEPT, SUGGESTION_REJECT)
+
+
+@router.post("/ui/review/suggestions/{raw_job_id}/{field}", response_class=HTMLResponse)
+async def apply_suggestion_fragment(
+    request: Request,
+    raw_job_id: int,
+    field: str,
+    conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
+) -> HTMLResponse:
+    """그 칸의 제안을 수락하거나 거절한다. 모달 안의 필드 블록에서만 누른다 (11.6).
+
+    수락은 제안 값을 `job_field_overrides` 에 넣는 것이지, `raw_jobs` 나 `normalized_jobs` 를
+    고치는 것이 아니다 — 사람이 손으로 고친 값과 같은 자리다. 거절은 `job_field_suggestions`
+    의 그 행만 지운다. 어느 쪽이든 처리한 제안은 이 표에서 사라져 다시 뜨지 않는다.
+
+    모달은 닫지 않는다. 여러 필드의 제안을 오가며 판단하는 화면이라, 하나를 처리했다고
+    나머지를 볼 기회를 잃으면 안 된다.
+    """
+    form = await request.form()
+    action = str(form.get("action") or "")
+
+    if field not in OVERRIDABLE_FIELDS:
+        return _modal_response(
+            request,
+            conn,
+            raw_job_id,
+            error=f"고칠 수 없는 필드다: {field} (가능한 값: {', '.join(OVERRIDABLE_FIELDS)})",
+        )
+    if action not in SUGGESTION_ACTIONS:
+        return _modal_response(
+            request,
+            conn,
+            raw_job_id,
+            error=f"알 수 없는 처리다: {action} (가능한 값: {', '.join(SUGGESTION_ACTIONS)})",
+        )
+
+    suggestion = read_suggestions(conn, raw_job_id).get(field)
+    if suggestion is None:
+        # 다른 창에서 이미 처리됐거나, 다시 분류가 돌며 사라졌을 수 있다. 표는 최신 상태로
+        # 다시 그려 준다 — 방금 처리한 줄 알고 다시 누르는 것을 막는다
+        return _modal_response(
+            request,
+            conn,
+            raw_job_id,
+            note=f"{FIELD_LABELS[field]} 의 제안이 이미 처리됐다. 지금 상태로 다시 불러왔다",
+            swap_row=True,
+        )
+
+    if action == SUGGESTION_ACCEPT:
+        _upsert_override(conn, raw_job_id, field, suggestion["value"])
+        conn.execute(
+            "DELETE FROM job_field_suggestions WHERE raw_job_id = ? AND field_name = ?",
+            (raw_job_id, field),
+        )
+        saved = f"{FIELD_LABELS[field]} 제안을 수락해 사람 보정으로 저장했다: {suggestion['value']}"
+    else:
+        conn.execute(
+            "DELETE FROM job_field_suggestions WHERE raw_job_id = ? AND field_name = ?",
+            (raw_job_id, field),
+        )
+        saved = f"{FIELD_LABELS[field]} 제안을 거절했다. 지금 값은 그대로다"
+
+    return _modal_response(
+        request,
+        conn,
+        raw_job_id,
+        saved=saved,
+        focus_field=field,
+        changed_fields=(field,),
+        swap_row=True,
     )

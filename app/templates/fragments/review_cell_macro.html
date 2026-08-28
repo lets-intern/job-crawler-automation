@@ -24,6 +24,11 @@
   {% else %}
   <span class="badge badge-idle">규칙값</span>
   {% endif %}
+  {% if cell.suggested %}
+  {# 보정과 독립이다 — 이미 사람이 고친 값이라도 원문이 그것과 또 다른 값을 낼 수 있다.
+     그래서 `사람 보정`/`규칙값` 배지 옆에 나란히 보인다 (11.6, PRD 6절) #}
+  <span class="badge badge-warn" title="제안: {{ cell.suggestion_value }}">제안 있음</span>
+  {% endif %}
 </div>
 {% endmacro %}
 
