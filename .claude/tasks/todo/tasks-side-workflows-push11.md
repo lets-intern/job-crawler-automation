@@ -34,10 +34,14 @@
           `job_classifications` 로, 값이 있는데 달라진 것은 `job_field_suggestions` 로 간다.
           **호출은 하나다** — 두 번 부르면 토큰이 두 배다
         - [x] 11.3.V 검증(정규화): 한 번의 호출에서 두 표에 각각 들어가는지 pytest
-    - [ ] 11.4 제안에도 근거 검사를 그대로 건다. 원문에서 찾지 못한 값은 제안이 되지 않는다.
+    - [x] 11.4 제안에도 근거 검사를 그대로 건다. 원문에서 찾지 못한 값은 제안이 되지 않는다.
           제안이라고 검사를 느슨하게 하면, 사람이 수락 단추를 누르는 순간 지어낸 값이 확정 값이
-          된다
-        - [ ] 11.4.V 검증(정규화): 원문에 없는 값이 제안으로 남지 않는지 pytest
+          된다. `app/classify/classifier.py` 의 `_extract_suggestions` 가 `grounding.py` 의
+          `missing_lines` 를 그대로 불러 쓴다 — 재구현하지 않는다. 11.2 에서 이미 배선했고
+          `tests/test_classify_suggestions.py` 가 검증한다
+        - [x] 11.4.V 검증(정규화): 원문에 없는 값이 제안으로 남지 않는지 pytest
+              (`test_a_suggestion_without_evidence_in_the_source_is_thrown_away`,
+              `test_a_reflowed_suggestion_still_counts_as_grounded`)
     - [ ] 11.5 **수집이 채우는 여섯 칸도 제안 대상에 넣되 자동으로 덮지 않는다.**
           `deadline` 은 마감 지난 공고를 거르는 데 쓰이고 `company` 는 계열사를 가르는 값이라,
           모델 판단 하나로 바뀌면 안 된다. 정규화의 어느 경로도 제안을 읽지 않는다는 것을
