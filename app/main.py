@@ -35,6 +35,7 @@ from app.config import get_settings
 from app.crawler.fetcher import close_fetcher
 from app.crawler.runner import close_orphan_runs
 from app.scheduler import get_scheduler, shutdown_scheduler
+from app.side.runs import close_orphans as close_orphan_side_runs
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,14 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         orphans = close_orphan_runs(conn)
         if orphans:
             logger.warning("지난 프로세스가 남긴 미완 실행 %d건을 timeout 으로 닫았다", orphans)
+        # 부가 워크플로우도 같은 뒷정리가 필요하다. 그리고 여기는 화면 표시만의 문제가
+        # 아니다 — 겹침 방지가 "열린 행이 있으면 돌고 있는 것" 으로 판단하므로, 죽은
+        # 프로세스가 남긴 행 하나가 그 워크플로우를 영영 막는다 (`app/side/runner.py`)
+        side_orphans = close_orphan_side_runs(conn)
+        if side_orphans:
+            logger.warning(
+                "지난 프로세스가 남긴 미완 부가 실행 %d건을 timeout 으로 닫았다", side_orphans
+            )
         try:
             get_scheduler().start(conn)
         except sqlite3.OperationalError:
