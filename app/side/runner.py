@@ -241,4 +241,14 @@ def _classify(
     asyncio.run(classify_ids(conn, raw_job_ids, progress, client=client, settings=settings))
     counts.processed_count = progress.processed
     counts.failed_count = progress.failed
-    return None
+    if not progress.failed:
+        return None
+    reasons = "; ".join(progress.errors)
+    if progress.processed:
+        # 일부만 실패한 실행은 성공이다. 나머지는 실제로 분류됐고, 실패한 건은 행이 생기지
+        # 않아 다음 실행이 다시 집어 든다 (`app/classify/batch.py`)
+        counts.note = f"{counts.target_count}건 중 {progress.failed}건 실패: {reasons}"
+        return None
+    # 한 건도 처리하지 못했다. 제공자 키가 없거나 호출이 전부 실패한 경우이고, 그것을 성공으로
+    # 닫으면 운영자가 보는 것은 "돌았는데 대상이 없었다" 와 구분되지 않는다
+    return reasons

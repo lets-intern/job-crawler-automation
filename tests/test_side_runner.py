@@ -14,6 +14,7 @@ import pytest
 
 from app import db
 from app.classify.batch import ClassifyProgress, ClassifyRun
+from app.config import Settings
 from app.side import runner, runs, store
 from tests.test_classify_run import GOOD, settings_with_key
 from tests.test_classify_run import _seed as seed
@@ -336,3 +337,37 @@ def test_a_deliver_run_does_not_block_classification(conn: sqlite3.Connection) -
     runs.start(conn, deliver.id, runner.MANUAL)
 
     assert runner.classify_running(conn) is None
+
+
+def test_a_run_without_a_provider_key_closes_as_failed(jobs: sqlite3.Connection) -> None:
+    """호출을 한 번도 못 한 실행이 성공으로 닫히면 안 된다 (3.4.V).
+
+    실제 모델은 부르지 않는다. 키가 없다는 것을 `app/classify/batch.py` 가 예외 없이 사유로
+    돌려주는 경로다.
+    """
+    workflow = store.create(jobs, kind="classify", name="분류")
+
+    run = runner.run_now(jobs, workflow.id, settings=Settings(gemini_api_key=""))
+
+    assert run.status == runs.FAILED
+    assert run.finished_at is not None
+    assert run.error_message is not None and "GEMINI_API_KEY" in run.error_message
+    assert (run.target_count, run.processed_count) == (3, 0)
+    # 아무것도 쓰지 않았다
+    assert jobs.execute("SELECT count(*) AS n FROM job_classifications").fetchone()["n"] == 0
+
+
+def test_a_partly_failed_run_is_still_a_success(jobs: sqlite3.Connection) -> None:
+    """나머지가 실제로 분류됐다. 실패한 건은 다음 실행이 다시 집어 든다."""
+    workflow = store.create(jobs, kind="classify", name="분류")
+
+    run = runner.run_now(
+        jobs,
+        workflow.id,
+        client=FakeClient("깨진 응답", "또 깨진 응답", GOOD, GOOD),
+        settings=settings_with_key(),
+    )
+
+    assert run.status == runs.SUCCESS
+    assert (run.processed_count, run.failed_count) == (2, 1)
+    assert run.note is not None and "1건 실패" in run.note
