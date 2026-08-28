@@ -51,6 +51,12 @@ ALL: Final = "all"
 CLASSIFY_SCOPES: tuple[str, ...] = (UNCLASSIFIED, EMPTY_FIELDS, RECENT, ALL)
 
 
+# 분류 행의 칸이 전부 비었는지 보는 조건. 칸 목록은 `app/classify/schema.py` 가 정한다 —
+# 0016 이 셋을 지웠고 0017 이 하나를 더했다. 칸 이름이나 개수를 여기 적어 두면 다음에 칸이
+# 늘거나 줄 때 이 조회만 옛 목록으로 남는다
+_ALL_FIELDS_EMPTY = " AND ".join(f"coalesce(c.{name}, '') = ''" for name in CLASSIFY_FIELDS)
+
+
 class ClassifyScopeError(ValueError):
     """분류가 도는 대상 범위로 쓸 수 없는 값. 부르는 쪽이 사유를 그대로 옮긴다."""
 
@@ -77,6 +83,18 @@ def _scope_from(scope: str, days: int | None) -> tuple[str, tuple[Any, ...]]:
               LEFT JOIN job_classifications c ON c.raw_job_id = r.id
              WHERE c.raw_job_id IS NULL
                AND {_CLASSIFY_TEXT} <> ''
+            """,
+            (),
+        )
+    if scope == EMPTY_FIELDS:
+        # 분류 행은 있는데 칸이 전부 빈 건. **행이 없는 건과 다르다** — 이쪽은 이미 한 번
+        # 돌았고 아무것도 나오지 않은 것이라, 프롬프트나 모델을 바꾼 뒤에 다시 돌릴 대상이다
+        return (
+            f"""
+              FROM raw_jobs r
+              JOIN job_classifications c ON c.raw_job_id = r.id
+             WHERE {_CLASSIFY_TEXT} <> ''
+               AND {_ALL_FIELDS_EMPTY}
             """,
             (),
         )

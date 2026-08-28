@@ -20,8 +20,10 @@ from collections.abc import Iterator
 import pytest
 
 from app import db
+from app.classify.schema import CLASSIFY_FIELDS
 from app.classify.store import (
     CLASSIFY_SCOPES,
+    EMPTY_FIELDS,
     UNCLASSIFIED,
     ClassifyScopeError,
     pending_ids,
@@ -134,3 +136,30 @@ def test_모르는_범위는_사유와_함께_거절된다(conn: sqlite3.Connect
 
     assert "everything" in str(caught.value)
     assert UNCLASSIFIED in str(caught.value)
+
+
+def test_칸이_전부_빈_분류만_고른다(conn: sqlite3.Connection) -> None:
+    add_job(conn, 1)
+    add_job(conn, 2)
+    add_job(conn, 3)
+    classify(conn, 1)
+    classify(conn, 2, duties="제휴사 데이터 연동 구조 기획")
+
+    assert scope_ids(conn, EMPTY_FIELDS) == [1]
+
+
+def test_분류_행이_없으면_대상이_아니다(conn: sqlite3.Connection) -> None:
+    """아직 안 돈 것은 `unclassified` 가 가져간다. 두 범위가 같은 건을 집으면 안 된다."""
+    add_job(conn, 1)
+
+    assert scope_ids(conn, EMPTY_FIELDS) == []
+    assert scope_ids(conn, UNCLASSIFIED) == [1]
+
+
+@pytest.mark.parametrize("field", CLASSIFY_FIELDS)
+def test_한_칸이라도_차_있으면_빠진다(conn: sqlite3.Connection, field: str) -> None:
+    """칸 목록은 `app/classify/schema.py` 에서 읽는다. 열한 칸이 아니고, 또 바뀐다."""
+    add_job(conn, 1)
+    classify(conn, 1, **{field: "값"})
+
+    assert scope_ids(conn, EMPTY_FIELDS) == []
