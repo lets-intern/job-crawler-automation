@@ -158,7 +158,7 @@ def titles(client: TestClient, **params: str) -> list[str]:
 def test_필드별_빈_건수가_직접_센_수와_같다(client: TestClient) -> None:
     """숫자가 틀리면 그 숫자를 보고 엉뚱한 셀렉터를 고치러 간다."""
     assert counts(client) == {
-        "회사": 0,
+        "자회사": 0,
         "제목": 0,
         "근무지": 2,  # 2번, 5번
         "마감": 1,  # 3번 (빈 문자열)
@@ -218,7 +218,7 @@ def test_건수는_빈_값_조건을_빼고_센다(client: TestClient) -> None:
 def test_나머지_조건은_건수에_걸린다(client: TestClient) -> None:
     """워크플로우를 좁혔으면 그 안에서 센 수가 나와야 한다."""
     assert counts(client, workflow_id="2") == {
-        "회사": 0,
+        "자회사": 0,
         "제목": 0,
         "근무지": 1,  # 5번
         "마감": 0,
@@ -245,7 +245,7 @@ def test_조회_조건에_빈_값_칸이_있다(client: TestClient) -> None:
     html = client.get("/ui/review/filters").text
 
     assert 'name="empty"' in html
-    for label in ("아무 필드나", "회사", "제목", "근무지", "마감", "본문", "자격요건"):
+    for label in ("아무 필드나", "자회사", "제목", "근무지", "마감", "본문", "자격요건"):
         assert f">{label}</option>" in html
 
 

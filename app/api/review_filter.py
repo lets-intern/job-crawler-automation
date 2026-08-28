@@ -51,7 +51,8 @@ SORTS: dict[str, tuple[str, ...]] = {
     "review": ("(n.delivered_at IS NULL)", "r.crawled_at", "n.id"),
     "crawled_at": ("r.crawled_at", "n.id"),
     "normalized_at": ("n.normalized_at", "n.id"),
-    "company": ("n.company", "n.id"),
+    # 모회사가 앞이다. 계열사 공고가 그 그룹 아래 모여야 표를 훑는 순서와 회사가 맞는다
+    "company": ("n.parent_company", "n.company", "n.id"),
     "title": ("n.title", "n.id"),
     "deadline": ("n.deadline", "n.id"),
 }
@@ -59,7 +60,7 @@ SORT_LABELS: dict[str, str] = {
     "review": "검수 순서 (미전달 먼저)",
     "crawled_at": "수집 시각",
     "normalized_at": "정규화 시각",
-    "company": "회사",
+    "company": "회사 (모회사 다음 자회사)",
     "title": "제목",
     "deadline": "마감",
 }
@@ -82,11 +83,14 @@ DELIVERY_STATES: dict[str, str] = {
     "no": "미전달",
 }
 
-# 사람이 고칠 수 있는 여섯 필드와 화면에 적을 이름. 키는 `OVERRIDABLE_FIELDS` 와 같아야 한다 —
+# 사람이 고칠 수 있는 필드와 화면에 적을 이름. 키는 `OVERRIDABLE_FIELDS` 와 같아야 한다 —
 # 그쪽이 `job_field_overrides.field_name` 의 CHECK 와 이미 맞춰져 있다.
-# 지우기의 조건 설명도 이 이름을 쓰기 때문에 `app/api/review.py` 가 아니라 여기 둔다
+# 지우기의 조건 설명도 이 이름을 쓰기 때문에 `app/api/review.py` 가 아니라 여기 둔다.
+#
+# `parent_company` 는 여기 없다. 규칙도 보정도 걸리지 않는 칸이라 표에서 읽기만 하고, 그
+# 열은 `fragments/review_table.html` 이 따로 그린다 (`migrations/0018_parent_company.sql`)
 FIELD_LABELS: dict[str, str] = {
-    "company": "회사",
+    "company": "자회사",
     "title": "제목",
     "job_role": "직무",
     "deadline": "마감",
@@ -109,8 +113,12 @@ EMPTY_LABELS: dict[str, str] = {EMPTY_ANY: "아무 필드나", **FIELD_LABELS}
 
 # 빈 값과, 뜻이 있어서 빈 값은 다르다. 구분할 방법이 화면에 없는 필드는 그 사실을 적는다 —
 # 마감이 빈 148건을 셀렉터가 놓친 것으로 읽고 셀렉터를 고치러 가는 일이 여기서 난다.
-# 여기 없는 필드(회사·제목·본문)는 비어 있으면 놓친 것이다
+# 여기 없는 필드(제목·본문)는 비어 있으면 놓친 것이다
 EMPTY_NOTES: dict[str, str] = {
+    # 0018 이 회사명을 두 칸으로 가른 뒤로 자회사는 정상적으로 빈다. 계열사를 말하지 않는
+    # 사이트에서는 전부 비고, 그 자리를 모회사 이름으로 메우지 않는 것이 그 마이그레이션의
+    # 요지다 (`migrations/0018_parent_company.sql`)
+    "company": "계열사를 말하지 않는 사이트는 전부 빈다. 그때는 모회사 열만 값이 있는 것이 맞다",
     "deadline": "상시채용이면 비어 있는 것이 맞다. 저장된 값만으로는 놓친 것과 구분되지 않는다",
     "requirements": "본문에 자격요건이 섞여 있는 사이트면 늘 빈다. 그 사이트는 이것이 정상이다",
     # 0011 이 더한 칸들. 사이트가 그 값을 나눠서 줄 때만 채워지고, 한 덩어리로 주는
@@ -334,10 +342,21 @@ def _dup_parts(kind: str) -> tuple[str, ...]:
     값이라 저장된 컬럼을 그대로 쓴다.
     """
     if kind == DUP_TITLE_COMPANY:
-        return (shown_value("title"), shown_value("company"))
+        return (shown_value("title"), _company_or_parent())
     if kind == DUP_TITLE:
         return (shown_value("title"),)
     return ("n.source_url",)
+
+
+def _company_or_parent() -> str:
+    """중복 판정이 볼 회사. 자회사가 있으면 그것이고, 없으면 모회사다.
+
+    자회사만 보면 계열사를 말하지 않는 사이트의 공고가 한 건도 이 기준에 걸리지 않는다.
+    빈 값끼리는 묶지 않기 때문이고(`_dup_key`), 그러면 토스·우아한형제들의 중복은 제목
+    기준으로만 잡힌다 — 그 기준은 계열사가 나눠 올린 것까지 잡는 넓은 기준이다.
+    """
+    shown = shown_value("company")
+    return f"COALESCE(NULLIF(TRIM({shown}, {_BLANK_CHARS}), ''), n.parent_company)"
 
 
 def _dup_key(kind: str) -> tuple[str, str]:
@@ -367,11 +386,14 @@ def filter_sql(picked: JobFilter) -> tuple[str, list[Any]]:
         clauses.append("r.workflow_id = ?")
         params.append(picked.workflow_id)
     if picked.company:
-        clauses.append("n.company = ?")
-        params.append(picked.company)
+        # 두 칸 어느 쪽이든 그 이름이면 걸린다. `삼성` 을 고르면 계열사 공고까지, `삼성SDS` 를
+        # 고르면 그것만 나온다. 자회사만 보면 회사명을 주지 않는 사이트가 회사로 걸리지 않고,
+        # 모회사만 보면 계열사를 고를 방법이 없다
+        clauses.append("(n.parent_company = ? OR n.company = ?)")
+        params.extend([picked.company] * 2)
     if picked.query:
-        clauses.append("(n.title LIKE ? OR n.company LIKE ?)")
-        params.extend([f"%{picked.query}%"] * 2)
+        clauses.append("(n.title LIKE ? OR n.company LIKE ? OR n.parent_company LIKE ?)")
+        params.extend([f"%{picked.query}%"] * 3)
 
     # 마감일은 날짜 문자열이다. `date()` 가 NULL 을 내는 값(빈 값, 날짜가 아닌 값)은 진행중도
     # 마감도 아니라 `마감일 없음` 쪽에 모은다 — 그렇지 않으면 어느 조건에도 걸리지 않는 행이
@@ -610,7 +632,7 @@ def _describe(conn: sqlite3.Connection, picked: JobFilter, scope: str) -> str:
     return " · ".join(
         (
             f"워크플로우 {workflow}",
-            f"회사 {picked.company or '전체'}",
+            f"회사(모회사 또는 자회사) {picked.company or '전체'}",
             f"진행 여부 {DEADLINE_STATES.get(picked.status, '전체')}",
             f"전달 여부 {DELIVERY_STATES.get(picked.delivered, '전체')}",
             f"빈 값 {EMPTY_LABELS.get(picked.empty, '안 걸림')}",

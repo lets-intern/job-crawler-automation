@@ -94,8 +94,8 @@ MODAL_DONE_EVENT = "app-modal-done"
 _COLUMNS = """
     SELECT n.id            AS id,
            n.raw_job_id    AS raw_job_id,
+           n.parent_company AS parent_company,
            n.company       AS company,
-           n.company_source AS company_source,
            n.title         AS title,
            n.job_role      AS job_role,
            n.deadline      AS deadline,
@@ -366,20 +366,29 @@ def review_filters_fragment(
     request: Request,
     conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
 ) -> HTMLResponse:
-    """조회 조건. 워크플로우와 회사는 지금 저장된 값에서 만든다."""
+    """조회 조건. 워크플로우와 회사는 지금 저장된 값에서 만든다.
+
+    회사 목록은 두 칸을 합친 것이다. 자회사만 모으면 계열사를 말하지 않는 사이트가 목록에서
+    통째로 사라지고, 모회사만 모으면 계열사를 고를 수 없다. 조건도 두 칸을 함께 본다
+    (`app/api/review_filter.py` 의 `filter_sql`).
+    """
     workflows = conn.execute("SELECT id, name FROM workflows ORDER BY id").fetchall()
     companies = conn.execute(
         """
-        SELECT DISTINCT company FROM normalized_jobs
-         WHERE company IS NOT NULL AND company <> ''
-         ORDER BY company
+        SELECT DISTINCT name FROM (
+            SELECT parent_company AS name FROM normalized_jobs
+             UNION
+            SELECT company AS name FROM normalized_jobs
+        )
+         WHERE name IS NOT NULL AND TRIM(name) <> ''
+         ORDER BY name
         """
     ).fetchall()
     return render(
         request,
         "fragments/review_filters.html",
         workflows=workflows,
-        companies=[row["company"] for row in companies],
+        companies=[row["name"] for row in companies],
         page_sizes=PAGE_SIZES,
         default_page_size=DEFAULT_PAGE_SIZE,
         deadline_states=DEADLINE_STATES,

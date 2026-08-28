@@ -167,6 +167,9 @@
       <th scope="col">고치기</th>
       <th scope="col">전달</th>
       <th scope="col">보정</th>
+      {# 모회사는 값 칸이 아니라 읽기 전용 열이다. 규칙도 보정도 걸리지 않는 칸이라
+         `fields` 에 들어 있지 않다 (`migrations/0018_parent_company.sql`) #}
+      <th scope="col">모회사</th>
       {% for field in fields %}<th scope="col">{{ labels[field] }}</th>{% endfor %}
       <th scope="col">워크플로우</th>
       <th scope="col">수집 시각</th>
@@ -190,6 +193,7 @@
       <td>{{ review_open_button(job) }}</td>
       <td>{{ review_delivery(job.raw_job_id, job.delivered_at, item.override_count) }}</td>
       <td class="num">{{ review_override_count(job.raw_job_id, item.override_count) }}</td>
+      <td>{{ job.parent_company or "값 없음" }}</td>
       {% for cell in item.cells %}{{ review_cell(cell) }}{% endfor %}
       <td>{{ job.workflow_id }} - {{ job.workflow_name }}</td>
       <td>{{ job.crawled_at | as_time }}</td>
@@ -199,7 +203,7 @@
       </td>
     </tr>
     {% else %}
-    {{ empty_row(15 if dup_picked else 14, "조건에 맞는 공고가 없다. 조회 조건을 넓히거나, 워크플로우가 한 번이라도 실행됐는지 워크플로우 화면에서 확인한다") }}
+    {{ empty_row(16 if dup_picked else 15, "조건에 맞는 공고가 없다. 조회 조건을 넓히거나, 워크플로우가 한 번이라도 실행됐는지 워크플로우 화면에서 확인한다") }}
     {% endfor %}
   </tbody>
 </table>
