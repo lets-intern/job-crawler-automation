@@ -232,11 +232,18 @@ class ClassifySchemaError(ValueError):
         self.reason = reason
 
 
-def validate_classification(data: Any) -> dict[str, str]:
+def validate_classification(
+    data: Any, response_fields: tuple[str, ...] = RESPONSE_FIELDS
+) -> dict[str, str]:
     """파싱된 응답을 검증해 이름별 문자열로 돌려준다. 없는 키는 빈 문자열이다.
 
     스키마에 없는 칸 이름이 오면 무엇을 말하려던 것인지 추측해서 고치지 않는다. 조용히 고친
     값은 나중에 왜 그 칸에 그 값이 들어갔는지 아무도 설명하지 못한다.
+
+    `response_fields` 는 기본값이 정적 아홉 칸(`RESPONSE_FIELDS`)이지만, 직무 분류가 있는
+    호출은 `build_classification_model()` 이 만든 그 모델의 필드 이름을 넘긴다 — 그 두 칸은
+    호출마다 있을 수도 없을 수도 있어 고정 튜플에 넣을 수 없다(`app/classify/schema.py` 의
+    `TAXONOMY_FIELDS` 설명).
 
     판정 칸의 값이 목록 밖이면 여기서 버리지 않고 그대로 넘긴다. 무엇을 왜 버렸는지 한자리에서
     세려고 판정은 `app/classify/grounding.py` 가 한다.
@@ -244,12 +251,12 @@ def validate_classification(data: Any) -> dict[str, str]:
     if not isinstance(data, Mapping):
         raise ClassifySchemaError("unparsable", f"응답이 객체가 아니다: {type(data).__name__}")
 
-    unknown = sorted(str(key) for key in data if key not in RESPONSE_FIELDS)
+    unknown = sorted(str(key) for key in data if key not in response_fields)
     if unknown:
         raise ClassifySchemaError("unknown_field", f"스키마에 없는 칸이 있다: {', '.join(unknown)}")
 
     result: dict[str, str] = {}
-    for name in RESPONSE_FIELDS:
+    for name in response_fields:
         raw = data.get(name, "")
         if raw is None:
             raw = ""
@@ -261,10 +268,12 @@ def validate_classification(data: Any) -> dict[str, str]:
     return result
 
 
-def parse_classification(text: str) -> dict[str, str]:
+def parse_classification(
+    text: str, response_fields: tuple[str, ...] = RESPONSE_FIELDS
+) -> dict[str, str]:
     """모델 응답 문자열을 파싱하고 검증한다."""
     try:
         data = json.loads(text)
     except json.JSONDecodeError as exc:
         raise ClassifySchemaError("unparsable", f"JSON 으로 읽을 수 없다: {exc}") from exc
-    return validate_classification(data)
+    return validate_classification(data, response_fields)

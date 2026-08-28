@@ -25,7 +25,9 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from app import taxonomy
 from app.classify.classifier import ClassifyError, chosen, classify_body
+from app.classify.schema import build_classification_model
 from app.classify.store import (
     pending_count,
     pending_ids,
@@ -195,6 +197,11 @@ async def classify_ids(
         progress.note(str(exc))
         return progress
 
+    # 직무 분류 표는 배치 시작 전에 한 번만 읽는다. 공고 640건을 돈다고 표를 640번 읽을
+    # 이유가 없다 — 표는 이 실행 도중에는 바뀌지 않는다고 본다
+    taxonomy_tree = taxonomy.enabled_tree(conn)
+    response_model = build_classification_model(conn)
+
     for raw_job_id in raw_job_ids:
         # 원문이 있으면 원문, 없으면 본문이다. 옛 건에는 원문이 없다 (`app/classify/store.py`)
         source = read_source(conn, raw_job_id)
@@ -214,6 +221,8 @@ async def classify_ids(
                 source,
                 title=title,
                 current_values=current_values,
+                taxonomy_tree=taxonomy_tree,
+                response_model=response_model,
                 settings=resolved,
                 client=resolved_client,
                 on_call=counted,

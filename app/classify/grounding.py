@@ -53,7 +53,14 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-from app.classify.schema import EXTRACT_FIELDS, JUDGE_CHOICES, JUDGE_FIELDS, UNDECIDED
+from app.classify.schema import (
+    EXTRACT_FIELDS,
+    JOB_MAJOR,
+    JOB_MINOR,
+    JUDGE_CHOICES,
+    JUDGE_FIELDS,
+    UNDECIDED,
+)
 
 # 비교에서 지우는 글자. 공백, 글머리표, 구두점, 괄호, 따옴표다. 뜻을 나르는 글자는 남는다
 _NOISE = re.compile(r"[\s·•·◦○●□■▪▶▷–—\-*_.,;:!?()\[\]{}<>\"'`~/\\|]+")
@@ -114,7 +121,54 @@ def missing_lines(value: str, body: str) -> list[str]:
     return missing
 
 
-def ground(fields: Mapping[str, str], body: str, title: str = "") -> Grounded:
+def _ground_judged_field(
+    name: str,
+    choices: tuple[str, ...],
+    fields: Mapping[str, str],
+    source: str,
+    *,
+    kept: dict[str, str],
+    dropped: list[str],
+    reasons: dict[str, str],
+    evidence: dict[str, str],
+) -> None:
+    """판정 칸 하나. 목록 안인지와 근거 문장이 원문에 있는지를 본다.
+
+    직무 분류(`job_major`/`job_minor`)도 이 경로를 탄다 — 다른 점은 `choices` 가
+    `JUDGE_CHOICES` 처럼 고정 상수가 아니라 호출 시점의 `job_taxonomy` 표에서 온다는
+    것뿐이다.
+    """
+    value = fields.get(name, "").strip()
+    if not value or value == UNDECIDED:
+        # 고르지 않았다는 답이다. 버린 것이 아니라 본문에 근거가 없다는 뜻이라 세지 않는다
+        kept[name] = ""
+        return
+    if value not in choices:
+        # 스키마의 enum 이 이미 막지만, 스키마를 통과하지 않는 경로(손으로 넣은 응답,
+        # 모델이 enum 을 무시한 경우)가 남아 있다. 목록 밖 값이 한 번 들어오면 그
+        # 칸으로 거르는 소비 측이 조용히 그 건을 놓친다
+        kept[name] = ""
+        dropped.append(name)
+        reasons[name] = NOT_IN_LIST
+        return
+    quote = fields.get(f"{name}_evidence", "").strip()
+    if not quote or missing_lines(quote, source):
+        # 읽고 고른 것이 아니라 지어낸 것이다
+        kept[name] = ""
+        dropped.append(name)
+        reasons[name] = NO_EVIDENCE
+        return
+    kept[name] = value
+    evidence[name] = quote
+
+
+def ground(
+    fields: Mapping[str, str],
+    body: str,
+    title: str = "",
+    *,
+    taxonomy_choices: Mapping[str, tuple[str, ...]] | None = None,
+) -> Grounded:
     """근거가 없는 칸을 버린다. 버린 칸 이름과 이유를 함께 돌려준다.
 
     받는 것은 응답 전체(뽑는 칸 일곱, 판정 칸 둘, 근거 문장 둘)이고, 돌려주는 `fields` 는
@@ -125,6 +179,11 @@ def ground(fields: Mapping[str, str], body: str, title: str = "") -> Grounded:
 
     `title` 을 주지 않으면 보낸 글만 본다. 그것이 옛 동작이고, `job_role` 만 그 상태에서
     거의 전부 버려진다 — 부르는 쪽은 제목을 같이 넘긴다.
+
+    `taxonomy_choices` 는 `{"job_major": (...), "job_minor": (...)}` 모양이다. 그 호출이
+    직무 분류를 물었을 때만 준다 — 주지 않으면 이 둘은 아예 보지 않는다(호출이 그 두 필드를
+    묻지 않았으면 응답에도 없다). **대분류가 버려지면 소분류도 함께 비운다** — 대분류 없이
+    소분류만 있는 상태는 만들지 않는다(PRD `job-taxonomy` 2절).
     """
     # 돌려 보는 곳. 제목과 보낸 글을 한 덩어리로 본다
     source = f"{title}\n{body}"
@@ -146,27 +205,33 @@ def ground(fields: Mapping[str, str], body: str, title: str = "") -> Grounded:
         kept[name] = value
 
     for name in JUDGE_FIELDS:
-        value = fields.get(name, "").strip()
-        if not value or value == UNDECIDED:
-            # 고르지 않았다는 답이다. 버린 것이 아니라 본문에 근거가 없다는 뜻이라 세지 않는다
-            kept[name] = ""
-            continue
-        if value not in JUDGE_CHOICES[name]:
-            # 스키마의 enum 이 이미 막지만, 스키마를 통과하지 않는 경로(손으로 넣은 응답,
-            # 모델이 enum 을 무시한 경우)가 남아 있다. 목록 밖 값이 한 번 들어오면 그
-            # 칸으로 거르는 소비 측이 조용히 그 건을 놓친다
-            kept[name] = ""
-            dropped.append(name)
-            reasons[name] = NOT_IN_LIST
-            continue
-        quote = fields.get(f"{name}_evidence", "").strip()
-        if not quote or missing_lines(quote, source):
-            # 읽고 고른 것이 아니라 지어낸 것이다
-            kept[name] = ""
-            dropped.append(name)
-            reasons[name] = NO_EVIDENCE
-            continue
-        kept[name] = value
-        evidence[name] = quote
+        _ground_judged_field(
+            name,
+            JUDGE_CHOICES[name],
+            fields,
+            source,
+            kept=kept,
+            dropped=dropped,
+            reasons=reasons,
+            evidence=evidence,
+        )
+
+    if taxonomy_choices:
+        for name in (JOB_MAJOR, JOB_MINOR):
+            if name not in taxonomy_choices:
+                kept[name] = ""
+                continue
+            _ground_judged_field(
+                name,
+                taxonomy_choices[name],
+                fields,
+                source,
+                kept=kept,
+                dropped=dropped,
+                reasons=reasons,
+                evidence=evidence,
+            )
+        if not kept.get(JOB_MAJOR) and kept.get(JOB_MINOR):
+            kept[JOB_MINOR] = ""
 
     return Grounded(fields=kept, evidence=evidence, dropped=dropped, reasons=reasons)

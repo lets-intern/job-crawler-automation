@@ -94,6 +94,18 @@ def list_minors(
     return [_row_to_node(row) for row in rows]
 
 
+def enabled_tree(conn: sqlite3.Connection) -> list[tuple[str, tuple[str, ...]]]:
+    """켜진 대분류와 그 아래 켜진 소분류 이름. 분류 프롬프트가 그대로 이 모양을 쓴다.
+
+    소분류가 하나도 켜져 있지 않은 대분류는 빈 튜플로 나온다 — 대분류 자체는 여전히 고를
+    수 있어야 한다.
+    """
+    return [
+        (major.name, tuple(minor.name for minor in list_minors(conn, major.id, enabled_only=True)))
+        for major in list_majors(conn, enabled_only=True)
+    ]
+
+
 def read(conn: sqlite3.Connection, node_id: int) -> TaxonomyNode | None:
     row = conn.execute(
         "SELECT id, parent_id, name, sort_order, enabled, note FROM job_taxonomy WHERE id = ?",

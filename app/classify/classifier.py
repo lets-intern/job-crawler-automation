@@ -43,7 +43,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -52,6 +52,8 @@ from app.classify.schema import (
     CLASSIFY_FIELDS,
     COLLECTED_REVIEW_FIELDS,
     COLLECTED_REVIEW_LABELS,
+    JOB_MAJOR,
+    JOB_MINOR,
     JUDGE_CHOICES,
     UNDECIDED,
     Classification,
@@ -130,7 +132,7 @@ _PROMPT = """아래는 채용공고의 제목과 본문이다. 이것을 정해�
   않는다. 근거를 적을 수 없으면 그 칸을 판단불가 로 둔다.
 - 회사명·모집 시작일·마감일은 위 칸 어디에도 넣지 않는다. 그 셋을 원문과 견주는 자리는
   값이 이미 있을 때만 아래에 따로 나온다. 제목도 `job_role` 말고는 어느 칸에도 넣지 않는다.
-{current_values_block}
+{taxonomy_block}{current_values_block}
 [제목]
 {title}
 
@@ -236,8 +238,36 @@ def _current_values_block(current_values: Mapping[str, str]) -> str:
     )
 
 
+def _taxonomy_block(tree: Sequence[tuple[str, tuple[str, ...]]]) -> str:
+    """직무 분류 구역. 표가 비어 있으면(씨앗 전이거나 전부 껐으면) 빈 문자열이다.
+
+    대분류·소분류를 두 단계로 나눠 묻지 않고 트리를 통째로 한 번에 보낸다(PRD
+    `job-taxonomy` 2절 "한 번에 부른다") — 어느 소분류가 어느 대분류 밑인지 모델이 알아야
+    엉뚱한 조합(다른 대분류의 소분류)을 고르지 않는다.
+    """
+    if not tree:
+        return ""
+    lines = "\n".join(
+        f"- {major}: {', '.join(minors)}" if minors else f"- {major}" for major, minors in tree
+    )
+    return (
+        "\n# 직무 분류 — 아래 목록에서만 고른다\n\n"
+        "job_major 는 대분류, job_minor 는 그 대분류 밑의 소분류다. 목록에 없는 이름을\n"
+        "새로 만들지 않는다. 이 공고가 어느 대분류인지 본문으로 판단할 수 없으면 job_major\n"
+        "를 판단불가 로 둔다. 대분류는 분명한데 그 안의 소분류까지는 본문으로 갈리지\n"
+        "않으면 job_minor 만 판단불가 로 두고 job_major 는 그대로 둔다. job_minor 는 반드시\n"
+        "그 job_major 줄에 적힌 소분류 중에서 고른다 — 다른 대분류의 소분류를 고르지\n"
+        "않는다. 고른 값마다 job_major_evidence / job_minor_evidence 에 그렇게 판단한 본문\n"
+        "근거 문장을 그대로 옮겨 적는다. 근거를 적을 수 없으면 그 칸을 판단불가 로 둔다.\n\n"
+        f"{lines}\n"
+    )
+
+
 def build_prompt(
-    body: str, title: str = "", current_values: Mapping[str, str] | None = None
+    body: str,
+    title: str = "",
+    current_values: Mapping[str, str] | None = None,
+    taxonomy_tree: Sequence[tuple[str, tuple[str, ...]]] = (),
 ) -> tuple[str, list[str]]:
     """보낼 프롬프트와 남길 메모. 상한을 넘긴 글은 자르고 그 사실을 적는다.
 
@@ -255,6 +285,9 @@ def build_prompt(
     (`app/classify/store.py` 의 `read_current_values`). 무엇이 이미 채워져 있는지 모르면
     "원문과 다르다" 를 모델이 말할 수 없다 — 값이 없으면 그 칸은 프롬프트에 아예 나오지 않고,
     나오지 않은 칸을 모델이 지어내 제안하면 근거 검사가 버린다.
+
+    `taxonomy_tree` 는 `app.taxonomy.enabled_tree()` 가 만든 (대분류, 소분류들) 목록이다.
+    빈 목록이면(표가 비었거나 씨앗을 아직 안 넣었으면) 이 구역 자체가 프롬프트에 없다.
     """
     notes: list[str] = []
     text = body
@@ -263,8 +296,15 @@ def build_prompt(
         text = text[:MAX_BODY_CHARS]
     choices = {name: " / ".join((*values, UNDECIDED)) for name, values in JUDGE_CHOICES.items()}
     block = _current_values_block(current_values or {})
+    taxonomy = _taxonomy_block(taxonomy_tree)
     return (
-        _PROMPT.format(body=text, title=title.strip(), current_values_block=block, **choices),
+        _PROMPT.format(
+            body=text,
+            title=title.strip(),
+            current_values_block=block,
+            taxonomy_block=taxonomy,
+            **choices,
+        ),
         notes,
     )
 
@@ -302,6 +342,8 @@ async def classify_body(
     *,
     title: str = "",
     current_values: Mapping[str, str] | None = None,
+    taxonomy_tree: Sequence[tuple[str, tuple[str, ...]]] = (),
+    response_model: type[Classification] = Classification,
     settings: Settings | None = None,
     client: Any | None = None,
     on_call: Callable[[Usage], None] | None = None,
@@ -315,6 +357,11 @@ async def classify_body(
     칸에 원문이 다른 값을 말하면 `ClassificationResult.suggestions` 로 나가고, `fields` 의
     아홉 칸은 건드리지 않는다 — 이 셋은 애초에 `CLASSIFY_FIELDS` 에 없다.
 
+    `taxonomy_tree` 와 `response_model` 은 함께 온다 — 부르는 쪽(`app/classify/batch.py`)이
+    배치 시작 전에 `app.taxonomy.enabled_tree()` 와 `build_classification_model()` 로 한 번만
+    만들어 공고마다 그대로 넘긴다. 공고마다 표를 다시 읽을 이유가 없다. 빈 트리(기본값)는
+    "표가 비었다" 는 뜻이고, 그때 `response_model` 은 `Classification` 그대로다.
+
     `on_call` 은 모델을 부를 때마다 그 호출의 비용으로 불린다. 깨진 응답으로 한 번 더 물으면
     두 번 불린다 — 부르는 쪽이 그것을 `llm_calls` 에 그대로 남겨야 토큰 합이 실제와 맞는다
     (`app/llm/log.py`).
@@ -325,15 +372,23 @@ async def classify_body(
     resolved = settings or get_settings()
     provider, model = chosen(resolved)
     resolved_client = client or build_client(resolved)
-    prompt, notes = build_prompt(body, title, current_values)
+    prompt, notes = build_prompt(body, title, current_values, taxonomy_tree)
+    response_fields = tuple(response_model.model_fields)
+
+    taxonomy_choices: dict[str, tuple[str, ...]] | None = None
+    if taxonomy_tree:
+        taxonomy_choices = {JOB_MAJOR: tuple(major for major, _ in taxonomy_tree)}
+        minors = tuple(minor for _, minor_list in taxonomy_tree for minor in minor_list)
+        if minors:
+            taxonomy_choices[JOB_MINOR] = minors
 
     last_error: ClassifySchemaError | None = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
-        text, usage = await _call(resolved_client, model, prompt, attempt, provider)
+        text, usage = await _call(resolved_client, model, prompt, attempt, provider, response_model)
         if on_call is not None:
             on_call(usage)
         try:
-            fields = parse_classification(text)
+            fields = parse_classification(text, response_fields)
         except ClassifySchemaError as exc:
             logger.warning(
                 "분류 응답 거절 model=%s attempt=%d reason=%s message=%s",
@@ -355,7 +410,7 @@ async def classify_body(
         #
         # 넘기는 것은 자르기 전 값이다. 모델이 본 것은 앞 `MAX_BODY_CHARS` 자뿐이라, 전체에
         # 돌려 보면 검사가 넓어질 뿐 좁아지지 않는다
-        grounded = ground(fields, body, title)
+        grounded = ground(fields, body, title, taxonomy_choices=taxonomy_choices)
         if grounded.dropped:
             logger.warning(
                 "분류가 근거 없는 값을 냈다 model=%s 버린 칸=%s",
@@ -397,7 +452,12 @@ async def classify_body(
 
 
 async def _call(
-    client: Any, model: str, prompt: str, attempt: int, provider: Provider
+    client: Any,
+    model: str,
+    prompt: str,
+    attempt: int,
+    provider: Provider,
+    response_model: type[Classification] = Classification,
 ) -> tuple[str, Usage]:
     try:
         return await provider.call_model(
@@ -406,7 +466,7 @@ async def _call(
             prompt,
             attempt,
             "본문 분류",
-            response_schema=Classification,
+            response_schema=response_model,
             system_instruction=_SYSTEM_INSTRUCTION,
         )
     except LlmCallError as exc:
