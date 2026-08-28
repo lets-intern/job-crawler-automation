@@ -99,7 +99,12 @@ def test_deleting_every_posting_leaves_the_whole_company_list(
     client.post("/ui/review/delete", data={"raw_job_id": ["1", "2", "3"]})
 
     assert conn.execute("SELECT count(*) AS n FROM normalized_jobs").fetchone()["n"] == 0
-    assert [company.name for company in companies.list_all(conn)] == ["삼성SDS", "삼성전기"]
+    # 모회사(삼성전자)도 자기 행을 갖는다 (2026-08-29 결정, `app/companies.py` 의 `register`)
+    assert [company.name for company in companies.list_all(conn)] == [
+        "삼성SDS",
+        "삼성전기",
+        "삼성전자",
+    ]
 
 
 def test_no_code_path_deletes_a_company_row() -> None:

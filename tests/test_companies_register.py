@@ -1,10 +1,12 @@
 """정규화가 회사 행을 만드는지 본다.
 
-확인하는 것은 일곱이다.
+확인하는 것은 여덟이다.
 
 - 같은 회사 공고가 여러 건이어도 행은 하나다
 - 자회사가 빈 건은 모회사 이름으로 행이 생긴다
 - 자회사가 있으면 자회사 이름으로 생기고 `parent_name` 에 모회사가 앉는다
+- 자회사가 있어도 모회사가 자기 행을 따로 갖는다 (2026-08-29 결정). 안 그러면 회사
+  화면에서 모회사 로고를 걸 자리가 없다
 - 행에는 로고가 없다. 채우는 것은 운영자다
 - 값을 미리 보는 경로는 행을 만들지 않는다
 - 스냅샷을 들여오는 경로도 같은 자리를 지나 행을 만든다
@@ -78,7 +80,15 @@ def names(conn: sqlite3.Connection) -> list[tuple[str, str | None, str | None]]:
 def test_a_company_seen_for_the_first_time_gets_a_row(conn: sqlite3.Connection) -> None:
     insert_normalized(conn, add_raw(conn, "삼성SDS", 1), [])
 
-    assert names(conn) == [("삼성SDS", "삼성전자", None)]
+    assert ("삼성SDS", "삼성전자", None) in names(conn)
+
+
+def test_the_parent_gets_its_own_row_too(conn: sqlite3.Connection) -> None:
+    """모회사 로고를 걸려면 모회사도 자기 이름의 행을 가져야 한다."""
+    insert_normalized(conn, add_raw(conn, "삼성SDS", 1), [])
+
+    assert ("삼성전자", None, None) in names(conn)
+    assert len(names(conn)) == 2
 
 
 def test_many_postings_of_one_company_stay_one_row(conn: sqlite3.Connection) -> None:
@@ -86,7 +96,7 @@ def test_many_postings_of_one_company_stay_one_row(conn: sqlite3.Connection) -> 
     for seq in (1, 2, 3):
         insert_normalized(conn, add_raw(conn, "삼성SDS", seq), [])
 
-    assert names(conn) == [("삼성SDS", "삼성전자", None)]
+    assert names(conn) == [("삼성SDS", "삼성전자", None), ("삼성전자", None, None)]
 
 
 def test_a_posting_without_a_subsidiary_registers_the_parent(conn: sqlite3.Connection) -> None:
@@ -107,7 +117,8 @@ def test_the_name_is_what_the_rules_produced(conn: sqlite3.Connection) -> None:
     insert_normalized(conn, add_raw(conn, "삼성전기(주)", 1), [rule])
     insert_normalized(conn, add_raw(conn, "삼성전기", 2), [rule])
 
-    assert names(conn) == [("삼성전기", "삼성전자", None)]
+    assert ("삼성전기", "삼성전자", None) in names(conn)
+    assert ("삼성전자", None, None) in names(conn)
 
 
 def test_previewing_a_value_does_not_register_anything(conn: sqlite3.Connection) -> None:
@@ -127,7 +138,7 @@ def test_an_operator_edit_survives_the_next_posting(conn: sqlite3.Connection) ->
 
     insert_normalized(conn, add_raw(conn, "삼성SDS", 2), [])
 
-    assert names(conn) == [("삼성SDS", "삼성", "https://cdn.test/sds.png")]
+    assert ("삼성SDS", "삼성", "https://cdn.test/sds.png") in names(conn)
 
 
 async def test_a_run_registers_each_affiliate_once(tmp_path: pathlib.Path) -> None:
@@ -139,6 +150,7 @@ async def test_a_run_registers_each_affiliate_once(tmp_path: pathlib.Path) -> No
         assert names(conn) == [
             ("삼성SDS", "삼성전자", None),
             ("삼성전기(주)", "삼성전자", None),
+            ("삼성전자", None, None),
         ]
     finally:
         conn.close()
@@ -189,7 +201,16 @@ def test_importing_a_snapshot_registers_its_companies(tmp_path: pathlib.Path) ->
                 " WHERE coalesce(company, parent_company) IS NOT NULL"
             )
         }
-        assert {name for name, _, _ in registered} == stored
+        # 자회사가 있는 행도 모회사가 자기 행을 따로 갖는다 (2026-08-29 결정). 그래서
+        # 등록된 이름 집합은 위 `coalesce` 집합에 실제 모회사들을 더한 것과 같다
+        parents = {
+            str(row["parent_company"])
+            for row in conn.execute(
+                "SELECT DISTINCT parent_company FROM normalized_jobs"
+                " WHERE parent_company IS NOT NULL"
+            )
+        }
+        assert {name for name, _, _ in registered} == stored | parents
     finally:
         conn.close()
 
@@ -219,7 +240,7 @@ def test_renormalizing_registers_a_company_that_had_no_row(conn: sqlite3.Connect
 
     renormalize(conn, BackfillProgress())
 
-    assert names(conn) == [("삼성SDS", "삼성전자", None)]
+    assert ("삼성SDS", "삼성전자", None) in names(conn)
 
 
 def test_renormalizing_after_a_rename_rule_registers_the_new_name(
@@ -234,10 +255,8 @@ def test_renormalizing_after_a_rename_rule_registers_the_new_name(
 
     renormalize(conn, BackfillProgress())
 
-    assert names(conn) == [
-        ("삼성전기", "삼성전자", None),
-        ("삼성전기(주)", "삼성전자", None),
-    ]
+    assert ("삼성전기", "삼성전자", None) in names(conn)
+    assert ("삼성전기(주)", "삼성전자", None) in names(conn)
 
 
 def test_renormalizing_twice_keeps_the_operator_s_logo(conn: sqlite3.Connection) -> None:
@@ -248,4 +267,4 @@ def test_renormalizing_twice_keeps_the_operator_s_logo(conn: sqlite3.Connection)
     renormalize(conn, BackfillProgress())
     renormalize(conn, BackfillProgress())
 
-    assert names(conn) == [("삼성SDS", "삼성전자", "https://cdn.test/sds.png")]
+    assert ("삼성SDS", "삼성전자", "https://cdn.test/sds.png") in names(conn)

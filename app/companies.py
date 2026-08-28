@@ -81,23 +81,33 @@ def ensure(conn: sqlite3.Connection, name: str, parent_name: str | None = None) 
 def register(
     conn: sqlite3.Connection, company: str | None, parent_company: str | None
 ) -> str | None:
-    """정규화가 확정한 두 칸으로 회사 행 하나를 보장한다. 그 이름을 돌려준다.
+    """정규화가 확정한 두 칸으로 회사 행을 보장한다. 공고가 이어질 이름을 돌려준다.
 
-    **자회사가 있으면 자회사, 없으면 모회사가 이름이다.** 로고는 공고에 나오는 회사에 붙어야
-    하고, 삼성 채용 사이트에서 삼성SDS 공고에 붙을 로고는 삼성SDS 의 것이다. 자회사를 말하지
-    않는 사이트(토스·우아한형제들)는 모회사가 곧 그 회사라 그 이름으로 행이 생긴다.
+    **공고가 이어지는 이름은 자회사가 있으면 자회사, 없으면 모회사다.** 로고는 공고에 나오는
+    회사에 붙어야 하고, 삼성 채용 사이트에서 삼성SDS 공고에 붙을 로고는 삼성SDS 의 것이다.
+    자회사를 말하지 않는 사이트(토스·우아한형제들)는 모회사가 곧 그 회사라 그 이름으로
+    행이 생긴다. 돌려주는 값이 이것이다 — 정규화가 `normalized_jobs.company` 를 채울 이름은
+    이 값이 아니라 여전히 자회사 칸 그대로다(호출부를 본다).
 
-    이름이 곧 모회사면 `parent_name` 은 비운다. 자기 자신을 모회사로 적으면 화면이 그 행을
-    "모회사가 따로 있는 회사" 로 읽는다.
+    **모회사도 자회사와 별개로 자기 행을 갖는다.** 자회사가 있어도 모회사 이름의 행을 함께
+    보장한다 — 안 그러면 삼성전기·삼성SDS 처럼 자회사만 계속 등록되는 사이트에서 "삼성" 이라는
+    이름의 행이 영영 생기지 않고, 회사 화면에서 모회사 로고를 걸 자리가 없다
+    (2026-08-29 결정). 모회사 행의 `parent_name` 은 항상 비운다 — 모회사 위에 또 모회사를
+    적을 자리가 아니다.
 
     둘 다 비어 있으면 아무것도 만들지 않고 None 이다. 이름 없는 회사 행은 어느 공고와도
     이어지지 않는다.
     """
-    name = (company or "").strip() or (parent_company or "").strip()
+    subsidiary = (company or "").strip()
+    parent = (parent_company or "").strip()
+    name = subsidiary or parent
     if not name:
         return None
-    parent = (parent_company or "").strip()
-    ensure(conn, name, None if parent == name else parent)
+    if parent and parent != subsidiary:
+        # 자회사 행보다 먼저 만든다. 순서가 결과를 바꾸지는 않지만, 모회사가 먼저 있어야
+        # 화면에서 "이 자회사의 모회사가 실제로 존재한다" 는 것이 항상 참이 된다
+        ensure(conn, parent, None)
+    ensure(conn, name, None if parent == name else parent or None)
     return name
 
 

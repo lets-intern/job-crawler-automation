@@ -145,20 +145,22 @@ async def test_renormalizing_keeps_the_delivery_mark(conn: sqlite3.Connection) -
     assert [row["delivered_at"] for row in delivered] == [DELIVERED_AT] * 4
 
 
-async def test_clearing_the_operator_value_falls_back_to_the_crawler_name(
+async def test_clearing_the_operator_value_leaves_the_parent_empty(
     conn: sqlite3.Connection,
 ) -> None:
-    """운영자가 지우면 크롤러 이름으로 내려간다. 빈 문자열로 채우지는 않는다 (1.3).
+    """운영자가 지우면 모회사도 비어 있다. 크롤러 이름으로 대신 채우지 않는다 (2026-08-29 결정).
 
-    2026-08-26 이전에는 여기서 NULL 로 돌아갔다. 목록이 회사명을 주지 않는 사이트가 있어서,
-    비워 두는 것보다 상위 기업 이름이라도 있는 편이 낫다고 정했다.
+    2026-08-26 부터 2026-08-29 까지는 여기서 크롤러 이름으로 돌아갔다. 목록이 회사명을 주지
+    않는 사이트가 있어서였는데, 그러면 모회사가 운영자가 적은 값인지 시스템이 짐작한 값인지
+    화면에서 갈리지 않았다. 등록 화면이 이 칸을 필수로 받게 되면서(비우고 저장할 수 없다) 그
+    짐작이 필요 없어졌다 — 여기서 지우는 것은 화면을 거치지 않은 직접 DB 조작이고, 그런
+    경로까지 대신 채워 주지 않는다.
     """
     await collect(conn)
-    name = conn.execute("SELECT name FROM crawlers WHERE id = 2").fetchone()["name"]
 
     conn.execute("UPDATE crawlers SET default_company = NULL WHERE id = 2")
     renormalize(conn, BackfillProgress())
 
     after = rows_by_workflow(conn, OPERATOR_WORKFLOW)
-    assert [row["parent_company"] for row in after] == [name, name]
+    assert [row["parent_company"] for row in after] == [None, None]
     assert [row["company"] for row in after] == [None, None]
