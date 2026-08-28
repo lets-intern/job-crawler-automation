@@ -180,12 +180,27 @@ def skipped(conn: sqlite3.Connection, side_workflow_id: int, trigger: str, note:
 def latest(conn: sqlite3.Connection, side_workflow_id: int) -> SideRun | None:
     """그 워크플로우의 마지막 실행. 한 번도 돈 적이 없으면 None 이다. 읽기 전용이다.
 
-    겹침 방지가 이 값을 본다. 열려 있는 실행이 있다면 그것이 마지막 실행이다 — 새 행은 앞
-    실행을 닫은 뒤에만 생기기 때문이고, 그렇지 않은 경우는 프로세스가 죽어 남은 행뿐이라
-    기동 시 `close_orphans` 가 닫는다.
+    화면이 "최근 결과" 로 읽는 값이다. **돌고 있는지를 이것으로 판단하지 않는다** — 건너뛴
+    차례는 열자마자 닫힌 행이라, 앞 실행이 아직 도는 중에도 마지막 행은 닫혀 있을 수 있다.
+    그 질문의 답은 `open_run` 이다.
     """
     row = conn.execute(
         f"SELECT {_COLUMNS} FROM side_runs WHERE side_workflow_id = ? ORDER BY id DESC LIMIT 1",
+        (side_workflow_id,),
+    ).fetchone()
+    return None if row is None else _from_row(row)
+
+
+def open_run(conn: sqlite3.Connection, side_workflow_id: int) -> SideRun | None:
+    """그 워크플로우에서 아직 돌고 있는 실행. 없으면 None 이다. 읽기 전용이다.
+
+    겹침 방지가 보는 값이다. 마지막 행이 아니라 **열린 행**을 찾는다. 건너뛴 차례는 열자마자
+    닫히므로, 마지막 행으로 판단하면 건너뜀 하나가 앞의 열린 실행을 가려 그다음 차례부터
+    겹쳐 돌게 된다.
+    """
+    row = conn.execute(
+        f"SELECT {_COLUMNS} FROM side_runs"
+        " WHERE side_workflow_id = ? AND status IS NULL ORDER BY id LIMIT 1",
         (side_workflow_id,),
     ).fetchone()
     return None if row is None else _from_row(row)

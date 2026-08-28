@@ -371,3 +371,20 @@ def test_a_partly_failed_run_is_still_a_success(jobs: sqlite3.Connection) -> Non
     assert run.status == runs.SUCCESS
     assert (run.processed_count, run.failed_count) == (2, 1)
     assert run.note is not None and "1건 실패" in run.note
+
+
+def test_a_third_call_is_still_blocked_after_a_skip(
+    conn: sqlite3.Connection, workflow: store.SideWorkflow
+) -> None:
+    """건너뛴 행이 마지막 실행이 되어도 막는 것은 열려 있는 실행이다 (3.3.2).
+
+    건너뜀 행은 열자마자 닫힌다. "마지막 행이 돌고 있는가" 로 보면 그 행이 앞의 열린 실행을
+    가려서, 두 번째 차례부터는 겹쳐 도는 것을 허용하게 된다.
+    """
+    runs.start(conn, workflow.id, runner.SCHEDULE)
+
+    first = runner.run_now(conn, workflow.id, trigger=runner.SCHEDULE)
+    second = runner.run_now(conn, workflow.id, trigger=runner.SCHEDULE)
+
+    assert first.status == runs.SKIPPED
+    assert second.status == runs.SKIPPED

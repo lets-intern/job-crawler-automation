@@ -111,8 +111,8 @@ def _blocked(conn: sqlite3.Connection, workflow: store.SideWorkflow) -> str | No
     뒤엣것이 없으면 화면에서 건 분류와 `POST /api/classify` 로 건 분류가 같은 공고에 두 번
     돈을 쓴다.
     """
-    running = runs.latest(conn, workflow.id)
-    if running is not None and running.running:
+    running = runs.open_run(conn, workflow.id)
+    if running is not None:
         return f"앞 실행 {running.id} 이 아직 돌고 있다"
     if workflow.kind == store.CLASSIFY and get_classify_run().progress().running:
         return "`POST /api/classify` 로 시작한 분류가 아직 돌고 있다"
