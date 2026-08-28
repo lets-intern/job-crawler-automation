@@ -775,10 +775,15 @@ async def _delete_request(request: Request) -> tuple[str, list[int], JobFilter]:
 
 
 def _delete_rows(conn: sqlite3.Connection, raw_job_ids: Sequence[int]) -> tuple[int, int, int]:
-    """세 표를 한 트랜잭션으로, 외래키 순서대로 비운다.
+    """네 표를 한 트랜잭션으로, 외래키 순서대로 비운다.
 
-    `job_field_overrides` -> `normalized_jobs` -> `raw_jobs` 순이다. 거꾸로 지우면 외래키가
-    막고, 막히지 않는다면 그것대로 문제다 — 가리키는 곳이 없는 보정이 남는다.
+    `job_field_overrides` -> `job_classifications` -> `normalized_jobs` -> `raw_jobs` 순이다.
+    거꾸로 지우면 외래키가 막고, 막히지 않는다면 그것대로 문제다 — 가리키는 곳이 없는 보정이
+    남는다. `job_classifications` (`migrations/0014_job_classifications.sql`) 도 `raw_job_id` 를
+    참조하는데 이 함수가 지우지 않아, 분류가 붙은 건을 지우면 `FOREIGN KEY constraint failed` 로
+    죽었다 — 지운 것은 여기서 함께 지운다. 반환값 개수에는 넣지 않는다. 화면의 확인 창이
+    보여주는 세 수치(`overrides`, `normalized`, `delivered`)는 그대로 두고, 분류는 원문에서
+    다시 만들 수 있는 파생값이라 사라져도 되돌릴 수 없는 손실이 아니다.
 
     한 트랜잭션인 이유는 절반만 지워진 상태를 운영자가 손으로 풀 수 없어서다. 정규화 행만
     사라지고 수집 건이 남으면 그 건은 어느 화면에도 나오지 않는데 표에는 있다.
@@ -790,6 +795,7 @@ def _delete_rows(conn: sqlite3.Connection, raw_job_ids: Sequence[int]) -> tuple[
             overrides += conn.execute(
                 f"DELETE FROM job_field_overrides WHERE raw_job_id IN ({marks})", part
             ).rowcount
+            conn.execute(f"DELETE FROM job_classifications WHERE raw_job_id IN ({marks})", part)
             normalized += conn.execute(
                 f"DELETE FROM normalized_jobs WHERE raw_job_id IN ({marks})", part
             ).rowcount

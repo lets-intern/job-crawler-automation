@@ -215,6 +215,26 @@ def test_고른_것만_세_표에서_사라지고_나머지는_남는다(
     )
 
 
+def test_분류가_붙은_건도_외래키_없이_지워진다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """`job_classifications` 도 `raw_job_id` 를 참조한다 (`migrations/0014`).
+
+    지우기 전에 이 표를 비우지 않으면 `sqlite3.IntegrityError: FOREIGN KEY constraint failed`
+    로 죽는다 — 분류가 붙은 공고를 지우려던 실제 운영 중 실패를 그대로 재현한다.
+    """
+    conn.execute(
+        "INSERT INTO job_classifications (raw_job_id, model) VALUES (1, 'gemini-3.7-flash')"
+    )
+
+    response = client.post("/ui/review/delete", data={"raw_job_id": ["1"]})
+
+    assert response.status_code == 200
+    assert "IntegrityError" not in response.text
+    assert raw_ids(conn) == [2, 3, 4, 5]
+    assert int(conn.execute("SELECT count(*) FROM job_classifications").fetchone()[0]) == 0
+
+
 def test_필터_전체로_지우면_조건에_걸린_것만_사라진다(
     client: TestClient, conn: sqlite3.Connection
 ) -> None:
