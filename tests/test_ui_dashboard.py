@@ -277,3 +277,98 @@ def test_방금_남긴_로그가_맨_위에_온다(client: TestClient) -> None:
     body = client.get("/ui/dashboard/logs").text
 
     assert body.index("나중에 남긴 줄") < body.index("먼저 남긴 줄")
+
+
+def test_토큰_사용량이_없으면_안내를_적는다(client: TestClient) -> None:
+    body = client.get("/ui/dashboard").text
+
+    assert "AI 토큰 사용량" in body
+    assert "아직 쌓인 호출이 없다" in body
+
+
+def test_토큰_사용량이_기능별로_나온다(client: TestClient, conn: sqlite3.Connection) -> None:
+    from app.llm.base import Usage
+    from app.llm.log import CLASSIFY, SELECTOR_GENERATE, record_call
+
+    record_call(
+        conn,
+        feature=CLASSIFY,
+        usage=Usage(
+            provider="gemini",
+            model="gemini-3.5-flash",
+            input_tokens=1000,
+            output_tokens=200,
+            total_tokens=1200,
+            latency_ms=500,
+        ),
+    )
+    record_call(
+        conn,
+        feature=SELECTOR_GENERATE,
+        usage=Usage(
+            provider="gemini",
+            model="gemini-3.5-flash",
+            input_tokens=300,
+            output_tokens=100,
+            total_tokens=400,
+            latency_ms=500,
+        ),
+    )
+    conn.commit()
+
+    body = client.get("/ui/dashboard").text
+
+    assert "본문 분류" in body
+    assert "1,200 토큰 · 호출 1회" in body
+    assert "셀렉터 생성" in body
+    assert "400 토큰 · 호출 1회" in body
+    assert "AI 수정" in body  # 호출이 없어도 그래프에서 빠지지 않는다
+
+
+def test_일별_추이에_토큰_사용량도_들어간다(client: TestClient, conn: sqlite3.Connection) -> None:
+    from app.llm.base import Usage
+    from app.llm.log import CLASSIFY, record_call
+
+    record_call(
+        conn,
+        feature=CLASSIFY,
+        usage=Usage(
+            provider="gemini",
+            model="gemini-3.5-flash",
+            input_tokens=500,
+            output_tokens=500,
+            total_tokens=1000,
+            latency_ms=100,
+        ),
+    )
+    conn.commit()
+
+    body = client.get("/ui/dashboard").text
+
+    assert "AI 토큰(그 날 최댓값 기준)" in body
+    assert "토큰 1,000" in body  # 오늘 칸의 title 속성에 오늘 쓴 토큰 수가 그대로 적힌다
+
+
+def test_오늘_AI_토큰_지표가_있다(client: TestClient, conn: sqlite3.Connection) -> None:
+    from app.llm.base import Usage
+    from app.llm.log import CLASSIFY, record_call
+
+    record_call(
+        conn,
+        feature=CLASSIFY,
+        usage=Usage(
+            provider="gemini",
+            model="gemini-3.5-flash",
+            input_tokens=800,
+            output_tokens=200,
+            total_tokens=1000,
+            latency_ms=100,
+        ),
+    )
+    conn.commit()
+
+    body = client.get("/ui/dashboard").text
+
+    assert "오늘 AI 토큰" in body
+    idx = body.index("오늘 AI 토큰")
+    assert "1,000" in body[idx : idx + 200]

@@ -41,6 +41,8 @@ from fastapi.responses import HTMLResponse
 from app.api.settings import get_connection
 from app.api.ui import display_zone, render, render_page
 from app.api.ui_complete import _COMPLETE_WHERE, completed_count, recent_completed
+from app.llm.log import by_feature
+from app.llm.settings import FEATURE_LABELS
 from app.log_ring import LogLine
 from app.log_ring import handler as _log_handler
 
@@ -114,20 +116,37 @@ def _daily_completed(conn: sqlite3.Connection, modifier: str) -> dict[str, int]:
     return {str(row["day"]): int(row["cnt"]) for row in rows}
 
 
+def _daily_tokens(conn: sqlite3.Connection, modifier: str) -> dict[str, int]:
+    """일별 AI 토큰 사용량 합. `llm_calls` 는 성공·실패 호출을 모두 남긴다(`app/llm/log.py`)."""
+    rows = conn.execute(
+        """
+        SELECT date(called_at, ?) AS day, coalesce(sum(total_tokens), 0) AS n
+          FROM llm_calls
+         GROUP BY day
+        """,
+        (modifier,),
+    ).fetchall()
+    return {str(row["day"]): int(row["n"]) for row in rows}
+
+
 @dataclass(frozen=True)
 class TrendDay:
-    """그래프 막대 하나. `added_pct`/`completed_pct` 는 화면에 그릴 막대 높이(0~100)다 —
-    그 날짜 구간의 최댓값 대비 비율에, 0건이 아닌데 반올림으로 안 보일 만큼 작아지는 막대가
-    없게 최소 높이를 얹었다. 템플릿은 픽셀·SVG 계산 없이 이 값을 그대로 쓴다."""
+    """그래프 막대 하나. `*_pct` 는 화면에 그릴 막대 높이(0~100)다 — 추가·완성 둘은 같은
+    최댓값을 기준으로 비율을 맞춰 서로 견줄 수 있게 하고, 토큰은 단위가 전혀 달라(건수가
+    아니라 토큰 수) 자기 자신의 최댓값을 기준으로 따로 맞춘다. 0이 아닌데 반올림으로 안
+    보일 만큼 작아지는 막대가 없게 최소 높이를 얹었다. 템플릿은 픽셀·SVG 계산 없이 이
+    값을 그대로 쓴다."""
 
     label: str
     added: int
     completed: int
+    tokens: int
     added_pct: int
     completed_pct: int
+    tokens_pct: int
 
 
-# 막대 높이 하한. 실제 비율이 이보다 낮아도 0건이 아니면 이 높이로 그린다 — 몇 건 안 되는
+# 막대 높이 하한. 실제 비율이 이보다 낮아도 0이 아니면 이 높이로 그린다 — 몇 건 안 되는
 # 날이 그래프에서 아예 안 보이는 막대가 되지 않게 한다
 _MIN_BAR_PCT = 6
 
@@ -142,19 +161,23 @@ def trend(conn: sqlite3.Connection, days: int = TREND_DAYS) -> list[TrendDay]:
     modifier = _offset_modifier()
     added = _daily_added(conn, modifier)
     completed = _daily_completed(conn, modifier)
+    tokens = _daily_tokens(conn, modifier)
     day_list = _day_range(days)
     peak = max([*added.values(), *completed.values(), 1])
+    token_peak = max([*tokens.values(), 1])
     result: list[TrendDay] = []
     for d in day_list:
         key = d.isoformat()
-        a, c = added.get(key, 0), completed.get(key, 0)
+        a, c, t = added.get(key, 0), completed.get(key, 0), tokens.get(key, 0)
         result.append(
             TrendDay(
                 label=d.strftime("%m/%d"),
                 added=a,
                 completed=c,
+                tokens=t,
                 added_pct=_bar_pct(a, peak),
                 completed_pct=_bar_pct(c, peak),
+                tokens_pct=_bar_pct(t, token_peak),
             )
         )
     return result
@@ -168,10 +191,12 @@ class Metrics:
     completed_delta: int
     completed_total: int
     added_total: int
+    tokens_today: int
+    tokens_delta: int
 
 
 def metrics(conn: sqlite3.Connection, days: list[TrendDay]) -> Metrics:
-    """지표 넷. `_delta` 는 어제 대비 오늘 차이다 — 숫자 하나만 보면 늘고 있는지 알 수 없다."""
+    """지표 다섯. `_delta` 는 어제 대비 오늘 차이다 — 숫자 하나만 보면 늘고 있는지 알 수 없다."""
     total_added = conn.execute("SELECT count(*) AS n FROM raw_jobs").fetchone()["n"]
     today = days[-1] if days else None
     yesterday = days[-2] if len(days) >= 2 else None
@@ -182,7 +207,38 @@ def metrics(conn: sqlite3.Connection, days: list[TrendDay]) -> Metrics:
         completed_delta=(today.completed - yesterday.completed) if today and yesterday else 0,
         completed_total=completed_count(conn),
         added_total=int(total_added),
+        tokens_today=today.tokens if today else 0,
+        tokens_delta=(today.tokens - yesterday.tokens) if today and yesterday else 0,
     )
+
+
+@dataclass(frozen=True)
+class FeatureBar:
+    """AI 기능 하나의 토큰 사용량 막대. `pct` 는 셋 중 최댓값 대비 비율(0~100)이고,
+    호출이 있는데 반올림으로 안 보일 만큼 작아지지 않게 최소 높이를 얹었다."""
+
+    feature: str
+    label: str
+    calls: int
+    total_tokens: int
+    pct: int
+
+
+def token_usage(conn: sqlite3.Connection) -> list[FeatureBar]:
+    """기능별(셀렉터 생성·수정, 분류) 누적 토큰 사용량. `.claude/rules/llm.md` 가 모든 호출을
+    `llm_calls` 에 남기라고 정한 것이 이 그래프가 가능한 이유다."""
+    usage = by_feature(conn)
+    peak = max([u.total_tokens for u in usage] + [1])
+    return [
+        FeatureBar(
+            feature=u.feature,
+            label=FEATURE_LABELS.get(u.feature, u.feature),
+            calls=u.calls,
+            total_tokens=u.total_tokens,
+            pct=_bar_pct(u.total_tokens, peak),
+        )
+        for u in usage
+    ]
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -202,6 +258,7 @@ def dashboard_summary_fragment(
         trend_days=days,
         cards=recent_completed(conn, RECENT_LIMIT),
         quick_links=QUICK_LINKS,
+        token_bars=token_usage(conn),
     )
 
 
