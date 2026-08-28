@@ -680,3 +680,21 @@ def test_목록에_모회사_고치는_폼이_있다(client: TestClient, conn: s
 
     assert 'hx-put="/ui/companies/parent"' in body
     assert 'name="parent_name"' in body
+
+
+def test_이_화면의_모회사가_검수_화면의_것과_다른_값임을_적는다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """두 화면에 같은 이름의 칸이 있고, 값은 다를 수 있다.
+
+    이쪽은 사람이 적는 `companies.parent_name` 이고 검수 화면은 크롤러가 정한
+    `normalized_jobs.parent_company` 다. 이름표가 둘 다 `모회사` 이기만 하면 같은 회사가
+    두 화면에서 다르게 보이는 것이 고장으로 읽힌다 (`.claude/docs/data-model.md`).
+    """
+    add_job(conn, "토스", 1)
+    conn.commit()
+
+    body = client.get("/ui/companies").text
+
+    assert ">모회사 (사람이 적음)</th>" in body
+    assert "검수 화면의 모회사 열은 크롤러가 정한 값이라 여기와 다를 수 있다" in body

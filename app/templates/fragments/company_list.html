@@ -13,7 +13,10 @@
     <thead>
       <tr>
         <th scope="col">회사명</th>
-        <th scope="col">모회사</th>
+        {# 검수 화면에도 `모회사` 열이 있고 그쪽은 크롤러가 정한
+           `normalized_jobs.parent_company` 다. 이 칸은 사람이 적는 `companies.parent_name`
+           이라 두 화면의 값이 다를 수 있고, 이름표가 같으면 그 차이가 고장으로 읽힌다 #}
+        <th scope="col" title="여기서 사람이 적는 값이다. 검수 화면의 모회사 열은 크롤러가 정한 다른 값이다">모회사 (사람이 적음)</th>
         <th scope="col">공고 수</th>
         <th scope="col">로고</th>
       </tr>

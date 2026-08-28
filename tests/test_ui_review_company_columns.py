@@ -97,7 +97,9 @@ def client(tmp_path: pathlib.Path, conn: sqlite3.Connection) -> Iterator[TestCli
 def test_표에_모회사_열과_자회사_열이_따로_있다(client: TestClient) -> None:
     html = client.get("/ui/review").text
 
-    assert '<th scope="col">모회사</th>' in html
+    # 머리글이 어느 모회사인지까지 적는다. 회사 화면에도 같은 이름의 칸이 있고 그쪽은
+    # 사람이 적는 `companies.parent_name` 이다
+    assert ">모회사 (크롤러가 정함)</th>" in html
     assert '<th scope="col">자회사</th>' in html
     # 지운 열의 이름표가 남아 있으면 안 된다
     assert "회사명 출처" not in html
