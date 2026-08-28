@@ -40,10 +40,13 @@
               `tests/test_ui_review_job_major_filter.py`. 값 자체는 `company` 필터와 같이
               자유 문자열로 받아, 대분류를 끈 뒤에도 이미 그 값으로 분류된 공고를 계속
               조회할 수 있게 했다(닫힌 목록은 select 의 선택지에만 적용된다).
-    - [ ] 5.3 제공 API(`GET /api/jobs`)의 `SELECT`·`JobItem`·`_out()`에 `job_major`,
+    - [x] 5.3 제공 API(`GET /api/jobs`)의 `SELECT`·`JobItem`·`_out()`에 `job_major`,
           `job_minor`를 더한다. 값이 없으면 `job_role`과 같은 규칙으로 `null`이다
-        - [ ] 5.3.V 검증(제공 API): 커서로 두 번 조회해 두 필드가 응답에 있고 누락·중복이
-              없는지 pytest
+        - [x] 5.3.V 검증(제공 API): 커서로 두 번 조회해 두 필드가 응답에 있고 누락·중복이
+              없는지 pytest — `tests/test_api_jobs.py::test_job_major_minor_survive_two_cursor_pages`
+              (limit=2 로 4건을 두 페이지로 나눠 받아 id 집합·필드 존재를 확인),
+              `test_job_major_minor_go_out_filled_or_null` (채워진 값과 `null` 구분),
+              `test_item_shape_matches_contract` 에 두 키를 추가
     - [ ] 5.4 `.claude/docs/api-contract.md`에 두 필드를 더한다. 뜻, 나올 수 있는 값이
           닫힌 목록이 아니라 운영자가 어드민에서 바꾸는 표라는 것, `job_role`과 다른 점을
           적는다

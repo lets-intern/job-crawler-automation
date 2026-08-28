@@ -174,6 +174,9 @@ def test_item_shape_matches_contract(client: TestClient, conn: sqlite3.Connectio
         "title",
         # 0017 이 더한 직무. 제목에서 옮긴 자유 텍스트라 이 필드로는 거를 수 없다
         "job_role",
+        # 0025 가 더한 직무 분류. job_taxonomy 표에서 고른 닫힌 값이다(5.3)
+        "job_major",
+        "job_minor",
         "deadline",
         "body",
         "requirements",
@@ -222,6 +225,51 @@ def test_new_columns_go_out_filled_or_null(client: TestClient, conn: sqlite3.Con
     ] == [None] * (len(SPLIT_BODY_FIELDS) - 2)
     # 기존 필드의 값과 뜻은 그대로다
     assert item["deadline"] == "2026-09-30"
+
+
+def test_job_major_minor_go_out_filled_or_null(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """분류가 채운 값은 그대로, 아직 분류를 돌리지 않은 건은 `null` 로 나간다(5.3).
+
+    `job_role` 과 같은 규칙이다 — 값이 없으면 다른 값으로 메우지 않는다.
+    """
+    ids = seed(conn, 2)
+    conn.execute(
+        "UPDATE normalized_jobs SET job_major = ?, job_minor = ? WHERE id = ?",
+        ("IT·개발", "서버·백엔드", ids[0]),
+    )
+
+    items = {item["id"]: item for item in client.get("/api/jobs").json()["items"]}
+
+    assert items[ids[0]]["job_major"] == "IT·개발"
+    assert items[ids[0]]["job_minor"] == "서버·백엔드"
+    assert items[ids[1]]["job_major"] is None
+    assert items[ids[1]]["job_minor"] is None
+
+
+def test_job_major_minor_survive_two_cursor_pages(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """커서로 두 번 나눠 받아도 두 필드가 매 건 있고, 값이 누락·중복 없이 온다(5.3.V)."""
+    ids = seed(conn, 4)
+    majors = {ids[0]: "IT·개발", ids[2]: "경영·전략"}
+    for job_id, major in majors.items():
+        conn.execute("UPDATE normalized_jobs SET job_major = ? WHERE id = ?", (major, job_id))
+
+    first = client.get("/api/jobs", params={"limit": 2}).json()
+    second = client.get("/api/jobs", params={"limit": 2, "cursor": first["next_cursor"]}).json()
+    items = first["items"] + second["items"]
+
+    assert {item["id"] for item in items} == set(ids)
+    assert len({item["id"] for item in items}) == len(items)
+    seen_majors = {item["id"]: item["job_major"] for item in items}
+    for job_id in ids:
+        assert seen_majors[job_id] == majors.get(job_id)
+        # 두 필드 모두 응답에 있다 — 없는 값은 빠지는 것이 아니라 `null` 이다
+        item = next(i for i in items if i["id"] == job_id)
+        assert "job_major" in item
+        assert "job_minor" in item
 
 
 def test_broken_cursor_is_rejected(client: TestClient, conn: sqlite3.Connection) -> None:

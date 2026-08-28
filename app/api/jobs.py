@@ -36,7 +36,8 @@ MAX_LIMIT = 500
 STORED_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 _SELECT = """
-    SELECT id, parent_company, company, title, job_role, deadline, body, requirements,
+    SELECT id, parent_company, company, title, job_role, job_major, job_minor,
+           deadline, body, requirements,
            start_date, employment_type, career_level, work_location,
            duties, preferred, hiring_process, etc_info,
            source_url, normalized_at
@@ -58,6 +59,11 @@ class JobOut(BaseModel):
     사이트에서는 `null` 이다 — 그 자리를 모회사 이름으로 메우지 않는다
     (`migrations/0018_parent_company.sql`).
 
+    0025 가 `job_major`/`job_minor` 를 더했다 — `job_role` 과 달리 셀렉터가 뽑는 자유
+    텍스트가 아니라 분류가 `job_taxonomy`(운영자가 어드민에서 바꾸는 표)에서 골라 채우는
+    닫힌 값이다. 아직 분류를 돌리지 않았거나 본문으로 판단이 갈리지 않으면 `null` 이다
+    (`.claude/docs/api-contract.md`).
+
     사이트가 그 값을 주지 않으면 `null` 이다. 없는 값을 다른 값으로 채우지 않는다.
     """
 
@@ -66,6 +72,8 @@ class JobOut(BaseModel):
     company: str | None
     title: str | None
     job_role: str | None
+    job_major: str | None
+    job_minor: str | None
     deadline: str | None
     body: str | None
     requirements: str | None
@@ -168,6 +176,8 @@ def _out(row: sqlite3.Row) -> JobOut:
         company=row["company"],
         title=row["title"],
         job_role=row["job_role"],
+        job_major=row["job_major"],
+        job_minor=row["job_minor"],
         deadline=row["deadline"],
         body=row["body"],
         requirements=row["requirements"],
