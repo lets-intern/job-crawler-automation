@@ -50,10 +50,13 @@ empty`). `판단불가` 는 저장되지 않고 빈 칸이 된다.
 from __future__ import annotations
 
 import json
+import sqlite3
 from collections.abc import Mapping
 from typing import Any, Final, Literal, get_args
 
-from pydantic import BaseModel
+from pydantic import BaseModel, create_model
+
+from app import taxonomy
 
 # 아래 모델은 Gemini 의 response_schema 로 그대로 나간다. `extra="forbid"` 를 걸면
 # `additionalProperties: false` 로 변환되는데 Gemini 가 그 필드를 모르고 400 을 낸다.
@@ -154,6 +157,23 @@ CLASSIFY_FIELDS: tuple[str, ...] = (*JUDGE_FIELDS, *EXTRACT_FIELDS)
 # 응답에 올 수 있는 이름 전부
 RESPONSE_FIELDS: tuple[str, ...] = tuple(Classification.model_fields)
 
+# 직무 분류. `job_taxonomy`(운영 DB 표)에서 고르는 판정 칸 둘이라 `Classification`(정적
+# pydantic 모델)에도, 위 `CLASSIFY_FIELDS`/`RESPONSE_FIELDS`(둘 다 그 정적 모델에서 뽑는다)
+# 에도 없다 — 목록이 배포 없이 바뀌어야 해서 호출 시점에 `build_classification_model()` 이
+# 이 두 칸을 가진 모델을 새로 만든다. `CLASSIFY_FIELDS` 를 그대로 넓히지 않는 이유는
+# `EXTRACT_FIELDS | JUDGE_FIELDS == CLASSIFY_FIELDS` (`tests/test_classify_body.py`)가
+# "이 아홉 칸은 전부 정적 모델의 필드다" 를 지키는 불변식이기 때문이다. 근거 검사
+# (`app/classify/grounding.py`)에 이 둘을 엮는 것은 Push 3 이 한다 — 지금은 저장 경로
+# (`app/classify/store.py`, `app/normalize/engine.py`)만 이 두 칸을 안다
+JOB_MAJOR: Final = "job_major"
+JOB_MINOR: Final = "job_minor"
+TAXONOMY_FIELDS: tuple[str, ...] = (JOB_MAJOR, JOB_MINOR)
+
+# 저장 경로(분류 결과 표, 정규화)가 옮기는 칸 전부. `CLASSIFY_FIELDS` 에 직무 분류 둘을 더한
+# 것이다 — `job_classifications`/`normalized_jobs` 양쪽 다 이 두 칸의 컬럼을 갖는다
+# (`migrations/0025_job_major_minor.sql`)
+STORED_CLASSIFY_FIELDS: tuple[str, ...] = (*CLASSIFY_FIELDS, *TAXONOMY_FIELDS)
+
 
 def _choices(name: str) -> tuple[str, ...]:
     annotation = Classification.model_fields[name].annotation
@@ -169,6 +189,39 @@ JUDGE_CHOICES: dict[str, tuple[str, ...]] = {name: _choices(name) for name in JU
 # 임포트 시점에 걸린다 — 640건을 돌린 뒤에 알게 될 일이 아니다
 for _name in JUDGE_FIELDS:
     assert UNDECIDED in get_args(Classification.model_fields[_name].annotation), _name
+
+
+def build_classification_model(conn: sqlite3.Connection) -> type[Classification]:
+    """`job_taxonomy` 의 켜진 값으로 `job_major`/`job_minor` 를 더한 모델을 만든다.
+
+    `Classification` 은 고치지 않는다 — 그 클래스는 배포 시점에 고정된 아홉 칸의 모양이고,
+    직무 분류는 운영 중에 표가 바뀌면 다음 호출부터 목록이 따라와야 한다. 그래서 매 호출
+    시점에 이 함수로 새 모델을 만든다.
+
+    **켜진 대분류가 하나도 없으면(표가 비었거나 전부 껐으면) `Classification` 을 그대로
+    돌려준다.** 고를 것이 없는 판정 칸을 모델에 보내면 그 자리를 채우라고 강요하는 것과
+    같다. 대분류는 있는데 켜진 소분류가 하나도 없으면 `job_minor` 없이 `job_major` 만 더한다.
+    """
+    majors = taxonomy.list_majors(conn, enabled_only=True)
+    if not majors:
+        return Classification
+
+    major_names = tuple(major.name for major in majors)
+    minor_names = tuple(
+        minor.name
+        for major in majors
+        for minor in taxonomy.list_minors(conn, major.id, enabled_only=True)
+    )
+
+    fields: dict[str, Any] = {
+        JOB_MAJOR: (Literal[(*major_names, UNDECIDED)], UNDECIDED),
+        f"{JOB_MAJOR}_evidence": (str, ""),
+    }
+    if minor_names:
+        fields[JOB_MINOR] = (Literal[(*minor_names, UNDECIDED)], UNDECIDED)
+        fields[f"{JOB_MINOR}_evidence"] = (str, "")
+
+    return create_model("ClassificationWithTaxonomy", __base__=Classification, **fields)
 
 
 class ClassifySchemaError(ValueError):
