@@ -8,16 +8,23 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import pathlib
 import sqlite3
 from collections.abc import Iterator
+from datetime import UTC, datetime
 
 import pytest
+from apscheduler.events import EVENT_JOB_MAX_INSTANCES, JobSubmissionEvent
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from app import db
+from app import db, settings
 from app.scheduler import (
+    SIDE_SCHEDULE,
     WorkflowScheduler,
+    _log_skipped_tick,
+    get_gate,
     job_id,
     side_job_id,
     side_workflow_id_of,
@@ -259,3 +266,75 @@ async def test_부가_잡은_자기_실행_함수를_부른다(
     await synced.scheduler.get_job(job_id(workflow_id)).func(workflow_id)
 
     assert calls == [f"side:{side_id}", f"crawl:{workflow_id}"]
+
+
+async def test_부가_잡은_크롤_상한을_잡지_않는다(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """상한이 1이고 크롤이 그 하나를 쥐고 있어도 분류는 그 자리에서 돈다 (4.4.V).
+
+    분류도 전달도 대상 사이트에 요청을 보내지 않는다. 크롤 슬롯을 하나 차지하면 지켜지는
+    것은 없고 수집만 밀린다.
+
+    기본 실행 경로(`_execute`, `_execute_side`)를 그대로 지난다. 실행 함수를 갈아끼우면
+    문을 잡는 자리가 그 함수 바깥이라 이 결함이 잡히지 않는다.
+    """
+    path = tmp_path / "jobs.db"
+    setup = db.connect(path)
+    db.migrate_up(setup)
+    settings.write_int(setup, settings.MAX_CONCURRENT_RUNS, 1)
+    setup.close()
+
+    connect = db.connect
+    monkeypatch.setattr("app.scheduler.db.connect", lambda *_, **__: connect(path))
+    # 전역 문은 이 테스트 안에서만 만들어진다
+    monkeypatch.setattr("app.scheduler._gate", None)
+
+    crawl_inside = asyncio.Event()
+    release = asyncio.Event()
+    side_triggers: list[str] = []
+
+    async def crawl(conn: sqlite3.Connection, workflow_id: int, **kwargs: object) -> object:
+        crawl_inside.set()
+        await release.wait()
+        return None
+
+    def side(conn: sqlite3.Connection, side_workflow_id: int, **kwargs: object) -> object:
+        side_triggers.append(str(kwargs.get("trigger")))
+        return None
+
+    monkeypatch.setattr("app.scheduler.run_workflow", crawl)
+    monkeypatch.setattr("app.scheduler.run_side_now", side)
+
+    instance = WorkflowScheduler(scheduler=AsyncIOScheduler(timezone="UTC"))
+    try:
+        running = asyncio.create_task(instance._execute(1))
+        await asyncio.wait_for(crawl_inside.wait(), timeout=5)
+        assert get_gate().active == 1
+
+        # 문이 꽉 찬 상태에서 부가 잡을 돌린다. 문을 기다린다면 여기서 시간이 다 간다
+        await asyncio.wait_for(instance._execute_side(1), timeout=5)
+
+        assert side_triggers == [SIDE_SCHEDULE]
+        # 크롤 하나만 문 안에 있다. 부가 잡은 지나갔지만 슬롯을 쓰지 않았다
+        assert get_gate().active == 1
+    finally:
+        release.set()
+        await running
+        instance.shutdown()
+
+
+def test_건너뛴_부가_tick_도_남는다(caplog: pytest.LogCaptureFixture) -> None:
+    """겹침으로 버려진 차례는 실행 함수에 닿지 않는다. 여기서 적지 않으면 어디에도 안 남는다."""
+    event = JobSubmissionEvent(
+        code=EVENT_JOB_MAX_INSTANCES,
+        job_id=side_job_id(7),
+        jobstore="default",
+        scheduled_run_times=[datetime.now(UTC)],
+    )
+
+    with caplog.at_level(logging.WARNING, logger="app.scheduler"):
+        _log_skipped_tick(event)
+
+    assert len(caplog.records) == 1
+    assert "side workflow 7" in caplog.records[0].message
