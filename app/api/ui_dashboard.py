@@ -206,8 +206,9 @@ def dashboard_summary_fragment(
 
 
 def _log_lines() -> list[LogLine]:
-    """오래된 줄이 먼저다. 화면은 위에서 아래로, 시간순으로 읽는다."""
-    return _log_handler.tail()
+    """가장 최근 것이 먼저다. 3초마다 다시 그리는 조각이라, 새 줄이 스크롤 없이 늘
+    같은 자리(맨 위)에서 보여야 훑어보기 편하다."""
+    return list(reversed(_log_handler.tail()))
 
 
 @router.get("/ui/dashboard/logs", response_class=HTMLResponse)

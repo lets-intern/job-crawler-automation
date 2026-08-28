@@ -263,3 +263,17 @@ def test_로그_조각이_방금_남긴_로그를_보여준다(client: TestClien
     assert "대시보드 로그 확인용 문구 12345" in body
     assert "app.test_dashboard_probe" in body
     assert "INFO" in body
+
+
+def test_방금_남긴_로그가_맨_위에_온다(client: TestClient) -> None:
+    """계속 스크롤을 내려야 새 줄이 보이면 안 된다 — 최신이 늘 같은 자리(맨 위)여야 한다."""
+    from app.log_ring import handler
+
+    handler.clear()
+    probe = logging.getLogger("app.test_dashboard_probe")
+    probe.info("먼저 남긴 줄")
+    probe.info("나중에 남긴 줄")
+
+    body = client.get("/ui/dashboard/logs").text
+
+    assert body.index("나중에 남긴 줄") < body.index("먼저 남긴 줄")
