@@ -14,6 +14,9 @@ import pytest
 
 from app import db
 from app.side import runner, runs, store
+from tests.test_classify_run import GOOD, settings_with_key
+from tests.test_classify_run import _seed as seed
+from tests.test_selector_generator import FakeClient
 
 
 @pytest.fixture
@@ -152,3 +155,103 @@ def test_the_run_is_recorded_before_the_body_runs(
     # 마지막 실행 시각은 시작에 적힌다 (Push 1 결정)
     updated = store.read(conn, workflow.id)
     assert updated is not None and updated.last_run_at is not None
+
+
+@pytest.fixture
+def jobs(tmp_path: Path) -> Iterator[sqlite3.Connection]:
+    connection = db.connect(tmp_path / "jobs.db")
+    db.migrate_up(connection)
+    seed(connection)
+    try:
+        yield connection
+    finally:
+        connection.close()
+
+
+def test_the_classify_kind_runs_the_chosen_scope(jobs: sqlite3.Connection) -> None:
+    """대상·처리 건수가 그대로 `side_runs` 에 들어간다 (3.2.V)."""
+    workflow = store.create(jobs, kind="classify", name="미분류 분류")
+
+    run = runner.run_now(
+        jobs, workflow.id, client=FakeClient(GOOD, GOOD, GOOD), settings=settings_with_key()
+    )
+
+    assert run.status == runs.SUCCESS
+    assert (run.target_count, run.processed_count, run.failed_count) == (3, 3, 0)
+    stored = jobs.execute("SELECT count(*) AS n FROM job_classifications").fetchone()
+    assert stored["n"] == 3
+
+
+def test_the_batch_limit_cuts_the_target(jobs: sqlite3.Connection) -> None:
+    """1회 상한을 넘겨 돌면 멈출 수가 없다 (PRD 2절)."""
+    workflow = store.create(jobs, kind="classify", name="두 건만", batch_limit=2)
+
+    run = runner.run_now(
+        jobs, workflow.id, client=FakeClient(GOOD, GOOD), settings=settings_with_key()
+    )
+
+    assert (run.target_count, run.processed_count) == (2, 2)
+
+
+def test_a_failed_posting_is_counted_and_the_rest_go_on(jobs: sqlite3.Connection) -> None:
+    """한 건이 실패해도 나머지는 간다. 실패 건수는 행에 남는다.
+
+    깨진 응답에는 한 번 더 묻는다 (`.claude/rules/llm.md`). 그래서 첫 공고를 실패시키려면
+    나쁜 응답이 둘 필요하다.
+    """
+    workflow = store.create(jobs, kind="classify", name="분류")
+
+    run = runner.run_now(
+        jobs,
+        workflow.id,
+        client=FakeClient("이건 JSON 이 아니다", "이것도 아니다", GOOD, GOOD),
+        settings=settings_with_key(),
+    )
+
+    assert (run.target_count, run.processed_count, run.failed_count) == (3, 2, 1)
+
+
+def test_an_empty_scope_is_not_a_failure(conn: sqlite3.Connection) -> None:
+    """대상이 없는 것과 실패한 것은 다르다. 다만 아무 일도 없었다는 사실은 적힌다."""
+    workflow = store.create(conn, kind="classify", name="분류")
+
+    run = runner.run_now(conn, workflow.id, settings=settings_with_key())
+
+    assert run.status == runs.SUCCESS
+    assert (run.target_count, run.processed_count) == (0, 0)
+    assert run.note is not None and "대상이 없다" in run.note
+
+
+def test_the_scope_stored_on_the_workflow_is_the_one_that_runs(jobs: sqlite3.Connection) -> None:
+    """`all` 은 이미 분류된 건까지 다시 돈다. `unclassified` 는 그러지 않는다."""
+    workflow = store.create(jobs, kind="classify", name="전량")
+    runner.run_now(
+        jobs, workflow.id, client=FakeClient(GOOD, GOOD, GOOD), settings=settings_with_key()
+    )
+    store.update(
+        jobs,
+        workflow.id,
+        name="전량",
+        status="paused",
+        trigger_kind="manual",
+        interval_minutes=360,
+        target_scope="all",
+        target_days=None,
+        batch_limit=50,
+    )
+
+    again = runner.run_now(
+        jobs, workflow.id, client=FakeClient(GOOD, GOOD, GOOD), settings=settings_with_key()
+    )
+
+    assert again.target_count == 3
+
+
+def test_a_deliver_workflow_says_it_sends_nothing(conn: sqlite3.Connection) -> None:
+    """보낸 적 없는 실행이 성공 이력으로 쌓이면 안 된다 (PRD 3절)."""
+    workflow = store.create(conn, kind="deliver", name="스프링 전달")
+
+    run = runner.run_now(conn, workflow.id)
+
+    assert run.status == runs.FAILED
+    assert run.error_message is not None and "아직 실행할 수 없다" in run.error_message

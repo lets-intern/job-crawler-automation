@@ -33,11 +33,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
+from app.classify.batch import ClassifyProgress, classify_ids
+from app.classify.store import scope_ids
+from app.config import Settings
 from app.side import runs, store
 from app.side.runs import FAILED, SUCCESS, SideRun, SideRunCounts
 
@@ -125,3 +130,67 @@ def _closed(conn: sqlite3.Connection, run_id: int) -> SideRun:
     if run is None:  # pragma: no cover - 방금 적은 행이 사라지는 경로는 없다
         raise LookupError(f"방금 닫은 실행을 다시 읽지 못했다: {run_id}")
     return run
+
+
+def run_now(
+    conn: sqlite3.Connection,
+    side_workflow_id: int,
+    *,
+    trigger: str = MANUAL,
+    client: Any | None = None,
+    settings: Settings | None = None,
+) -> SideRun:
+    """그 워크플로우를 종류에 맞게 한 번 돈다. 돌아올 때 행은 닫혀 있다.
+
+    `client` 와 `settings` 는 테스트가 가짜 제공자를 넣는 자리다. 비워 두면 화면에서 고른
+    제공자와 모델을 실행할 때 읽는다 (`app/llm/settings.py`).
+    """
+    return run_once(conn, side_workflow_id, _body(client, settings), trigger=trigger)
+
+
+def _body(client: Any | None, settings: Settings | None) -> Body:
+    """종류에 맞는 일. 아직 돌릴 수 없는 종류는 사유를 남기고 실패로 닫힌다."""
+
+    def body(
+        conn: sqlite3.Connection, workflow: store.SideWorkflow, counts: SideRunCounts
+    ) -> str | None:
+        if workflow.kind == store.CLASSIFY:
+            return _classify(conn, workflow, counts, client=client, settings=settings)
+        # 전달은 설정과 화면까지가 이번 범위이고 아무것도 보내지 않는다 (PRD 3절). 조용히
+        # 성공으로 닫으면 보낸 적 없는 실행이 성공 이력으로 쌓인다
+        return f"{workflow.kind} 종류는 아직 실행할 수 없다. 이 워크플로우는 아무것도 보내지 않는다"
+
+    return body
+
+
+def _classify(
+    conn: sqlite3.Connection,
+    workflow: store.SideWorkflow,
+    counts: SideRunCounts,
+    *,
+    client: Any | None,
+    settings: Settings | None,
+) -> str | None:
+    """대상 범위로 공고를 고르고 1회 상한만큼 잘라 분류에 넘긴다.
+
+    **분류 자체는 여기서 하지 않는다.** 무엇을 돌릴지만 고르고 `app/classify/batch.py` 에
+    넘긴다. 실행기가 분류를 다시 구현하면 화면에서 부른 분류와 주기로 도는 분류가 서로 다른
+    코드가 되고, 한쪽만 고쳐지는 날이 온다.
+
+    `target_days` 는 그대로 넘긴다. `recent` 가 아닌 범위에서는 값이 NULL 이고, 조회가
+    그것을 보지 않는다 (`app/classify/store.py`).
+    """
+    raw_job_ids = scope_ids(
+        conn, workflow.target_scope, days=workflow.target_days, limit=workflow.batch_limit
+    )
+    counts.target_count = len(raw_job_ids)
+    if not raw_job_ids:
+        # 대상이 없는 것은 실패가 아니다. 다만 아무 일도 없었다는 사실은 적힌다
+        counts.note = f"{workflow.target_scope} 범위에 대상이 없다"
+        return None
+
+    progress = ClassifyProgress()
+    asyncio.run(classify_ids(conn, raw_job_ids, progress, client=client, settings=settings))
+    counts.processed_count = progress.processed
+    counts.failed_count = progress.failed
+    return None
