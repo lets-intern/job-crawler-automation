@@ -34,9 +34,11 @@
           태그는 없고 줄바꿈은 살아 있는 텍스트다. **원본 HTML 은 저장하지 않는다**
         - [x] 8.2.V 검증(파서): 픽스처로 `source_text` 가 들어가고 태그가 없는지 pytest
               — `tests/test_source_text.py` 33건, `tests/test_source_text_run.py` 2건
-    - [ ] 8.3 `content_hash` 는 그대로 둔다. `HASH_FIELDS` 에 `source_text` 를 넣지 않는다
-        - [ ] 8.3.V 검증(파서): 같은 픽스처를 두 번 넣어 원문이 있어도 해시가 같고 두 번째가
-              신규로 쌓이지 않는지 pytest
+    - [x] 8.3 `content_hash` 는 그대로 둔다. `HASH_FIELDS` 에 `source_text` 를 넣지 않는다
+        - [x] 8.3.V 검증(파서): 같은 픽스처를 두 번 넣어 원문이 있어도 해시가 같고 두 번째가
+              신규로 쌓이지 않는지 pytest — `tests/test_hashing.py` 와
+              `tests/test_source_text_run.py` 의 두 실행 테스트. 적재된 해시가 원문을 뺀
+              네 필드의 해시와 같다는 것까지 단언한다
     - [ ] 8.4 원문을 못 뽑아도 수집은 실패하지 않는다. `source_text` 가 없는 건은 지금과 같이
           `body` 만 가진 채로 적재된다 — 원문이 없다고 공고를 버리면 이미 되는 것을 잃는다
         - [ ] 8.4.V 검증(크롤링 실행): 원문을 못 뽑는 픽스처로 적재가 그대로 되는지 pytest

@@ -117,7 +117,7 @@ SQLite 파일 하나. 경로는 `DATABASE_PATH` 가 정하고 Docker named volum
 |---|---|
 | id, workflow_id | |
 | source_url | 공고 원문 URL |
-| raw_data_json | 셀렉터로 뽑은 필드 그대로. 정제 전 |
+| raw_data_json | 셀렉터로 뽑은 필드 그대로. 정제 전. 상세 원문을 뽑았으면 `source_text` 키가 함께 있다 |
 | content_hash | 중복 감지용. 아래 참조 |
 | crawled_at | |
 
@@ -364,6 +364,10 @@ source_url + title + deadline + body
 
 들어가면 안 되는 것: 조회수, 상대 날짜("3일 전"), 광고 문구, 정렬 순서, 크롤링 시각.
 매 크롤마다 값이 달라지는 것이 하나라도 섞이면 같은 공고가 매번 신규로 들어온다.
+
+**상세 원문(`raw_data_json.source_text`)도 들어가지 않는다.** 원문은 본문 밖의 지원 버튼·공유
+문구·상태 표시까지 담아서, 배너 하나만 바뀌어도 같은 공고가 신규가 된다. 원문은 분류가 읽는
+입력이지 공고를 가르는 기준이 아니다.
 
 `db-inspect dupes` 로 중복이 잡히면 여기부터 본다.
 

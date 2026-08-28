@@ -17,6 +17,7 @@ import pytest
 
 from app import db
 from app.crawler.collect import Collectors
+from app.crawler.hashing import content_hash
 from app.crawler.parser import DetailParseResult, ListItem, ListParseResult
 from app.crawler.runner import SCHEDULE, RunTarget, run_once
 from app.selector.schema import DETAIL_FIELDS, validate_selectors
@@ -104,3 +105,40 @@ async def test_원문은_저장할_때_손대지_않는다(conn: sqlite3.Connect
     await run_once(conn, target(), collectors=collectors(StubDetail(source=raw)), limit=1)
 
     assert stored(conn)["source_text"] == raw
+
+
+async def test_원문이_바뀌어도_같은_공고가_다시_쌓이지_않는다(conn: sqlite3.Connection) -> None:
+    """조회수와 배너는 매 크롤마다 달라진다. 그것이 해시에 들어가면 같은 공고가 매번 신규다."""
+    await run_once(
+        conn,
+        target(),
+        collectors=collectors(StubDetail(source="백엔드 개발자\n조회수 1,204")),
+        limit=1,
+    )
+    again = await run_once(
+        conn,
+        target(),
+        collectors=collectors(StubDetail(source="백엔드 개발자\n조회수 1,881\n신규 배너")),
+        limit=1,
+    )
+
+    rows = conn.execute("SELECT id FROM raw_jobs").fetchall()
+    assert len(rows) == 1
+    assert (again.new_count, again.skipped_count, again.fail_count) == (0, 1, 0)
+
+
+async def test_해시는_원문을_담기_전과_같은_값이다(conn: sqlite3.Connection) -> None:
+    """`HASH_FIELDS` 는 source_url·title·deadline·body 넷 그대로다 (8.3)."""
+    await run_once(
+        conn,
+        target(),
+        collectors=collectors(StubDetail(source="제목\n회사 예시\n본문이다")),
+        limit=1,
+    )
+
+    row = conn.execute("SELECT content_hash, raw_data_json FROM raw_jobs").fetchone()
+    data = json.loads(row["raw_data_json"])
+    assert data["source_text"]
+
+    without = {name: data[name] for name in ("source_url", "title", "deadline", "body")}
+    assert row["content_hash"] == content_hash(without)
