@@ -98,6 +98,25 @@ def _scope_from(scope: str, days: int | None) -> tuple[str, tuple[Any, ...]]:
             """,
             (),
         )
+    if scope == RECENT:
+        if days is None or days < 1:
+            raise ClassifyScopeError(
+                f"범위가 {RECENT} 면 최근 며칠을 볼지 1 이상으로 받아야 한다: {days}"
+            )
+        # **분류 여부를 보지 않는다.** 다시 분류하는 범위라 이미 분류된 건도 들어가고, 그
+        # 결과는 같은 행을 덮는다. 사람이 넣은 `job_field_overrides` 는 정규화가 분류 다음에
+        # 덮으므로 그대로 살아 있다 (PRD 2절)
+        #
+        # 기준은 `raw_jobs.crawled_at` 이다. 공고에 적힌 게시일이 아니라 우리가 언제 가져왔나
+        # 이고, 그것이 "최근에 들어온 것을 다시 돌린다" 가 묻는 것이다
+        return (
+            f"""
+              FROM raw_jobs r
+             WHERE {_CLASSIFY_TEXT} <> ''
+               AND r.crawled_at >= datetime('now', ?)
+            """,
+            (f"-{days} days",),
+        )
     raise ClassifyScopeError(f"아직 조회를 만들지 않은 범위다: {scope!r}")
 
 

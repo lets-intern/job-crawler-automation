@@ -24,6 +24,7 @@ from app.classify.schema import CLASSIFY_FIELDS
 from app.classify.store import (
     CLASSIFY_SCOPES,
     EMPTY_FIELDS,
+    RECENT,
     UNCLASSIFIED,
     ClassifyScopeError,
     pending_ids,
@@ -163,3 +164,39 @@ def test_한_칸이라도_차_있으면_빠진다(conn: sqlite3.Connection, fiel
     classify(conn, 1, **{field: "값"})
 
     assert scope_ids(conn, EMPTY_FIELDS) == []
+
+
+def at(conn: sqlite3.Connection, *modifiers: str) -> str:
+    """DB 가 계산한 수집 시각. 파이썬이 따로 계산하면 조회의 기준과 어긋난다.
+
+    수정자는 하나씩 넘긴다. `'-7 days, +1 minutes'` 처럼 붙여 쓰면 SQLite 가 NULL 을
+    돌려주고, 그 NULL 이 조용히 지금 시각이 되어 검사가 통과해 버린다.
+    """
+    holes = ", ".join("?" for _ in modifiers)
+    row = conn.execute(f"SELECT datetime('now', {holes}) AS at", modifiers).fetchone()
+    assert row["at"] is not None, modifiers
+    return str(row["at"])
+
+
+def test_경계일_앞뒤로_갈린다(conn: sqlite3.Connection) -> None:
+    """7일이면 7일 전 직후는 들어오고 직전은 빠진다."""
+    add_job(conn, 1, crawled_at=at(conn, "-7 days", "+1 minutes"))
+    add_job(conn, 2, crawled_at=at(conn, "-7 days", "-1 minutes"))
+
+    assert scope_ids(conn, RECENT, days=7) == [1]
+
+
+def test_이미_분류된_건도_들어간다(conn: sqlite3.Connection) -> None:
+    """다시 분류하는 범위다. 분류 여부를 보지 않는다."""
+    add_job(conn, 1)
+    add_job(conn, 2)
+    classify(conn, 1, duties="업무")
+
+    assert scope_ids(conn, RECENT, days=1) == [2, 1]
+
+
+def test_일수가_없으면_거절된다(conn: sqlite3.Connection) -> None:
+    """며칠인지 모르는 `recent` 는 대상을 정할 수 없다. 기본값을 지어내지 않는다."""
+    for days in (None, 0):
+        with pytest.raises(ClassifyScopeError):
+            scope_ids(conn, RECENT, days=days)
