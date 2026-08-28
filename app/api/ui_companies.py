@@ -29,13 +29,15 @@ import logging
 import sqlite3
 from dataclasses import dataclass
 from typing import Annotated
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Form, Query, Request
+from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse
 
 from app import companies
 from app.api.settings import get_connection
 from app.api.ui import render, render_error
+from app.storage import s3
 from app.storage import settings as store
 
 logger = logging.getLogger(__name__)
@@ -109,18 +111,22 @@ def read_row(conn: sqlite3.Connection, name: str) -> CompanyRow | None:
     return found[0] if found else None
 
 
-def storage_base(conn: sqlite3.Connection) -> str:
-    """지금 설정의 공개 주소. 끝 슬래시는 뗀다.
+def _row_context(config: store.StorageConfig) -> dict[str, object]:
+    """줄 하나를 그릴 때 저장소에서 오는 값. 목록도 저장 결과도 같은 것을 받는다.
 
-    이 주소로 시작하지 않는 로고는 화면에 `옛 저장소` 로 적힌다. 엔드포인트를 바꾸면 이미
-    올린 파일은 따라가지 않고 주소만 옛 저장소를 가리킨 채 남는데
+    `public_base` 로 시작하지 않는 로고는 화면에 `옛 저장소` 로 적힌다. 엔드포인트를 바꾸면
+    이미 올린 파일은 따라가지 않고 주소만 옛 저장소를 가리킨 채 남는데
     (`.claude/tasks/todo/prd-fields-and-logo.md` 5장), 표시가 없으면 무엇을 다시 올려야
-    하는지 알 방법이 없다.
+    하는지 알 방법이 없다. 밖에 올려 둔 주소를 붙여넣은 행도 같은 표시를 받는다 — 어디서 온
+    주소인지는 저장하지 않아 둘을 가릴 수 없고, 그 사실을 화면에 적는다.
 
-    밖에 올려 둔 주소를 붙여넣은 행도 같은 표시를 받는다. 어디서 온 주소인지는 저장하지
-    않으므로 둘을 가릴 수 없다 — 그 사실을 화면에 적는다.
+    `storage_ready` 가 거짓이면 화면은 파일 고르기를 내지 않고 무엇을 채워야 하는지 적는다.
+    고르기가 조용히 실패하면 운영자는 로고가 왜 안 붙는지 알 방법이 없다.
     """
-    return store.read_config(conn).public_base.rstrip("/")
+    return {
+        "public_base": config.public_base.rstrip("/"),
+        "storage_ready": config.configured,
+    }
 
 
 @router.get("/ui/companies", response_class=HTMLResponse)
@@ -146,7 +152,7 @@ def company_list_fragment(
         rows=matched,
         total_jobs=sum(row.job_count for row in matched),
         filtered=bool(no_logo) or threshold > 0,
-        public_base=storage_base(conn),
+        **_row_context(store.read_config(conn)),
     )
 
 
@@ -195,10 +201,62 @@ def save_logo_fragment(
     if row is None:  # pragma: no cover - 방금 고친 행이 사라지는 경로는 없다
         return render_error(request, "not_found", f"회사 행이 없다: {name!r}")
     logger.info("회사 로고를 적었다: %s -> %r (공고 %d건)", row.name, cleaned, row.job_count)
+    return _row(request, conn, row, message=attach_note(row, cleared=not cleaned))
+
+
+def _row(
+    request: Request,
+    conn: sqlite3.Connection,
+    row: CompanyRow,
+    *,
+    message: str = "",
+    error: s3.StorageError | None = None,
+) -> HTMLResponse:
+    """줄 하나를 돌려준다. 성공도 실패도 그 자리에 남는다."""
     return render(
         request,
         "fragments/company_row.html",
         row=row,
-        message=attach_note(row, cleared=not cleaned),
-        public_base=storage_base(conn),
+        message=message,
+        error=error,
+        **_row_context(store.read_config(conn)),
     )
+
+
+# 올린 파일이 들어갈 자리. `_check/` 와 섞이지 않게 접두어를 둔다 (`app/storage/s3.py`)
+UPLOAD_PREFIX = "company/"
+
+
+@router.post("/ui/companies/logo/upload", response_class=HTMLResponse)
+def upload_logo_fragment(
+    request: Request,
+    conn: Annotated[sqlite3.Connection, Depends(get_connection)],
+    name: Annotated[str, Form()],
+    file: Annotated[UploadFile, File()],
+) -> HTMLResponse:
+    """고른 파일을 저장소에 올리고 그 공개 주소를 회사 행에 적는다.
+
+    객체 이름에 회사명을 넣지 않는다. 이름이 한글이라 공개 주소가 퍼센트 인코딩으로 덮이고,
+    회사명이 바뀌면 파일 이름과 어긋난다. 무엇이 어느 회사 것인지는 `companies.logo_url` 이
+    안다.
+
+    같은 회사에 두 번 올리면 앞 파일은 저장소에 남는다. 지우는 동작은 만들지 않는다 —
+    회사가 열몇 곳이고, 지우다 잘못 지운 파일은 되살릴 방법이 없다.
+    """
+    row = read_row(conn, name)
+    if row is None:
+        return render_error(request, "not_found", f"회사 행이 없다: {name.strip()!r}")
+
+    # 상한보다 한 바이트만 더 읽는다. 다 읽고 나서 재면 이미 다 쓴 뒤다 (`_spool` 과 같다)
+    data = file.file.read(s3.MAX_IMAGE_BYTES + 1)
+    config = store.read_config(conn)
+    try:
+        public_url = s3.upload_image(config, data=data, name=f"{UPLOAD_PREFIX}{uuid4().hex}")
+    except s3.StorageError as exc:
+        logger.info("로고를 올리지 못했다: %s / %s", exc.reason, exc.message)
+        return _row(request, conn, row, error=exc)
+
+    companies.set_logo_url(conn, row.name, public_url)
+    saved = read_row(conn, row.name) or row
+    logger.info("회사 로고를 올렸다: %s -> %s (공고 %d건)", saved.name, public_url, saved.job_count)
+    return _row(request, conn, saved, message=attach_note(saved, cleared=False))

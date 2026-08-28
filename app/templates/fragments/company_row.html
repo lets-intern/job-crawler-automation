@@ -3,7 +3,7 @@
    저장이 목록을 통째로 다시 부르지 않는 이유는 두 가지다. 방금 적은 문장이 사라지고,
    걸어 둔 조회 조건(`로고 없음`)에 따라 그 회사가 목록에서 빠져 무엇이 저장됐는지 확인할
    자리가 없어진다. #}
-{% from "macros.html" import badge, blank, wait %}
+{% from "macros.html" import badge, blank, failure, notice_box, wait %}
 <tr>
   <td class="cell-text font-medium text-slate-900">{{ row.name }}</td>
   <td class="cell-text">{{ row.parent_name if row.parent_name else blank() }}</td>
@@ -12,7 +12,13 @@
     {% if message %}
     <p class="text-sm font-medium text-slate-900">{{ message }}</p>
     {% endif %}
+    {% if error %}
+    {{ failure(error.reason, error.message, "올리지 못했다") }}
+    {% endif %}
     {% if row.logo_url %}
+    {# 올린 뒤 그 자리에 나오는 미리보기. 주소만 적어 두면 무엇이 올라갔는지 화면에서 알 수
+       없고, 엉뚱한 파일을 올린 것을 공고에 붙고 나서야 알게 된다 #}
+    <p><img src="{{ row.logo_url }}" alt="{{ row.name }} 로고" class="h-10 w-auto" loading="lazy"></p>
     <p>
       <a href="{{ row.logo_url }}" target="_blank" rel="noreferrer">{{ row.logo_url }}</a>
       {# 지금 설정의 공개 주소로 시작하지 않는 주소다. 엔드포인트를 바꾸면 이미 올린 파일은
@@ -35,5 +41,22 @@
       <button type="submit">저장</button>
       {{ wait("저장하는 중") }}
     </form>
+    {# 파일을 골라 올리는 길. 저장소가 채워지지 않았으면 고르기를 내지 않는다 —
+       눌러도 아무 일이 없는 단추를 두면 운영자는 로고가 왜 안 붙는지 알 수 없다 #}
+    {% if storage_ready %}
+    <form hx-post="/ui/companies/logo/upload" hx-target="closest tr" hx-swap="outerHTML"
+          hx-encoding="multipart/form-data"
+          hx-disabled-elt="find button" hx-indicator="closest td">
+      <input type="hidden" name="name" value="{{ row.name }}">
+      <input name="file" type="file" required
+             accept="image/png,image/jpeg,image/webp"
+             aria-label="{{ row.name }} 로고 파일">
+      <button type="submit">올리기</button>
+      {{ wait("올리는 중") }}
+    </form>
+    {% else %}
+    {{ notice_box("파일 저장소가 아직 설정되지 않았다. 운영 설정의 파일 저장소에서 버킷과 키를
+       채우면 여기서 파일을 골라 올릴 수 있다. 그때까지는 위 칸에 주소를 붙여넣는다") }}
+    {% endif %}
   </td>
 </tr>

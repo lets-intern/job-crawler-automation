@@ -40,6 +40,7 @@ from app.crawler.collect import API
 from app.crawler.playwright import PLAYWRIGHT, STATIC
 from app.selector.api_schema import ApiConfig, ApiConfigError, parse_api_config
 from app.selector.schema import SelectorSchemaError, SelectorSet, validate_selectors
+from app.storage import s3
 
 logger = logging.getLogger(__name__)
 
@@ -379,7 +380,13 @@ def rules_page(request: Request) -> HTMLResponse:
 
 @router.get("/companies", response_class=HTMLResponse)
 def companies_page(request: Request) -> HTMLResponse:
-    return render_page(request, "pages/companies.html")
+    """회사 화면. 받는 형식과 상한은 저장소 모듈에서 가져와 적는다 — 두 곳에서 따로 쓰지 않는다."""
+    return render_page(
+        request,
+        "pages/companies.html",
+        accepted=s3.ACCEPTED,
+        max_label=s3.MAX_IMAGE_LABEL,
+    )
 
 
 @router.get("/jobs")

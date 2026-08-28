@@ -1,4 +1,4 @@
-"""회사 화면 (6.1.V ~ 6.5.V).
+"""회사 화면 (6.1.V ~ 6.6.V).
 
 보는 것은 넷이다. 네비게이션에 자리가 생겼는지, 그 주소가 열리면서 목록 조각을 부르는지,
 행이 없을 때 화면이 "없음" 으로 끝내지 않고 언제 생기는지 말하는지, 그리고 공고 수가
@@ -13,6 +13,10 @@
 
 저장소 공개 주소를 바꾸면 이미 올린 파일은 따라가지 않는다. 그 사실이 행에 `옛 저장소` 로
 보이는지도 본다.
+
+파일 올리기는 저장소를 부르는 자리를 바꿔치기한다. 화면 테스트가 컨테이너가 떠 있는지에
+매달리게 두지 않는다 (`tests/test_ui_storage.py` 와 같다). 실제 왕복은 로컬 MinIO 로 따로
+확인한다.
 
 공고는 정규화를 지나 넣는다. 화면이 세는 값과 로고가 실제로 붙는 경로가 같은 이름이라야
 숫자가 뜻을 갖는다.
@@ -34,6 +38,7 @@ from app.api.settings import get_connection
 from app.api.ui import NAV
 from app.main import app
 from app.normalize.engine import insert_normalized
+from app.storage import s3
 from app.storage import settings as store
 
 
@@ -428,3 +433,120 @@ def test_화면이_옛_저장소가_무슨_뜻인지_적는다(client: TestClien
     body = client.get("/companies").text
 
     assert "밖에 올려 둔 주소를 붙여넣은 것이면 그대로 두어도 된다" in body
+
+
+PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"0" * 32
+
+
+def test_파일을_올리면_주소가_회사에_적히고_미리보기가_나온다(
+    client: TestClient, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    save_storage(conn, "http://localhost:9000/logos")
+    for seq in range(1, 3):
+        add_job(conn, "토스", seq)
+    conn.commit()
+    uploaded: dict[str, object] = {}
+
+    def fake_upload(config: store.StorageConfig, *, data: bytes, name: str) -> str:
+        uploaded["data"] = data
+        uploaded["name"] = name
+        return f"{config.public_base}/{name}.png"
+
+    monkeypatch.setattr(s3, "upload_image", fake_upload)
+
+    response = client.post(
+        "/ui/companies/logo/upload",
+        data={"name": "토스"},
+        files={"file": ("toss.png", PNG_BYTES, "image/png")},
+    )
+
+    assert response.status_code == 200
+    assert uploaded["data"] == PNG_BYTES
+    stored = companies.read(conn, "토스")
+    assert stored is not None and stored.logo_url is not None
+    assert f'<img src="{stored.logo_url}"' in response.text
+    assert "공고 2건에 붙는다" in response.text
+
+
+def test_올린_객체_이름에_회사명을_넣지_않는다(
+    client: TestClient, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """이름이 한글이라 공개 주소가 퍼센트 인코딩으로 덮이고, 회사명이 바뀌면 어긋난다."""
+    save_storage(conn, "http://localhost:9000/logos")
+    companies.ensure(conn, "토스")
+    conn.commit()
+    seen: dict[str, str] = {}
+
+    def fake_upload(config: store.StorageConfig, *, data: bytes, name: str) -> str:
+        seen["name"] = name
+        return f"{config.public_base}/{name}.png"
+
+    monkeypatch.setattr(s3, "upload_image", fake_upload)
+
+    client.post(
+        "/ui/companies/logo/upload",
+        data={"name": "토스"},
+        files={"file": ("toss.png", PNG_BYTES, "image/png")},
+    )
+
+    assert "토스" not in seen["name"]
+    assert seen["name"].startswith("company/")
+
+
+def test_저장소가_거절하면_사유가_그_줄에_남는다(
+    client: TestClient, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """조용히 실패하면 운영자는 로고가 왜 안 붙는지 알 수 없다."""
+    save_storage(conn, "http://localhost:9000/logos")
+    companies.ensure(conn, "토스")
+    conn.commit()
+
+    def refuse(config: store.StorageConfig, *, data: bytes, name: str) -> str:
+        raise s3.StorageError("not_an_image", "받는 형식이 아니다. PNG, JPEG, WebP 만 올릴 수 있다")
+
+    monkeypatch.setattr(s3, "upload_image", refuse)
+
+    body = client.post(
+        "/ui/companies/logo/upload",
+        data={"name": "토스"},
+        files={"file": ("toss.svg", b"<svg/>", "image/svg+xml")},
+    ).text
+
+    assert "올리지 못했다" in body
+    assert "받는 형식이 아니다" in body
+    assert companies.read(conn, "토스") is not None
+    stored = companies.read(conn, "토스")
+    assert stored is not None and stored.logo_url is None
+
+
+def test_저장소가_설정되지_않으면_파일_고르기_대신_할_일을_적는다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    companies.ensure(conn, "토스")
+    conn.commit()
+
+    body = client.get("/ui/companies").text
+
+    assert 'hx-post="/ui/companies/logo/upload"' not in body
+    assert "파일 저장소가 아직 설정되지 않았다" in body
+
+
+def test_저장소가_설정되면_파일_고르기가_나온다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    save_storage(conn, "http://localhost:9000/logos")
+    companies.ensure(conn, "토스")
+    conn.commit()
+
+    body = client.get("/ui/companies").text
+
+    assert 'hx-post="/ui/companies/logo/upload"' in body
+    assert 'hx-encoding="multipart/form-data"' in body
+
+
+def test_화면이_받는_형식과_상한을_적는다(client: TestClient) -> None:
+    body = client.get("/companies").text
+
+    assert s3.ACCEPTED in body
+    assert s3.MAX_IMAGE_LABEL in body
+    assert "SVG 는 받지 않는다" in body
