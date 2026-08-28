@@ -242,3 +242,51 @@ def test_같은_부모_아래_이름이_중복되면_거절_사유가_보인다(
 
     assert "저장하지 못했다" in response.text
     assert "duplicate_name" in response.text
+
+
+def test_끄면_꺼짐으로_바뀐다(client: TestClient, conn: sqlite3.Connection) -> None:
+    major = taxonomy.create(conn, parent_id=None, name="IT·개발")
+    conn.commit()
+
+    response = client.post(f"/ui/taxonomy/{major.id}/toggle")
+
+    body = html.unescape(response.text)
+    assert "'IT·개발' 를 껐다" in body
+    assert "꺼짐" in body
+
+
+def test_다시_켜면_켜짐으로_바뀐다(client: TestClient, conn: sqlite3.Connection) -> None:
+    major = taxonomy.create(conn, parent_id=None, name="IT·개발")
+    taxonomy.set_enabled(conn, major.id, False)
+    conn.commit()
+
+    response = client.post(f"/ui/taxonomy/{major.id}/toggle")
+
+    body = html.unescape(response.text)
+    assert "'IT·개발' 를 켰다" in body
+    assert "켜짐" in body
+
+
+def test_꺼도_이미_분류된_공고_수는_그대로_보인다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """지운 것이 아니므로 건수가 사라지면 안 된다."""
+    major = taxonomy.create(conn, parent_id=None, name="IT·개발")
+    add_classified_job(conn, 1, job_major="IT·개발", job_minor=None)
+    add_classified_job(conn, 2, job_major="IT·개발", job_minor=None)
+    conn.commit()
+
+    response = client.post(f"/ui/taxonomy/{major.id}/toggle")
+
+    assert "2건" in response.text
+
+
+def test_지우기_단추는_화면에_없다(client: TestClient, conn: sqlite3.Connection) -> None:
+    taxonomy.create(conn, parent_id=None, name="IT·개발")
+    conn.commit()
+
+    body = client.get("/ui/taxonomy").text
+
+    assert "지우기" not in body
+    assert "삭제" not in body
+    assert not hasattr(taxonomy, "delete")

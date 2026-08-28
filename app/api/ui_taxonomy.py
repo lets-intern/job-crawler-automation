@@ -155,3 +155,22 @@ def update_node_fragment(
     else:
         message = f"'{updated.name}' 를 저장했다"
     return _tree(request, conn, message=message)
+
+
+@router.post("/ui/taxonomy/{node_id}/toggle", response_class=HTMLResponse)
+def toggle_node_fragment(
+    request: Request,
+    node_id: int,
+    conn: Annotated[sqlite3.Connection, Depends(get_connection)],
+) -> HTMLResponse:
+    """켜짐·꺼짐만 뒤집는다. 지우는 라우트는 없다 — 끈 값으로 이미 분류된 공고는 그대로
+    남고, 그 값은 새 분류에서만 빠진다."""
+    existing = taxonomy.read(conn, node_id)
+    if existing is None:
+        return _tree(
+            request, conn, error={"reason": "not_found", "message": f"id {node_id} 가 없다"}
+        )
+
+    updated = taxonomy.set_enabled(conn, node_id, not existing.enabled)
+    state = "켰다" if updated.enabled else "껐다"
+    return _tree(request, conn, message=f"'{updated.name}' 를 {state}")
