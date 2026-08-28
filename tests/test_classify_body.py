@@ -24,7 +24,14 @@ from app.classify.classifier import (
     build_prompt,
     classify_body,
 )
-from app.classify.grounding import NO_EVIDENCE, NOT_IN_LIST, NOT_IN_SOURCE, ground, in_body
+from app.classify.grounding import (
+    NO_EVIDENCE,
+    NOT_IN_LIST,
+    NOT_IN_SOURCE,
+    drop_exact_repeat,
+    ground,
+    in_body,
+)
 from app.classify.schema import (
     CLASSIFY_FIELDS,
     EXTRACT_FIELDS,
@@ -300,6 +307,39 @@ def test_grounding_ignores_bullets_and_spacing_but_not_missing_words() -> None:
     assert in_body("- SQL, Tableau 등 데이터 도구를 활용해 본 경험", body)
     assert in_body("SQL Tableau 등 데이터 도구를 활용해 본 경험", body)
     assert not in_body("Python 을 활용해 본 경험", body)
+
+
+def test_grounding_collapses_a_field_the_model_repeated_whole() -> None:
+    """작고 빠른 모델이 한 칸 안에서 옮긴 문단을 통째로 두 번 낼 때가 있다(2026-08-29,
+    토스뱅크 공고에서 관찰). 원문에는 한 번만 있는 문단이라 절반으로 접는다."""
+    duty = "인프라 특화 AIOps 플랫폼을 설계·구축·운영해요."
+    body = f"업무내용\n{duty}"
+
+    grounded = ground({"duties": f"{duty}\n{duty}"}, body)
+
+    assert grounded.fields["duties"] == duty
+    assert grounded.dropped == []
+
+
+def test_drop_exact_repeat_halves_an_even_repeated_block() -> None:
+    assert drop_exact_repeat("가\n나\n가\n나") == "가\n나"
+
+
+def test_drop_exact_repeat_leaves_an_odd_line_count_alone() -> None:
+    assert drop_exact_repeat("가\n나\n다") == "가\n나\n다"
+
+
+def test_drop_exact_repeat_leaves_a_mismatched_half_alone() -> None:
+    assert drop_exact_repeat("가\n나\n다\n라") == "가\n나\n다\n라"
+
+
+def test_grounding_leaves_a_genuine_two_line_value_alone() -> None:
+    """줄이 둘이어도 서로 다르면 반복이 아니다 — 접지 않는다."""
+    body = "자격요건\n경력 3년 이상\n영어 회화 가능"
+
+    grounded = ground({"requirements": "경력 3년 이상\n영어 회화 가능"}, body)
+
+    assert grounded.fields["requirements"] == "경력 3년 이상\n영어 회화 가능"
 
 
 def test_grounding_keeps_an_empty_column_empty_without_calling_it_invented() -> None:

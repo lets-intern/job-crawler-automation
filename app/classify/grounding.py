@@ -103,6 +103,24 @@ def loose(text: str) -> str:
     return _NOISE.sub("", text).lower()
 
 
+def drop_exact_repeat(value: str) -> str:
+    """모델이 옮긴 문단 전체를 한 칸 안에서 통째로 두 번 반복해 낸 것을 한 번으로 접는다.
+
+    관찰된 실패 패턴이다(2026-08-29, 토스뱅크 공고): 원문에는 한 번만 있는 문단이
+    `duties`·`etc_info` 같은 칸에서 줄 단위로 완전히 똑같은 절반 두 개로 나온다 — 입력이
+    두 번 들어간 것이 아니라 응답 자체가 반복된 것이다(작고 빠른 모델에서 흔한 디코딩
+    반복). 줄 목록을 정확히 반으로 나눴을 때 앞뒤가 완전히 같을 때만 뒤를 버린다 — 요약도
+    재작성도 아니고, 정확히 같은 반복만 걷어낸다. 어긋나면 손대지 않는다.
+    """
+    lines = value.split("\n")
+    if len(lines) < 2 or len(lines) % 2 != 0:
+        return value
+    half = len(lines) // 2
+    if lines[:half] == lines[half:]:
+        return "\n".join(lines[:half])
+    return value
+
+
 def in_body(value: str, body: str) -> bool:
     """값의 모든 줄이 그 글 안에 있는지. 빈 값은 볼 것이 없어 True 다."""
     return not missing_lines(value, body)
@@ -193,7 +211,7 @@ def ground(
     evidence: dict[str, str] = {}
 
     for name in EXTRACT_FIELDS:
-        value = fields.get(name, "").strip()
+        value = drop_exact_repeat(fields.get(name, "").strip())
         if not value:
             kept[name] = ""
             continue
