@@ -85,6 +85,9 @@ EXPECTED_COLUMNS = {
         "job_role",
         # 0018 이 더한 모회사. 크롤러가 아는 값을 옮기는 칸이라 규칙도 보정도 걸리지 않는다
         "parent_company",
+        # 0025 가 더한 직무 분류. job_taxonomy 의 이름을 그대로 옮겨 담는다
+        "job_major",
+        "job_minor",
     },
     "normalization_rules": {
         "id",
@@ -163,6 +166,17 @@ EXPECTED_COLUMNS = {
         "reason",
         "created_at",
     },
+    # 0024 가 만든 직무 분류 체계. parent_id 가 NULL 이면 대분류다
+    "job_taxonomy": {
+        "id",
+        "parent_id",
+        "name",
+        "sort_order",
+        "enabled",
+        "note",
+        "created_at",
+        "updated_at",
+    },
 }
 
 # 사람이 고칠 수 있는 필드. `source_url` 과 `delivered_at` 은 여기에 없다
@@ -200,6 +214,8 @@ ALL_VERSIONS = [
     "0022",
     "0023",
     "0024",
+    "0025",
+    "0026",
 ]
 
 
@@ -1233,12 +1249,17 @@ def test_parent_company_starts_empty_and_leaves_the_other_values_alone(
 def test_the_parent_company_migration_leaves_the_two_neighbour_tables_alone(
     conn: sqlite3.Connection,
 ) -> None:
-    """분류가 내는 값도 아니고 공고 한 건씩 고칠 값도 아니다. 두 표는 그대로여야 한다."""
+    """분류가 내는 값도 아니고 공고 한 건씩 고칠 값도 아니다. 두 표는 그대로여야 한다.
+
+    0018 하나만 본다 — 끝까지(latest) 올리면 그 뒤의 무관한 마이그레이션(0025 등)이 이
+    두 표에 칸을 더한 것까지 0018 탓으로 걸리게 된다.
+    """
     _at_0017(conn)
     before_classifications = _columns(conn, "job_classifications")
     before_overrides = _columns(conn, "job_field_overrides")
 
     db.migrate_up(conn)
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0019"))
 
     assert _columns(conn, "job_classifications") == before_classifications
     assert _columns(conn, "job_field_overrides") == before_overrides
