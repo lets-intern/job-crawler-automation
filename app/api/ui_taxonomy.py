@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import pathlib
 import sqlite3
 from dataclasses import dataclass
 from typing import Annotated
@@ -29,6 +30,12 @@ from app.api.settings import get_connection
 from app.api.ui import render
 
 router = APIRouter(tags=["ui"], include_in_schema=False)
+
+# 씨앗 파일 하나. `app/taxonomy.py::load_seed` 가 표가 완전히 비어 있을 때만 넣는다 —
+# 이미 고친 표 위에 다시 부어 손으로 넣은 값과 뒤섞이는 일은 저장소 쪽에서 막는다
+SEED_PATH = pathlib.Path(__file__).resolve().parent.parent.parent / (
+    "seeds/job-taxonomy-zighang-20260828.json"
+)
 
 
 @dataclass(frozen=True)
@@ -174,3 +181,27 @@ def toggle_node_fragment(
     updated = taxonomy.set_enabled(conn, node_id, not existing.enabled)
     state = "켰다" if updated.enabled else "껐다"
     return _tree(request, conn, message=f"'{updated.name}' 를 {state}")
+
+
+@router.post("/ui/taxonomy/seed", response_class=HTMLResponse)
+def seed_taxonomy_fragment(
+    request: Request,
+    conn: Annotated[sqlite3.Connection, Depends(get_connection)],
+) -> HTMLResponse:
+    """씨앗 파일을 한 번에 넣는다. 표가 비어 있지 않으면 `load_seed` 가 아무 일도 하지
+    않는다 — 화면에는 표가 비어 있을 때만 이 단추 자체가 없다(`taxonomy_tree.html`)."""
+    majors_added, minors_added = taxonomy.load_seed(conn, SEED_PATH)
+    if majors_added == 0 and minors_added == 0:
+        return _tree(
+            request,
+            conn,
+            error={
+                "reason": "not_empty",
+                "message": "표가 이미 비어 있지 않아 기본 분류를 다시 불러오지 않았다",
+            },
+        )
+    return _tree(
+        request,
+        conn,
+        message=f"기본 분류를 불러왔다: 대분류 {majors_added}개, 소분류 {minors_added}개",
+    )

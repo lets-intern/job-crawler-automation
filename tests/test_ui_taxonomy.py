@@ -290,3 +290,40 @@ def test_지우기_단추는_화면에_없다(client: TestClient, conn: sqlite3.
     assert "지우기" not in body
     assert "삭제" not in body
     assert not hasattr(taxonomy, "delete")
+
+
+def test_기본_분류_불러오기를_누르면_씨앗_전부가_들어온다(client: TestClient) -> None:
+    data = json.loads(SEED.read_text(encoding="utf-8"))
+    expected_majors = len(data["majors"])
+    expected_minors = sum(len(m["minors"]) for m in data["majors"])
+
+    response = client.post("/ui/taxonomy/seed")
+
+    assert response.status_code == 200
+    body = html.unescape(response.text)
+    assert f"대분류 {expected_majors}개" in body
+    assert f"소분류 {expected_minors}개" in body
+    # 행마다 자기 저장 폼을 하나씩 갖는다 — 머리글 행은 폼이 없으니 여기 안 잡힌다
+    assert body.count('hx-put="/ui/taxonomy/') == expected_majors + expected_minors
+
+
+def test_불러온_뒤에는_기본_분류_불러오기_버튼이_사라진다(client: TestClient) -> None:
+    client.post("/ui/taxonomy/seed")
+
+    body = client.get("/ui/taxonomy").text
+
+    assert "기본 분류 불러오기" not in body
+
+
+def test_표가_비어있지_않으면_다시_불러오지_않는다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    taxonomy.create(conn, parent_id=None, name="손으로 만든 대분류")
+    conn.commit()
+
+    response = client.post("/ui/taxonomy/seed")
+
+    body = html.unescape(response.text)
+    assert "다시 불러오지 않았다" in body
+    assert "손으로 만든 대분류" in body
+    assert len(taxonomy.list_majors(conn)) == 1
