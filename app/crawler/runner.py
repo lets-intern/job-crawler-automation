@@ -508,7 +508,7 @@ async def _collect(
         return ItemResult(source_url=item.link, state=KNOWN, fields={})
 
     detail = await collectors.detail.collect(item)
-    record = _record(item, detail.fields)
+    record = _record(item, detail.fields, detail.source_text)
     if not record["body"].strip():
         # 상세는 열렸는데 본문이 없다. 나머지 필드가 채워져 있어도 적재하지 않는다.
         raise DetailEmptyError("상세를 열었지만 본문이 비었다. 상세의 본문 셀렉터를 고친다")
@@ -583,7 +583,7 @@ def _normalize(
     )
 
 
-def _record(item: ListItem, detail: dict[str, str]) -> dict[str, str]:
+def _record(item: ListItem, detail: dict[str, str], source_text: str = "") -> dict[str, str]:
     """`raw_jobs.raw_data_json` 에 그대로 들어가는 값. 정제하지 않는다.
 
     `company` 는 상세에서 뽑은 값을 먼저 쓰고, 없으면 목록에서 뽑은 값을 쓴다. 상세가 그
@@ -604,9 +604,13 @@ def _record(item: ListItem, detail: dict[str, str]) -> dict[str, str]:
 
     **순서가 규칙이다.** 상세에서 읽은 값이 늘 이긴다. 목록 값은 상세가 비었을 때만 쓰이고,
     목록도 그 값을 안 주면 빈 칸이다. 빈 칸을 채우려고 뜻이 다른 값을 옮겨 오지 않는다.
+
+    `source_text` 는 있을 때만 넣는다. 못 뽑은 건은 이 키가 없는 채로, 원문을 뽑기 전과
+    똑같은 모양으로 적재된다 — 원문이 없다고 공고를 버리지 않는다. 이 값은
+    `content_hash` 에 들어가지 않는다 (`app/crawler/hashing.py`).
     """
     carried = item.extra
-    return {
+    record = {
         "source_url": item.link,
         "title": detail["title"] or item.title,
         "body": detail["body"] or carried.get("body", ""),
@@ -618,6 +622,9 @@ def _record(item: ListItem, detail: dict[str, str]) -> dict[str, str]:
         "list_title": item.title,
         "list_date": item.date,
     }
+    if source_text.strip():
+        record["source_text"] = source_text
+    return record
 
 
 def _is_known(conn: sqlite3.Connection, workflow_id: int | None, column: str, value: str) -> bool:

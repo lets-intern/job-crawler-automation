@@ -30,9 +30,10 @@
               — `.claude/site-recipes/source-text-container.md`. 고른 것은 본문 셀렉터의
               조상 1단계에서 페이지 부속을 뺀 것이다. 별도 셀렉터는 두지 않고, API 상세는
               원문을 뽑지 않는다
-    - [ ] 8.2 고른 방법으로 상세 원문을 뽑아 `raw_data_json.source_text` 에 넣는다.
+    - [x] 8.2 고른 방법으로 상세 원문을 뽑아 `raw_data_json.source_text` 에 넣는다.
           태그는 없고 줄바꿈은 살아 있는 텍스트다. **원본 HTML 은 저장하지 않는다**
-        - [ ] 8.2.V 검증(파서): 픽스처로 `source_text` 가 들어가고 태그가 없는지 pytest
+        - [x] 8.2.V 검증(파서): 픽스처로 `source_text` 가 들어가고 태그가 없는지 pytest
+              — `tests/test_source_text.py` 33건, `tests/test_source_text_run.py` 2건
     - [ ] 8.3 `content_hash` 는 그대로 둔다. `HASH_FIELDS` 에 `source_text` 를 넣지 않는다
         - [ ] 8.3.V 검증(파서): 같은 픽스처를 두 번 넣어 원문이 있어도 해시가 같고 두 번째가
               신규로 쌓이지 않는지 pytest
