@@ -93,14 +93,18 @@ def raw_snapshot(conn: sqlite3.Connection) -> str:
 
 
 def test_trim_collapses_whitespace() -> None:
-    """값이 있는 필드만 채워진다. 나머지는 규칙을 태우지 않고 None 이다."""
+    """값이 있는 필드만 채워진다. `deadline` 만 예외로 "상시모집" 기본값을 갖는다."""
     rule = build_rule("title", "trim", {})
 
     fields = normalize_fields({"title": "  파이썬  \n  백엔드 개발자 "}, [rule])
 
     assert set(fields) == {*NORMALIZED_FIELDS, "parent_company"}
     assert fields["title"] == "파이썬 백엔드 개발자"
-    assert [name for name, value in fields.items() if value is not None] == ["title"]
+    assert fields["deadline"] == "상시모집"
+    assert [name for name, value in fields.items() if value is not None] == [
+        "title",
+        "deadline",
+    ]
 
 
 def test_trim_with_strip_chars() -> None:
@@ -176,10 +180,14 @@ def test_disabled_rule_is_skipped() -> None:
 
 
 def test_empty_value_skips_rules() -> None:
-    """값이 없는 필드에 규칙을 태우지 않는다. 없는 값이 규칙 실패로 둔갑하지 않는다."""
-    rule = build_rule("deadline", "date_parse", {"formats": ["%Y.%m.%d"]})
-    assert normalize_fields({"deadline": ""}, [rule])["deadline"] is None
-    assert normalize_fields({}, [rule])["deadline"] is None
+    """값이 없는 필드에 규칙을 태우지 않는다. 없는 값이 규칙 실패로 둔갑하지 않는다.
+
+    `deadline` 만 예외로, 규칙을 다 태워도 비면 "상시모집" 기본값이 대신 채워진다.
+    """
+    rule = build_rule("work_location", "date_parse", {"formats": ["%Y.%m.%d"]})
+    assert normalize_fields({"work_location": ""}, [rule])["work_location"] is None
+    assert normalize_fields({}, [rule])["work_location"] is None
+    assert normalize_fields({}, [rule])["deadline"] == "상시모집"
 
 
 def test_no_rules_passes_values_through() -> None:
@@ -189,7 +197,37 @@ def test_no_rules_passes_values_through() -> None:
     assert fields["body"] == record["body"]
     # 픽스처의 셀렉터가 뽑지 않는 필드는 NULL 이다
     assert fields["company"] is None
-    assert fields["deadline"] is None
+    # `deadline` 만 예외로 "상시모집" 기본값이 채워진다(2026-08-29 결정)
+    assert fields["deadline"] == "상시모집"
+
+
+def test_마감을_못_뽑으면_상시모집으로_채워진다() -> None:
+    """2026-08-29 결정. 셀렉터가 마감을 못 뽑거나 규칙이 비웠으면 "상시모집" 을 채운다."""
+    record = fixture_record()
+    assert "deadline" not in record or not record.get("deadline")
+
+    fields = normalize_fields(record, [])
+
+    assert fields["deadline"] == "상시모집"
+
+
+def test_마감이_있으면_상시모집으로_덮지_않는다() -> None:
+    record = {**fixture_record(), "deadline": "2026.09.30"}
+    rule = build_rule("deadline", "date_parse", {"formats": ["%Y.%m.%d"]})
+
+    fields = normalize_fields(record, [rule])
+
+    assert fields["deadline"] == "2026-09-30"
+
+
+def test_규칙이_마감을_비워도_상시모집으로_채워진다() -> None:
+    """`상시채용` 을 빈 값으로 매핑하는 규칙(운영 규칙)과 같은 경로다."""
+    record = {**fixture_record(), "deadline": "상시채용"}
+    rule = build_rule("deadline", "mapping", {"map": {"상시채용": ""}})
+
+    fields = normalize_fields(record, [rule])
+
+    assert fields["deadline"] == "상시모집"
 
 
 def test_판단_못한_경력_구분은_무관으로_채워진다() -> None:
@@ -333,7 +371,9 @@ def test_rule_that_empties_a_value_stops_the_chain() -> None:
     """규칙이 값을 비우면 뒤 규칙에 넘기지 않는다.
 
     "상시채용" 을 mapping 으로 비운 뒤 date_parse 가 그 빈 값을 읽으려 하면 실패가 나고,
-    그 공고가 통째로 `normalized_jobs` 에서 빠진다. deadline 만 NULL 이 되고 공고는 남아야 한다.
+    그 공고가 통째로 `normalized_jobs` 에서 빠진다. `deadline` 은 규칙이 비운 자리를
+    "상시모집" 기본값이 채운다(2026-08-29) — 그래서 이 체인이 여기서 멈춘 것과, 멈추지
+    않고 date_parse 까지 갔다면 났을 실패가 다르다는 것은 별도로 확인해야 한다.
     """
     rules = [
         build_rule(
@@ -354,7 +394,7 @@ def test_rule_that_empties_a_value_stops_the_chain() -> None:
 
     out = normalize_fields({"title": "개발자", "deadline": "상시채용"}, rules)
 
-    assert out["deadline"] is None
+    assert out["deadline"] == "상시모집"
     assert out["title"] == "개발자"
 
 

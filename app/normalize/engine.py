@@ -222,6 +222,11 @@ def normalize_fields(
                 # 공고는 남아야 한다.
                 break
         result[field_name] = value or None
+    # 마감을 못 뽑았거나 규칙이 비웠으면(`상시채용` 매핑 등) "상시모집" 으로 채운다
+    # (2026-08-29 결정). 빈 마감은 셀렉터가 놓친 것과 정말 마감이 없는 상시채용을 화면에서
+    # 구분하지 못했다 — `career_level` 을 "무관" 으로 채운 것과 같은 실사용 판단이다
+    if result.get("deadline") is None:
+        result["deadline"] = "상시모집"
     result[PARENT_COMPANY] = parent_company if parent_company and parent_company.strip() else None
     return apply_classification(result, classification)
 
