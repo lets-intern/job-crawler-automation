@@ -378,6 +378,25 @@ def test_실행_이력에_건너뜀이_사유와_함께_보인다(
     assert "이미 돌고 있어 건너뛰었다" in response.text
 
 
+def test_실행_중에는_실행_이력_details가_보존_속성을_갖는다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """실행 이력을 여는 details 가 폴링 때마다 새로 그려지면 2초마다 저절로 닫힌다.
+
+    `hx-preserve` 로 기존 노드를 그대로 지켜야 사람이 열어 둔 상태가 유지된다.
+    """
+    from app.side import runs as runs_module
+
+    workflow = store.create(conn, kind="classify", name="폴링 확인")
+    runs_module.start(conn, workflow.id, trigger="manual")  # 열린 실행 -> running=True
+
+    response = client.get(f"/ui/side/{workflow.id}/card")
+
+    assert f'id="side-history-{workflow.id}"' in response.text
+    assert 'hx-preserve="true"' in response.text
+    assert "every 2s" in response.text  # 도는 동안 폴링이 걸려 있다
+
+
 def test_실행_이력에_실패_사유가_보인다(client: TestClient, conn: sqlite3.Connection) -> None:
     from app.side import runs as runs_module
 

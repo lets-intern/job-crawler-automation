@@ -148,7 +148,10 @@
     {{ wait("처리하는 중") }}
   </div>
 
-  <details class="mt-3">
+  {# `hx-preserve` 로 이 노드를 그대로 지킨다. 실행 중에는 위 `article` 전체가 2초마다
+     outerHTML 로 갈리는데, 보존이 없으면 매번 닫힌 새 `details` 로 바뀌어 사람이 막 연
+     실행 이력이 2초 뒤 저절로 닫힌다 — 열리지 않는 것처럼 보이는 그 버그다 #}
+  <details id="side-history-{{ card.workflow.id }}" class="mt-3" hx-preserve="true">
     <summary class="cursor-pointer text-sm font-medium text-slate-700">실행 이력 ({{ card.history | length }}건)</summary>
     {% if card.history %}
     <div class="table-scroll">
