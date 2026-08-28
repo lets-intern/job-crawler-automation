@@ -1,4 +1,4 @@
-"""분류가 무엇을 읽고 무엇에 근거를 돌려 보는지 본다 (9.1.V, 9.2.V).
+"""분류가 무엇을 읽고, 무엇에 근거를 돌려 보고, 어디서 자르는지 본다 (9.1.V ~ 9.3.V).
 
 Push 8 이 상세 원문을 `raw_jobs.raw_data_json.source_text` 에 넣었다. 분류는 그것을 읽고,
 없으면 본문으로 떨어진다. **폴백이 검사의 요점이다** — 원문은 2026-08-28 이후 수집분에만
@@ -13,6 +13,7 @@ Push 8 이 상세 원문을 `raw_jobs.raw_data_json.source_text` 에 넣었다. 
 
 from __future__ import annotations
 
+import asyncio
 import json
 import pathlib
 import sqlite3
@@ -22,11 +23,13 @@ import pytest
 
 from app import db
 from app.classify.batch import ClassifyProgress, classify_ids
+from app.classify.classifier import MAX_BODY_CHARS, classify_body
 from app.classify.grounding import NO_EVIDENCE, NOT_IN_SOURCE, ground
 from app.classify.schema import RESPONSE_FIELDS
 from app.classify.store import read_classification, read_source
 from app.config import Settings
 from tests.test_selector_generator import FakeClient
+from tests.test_source_text import HTML_DETAIL, parsed
 
 # 본문. 두 건이 같은 본문을 갖는다
 BODY = "◆ 업무내용\n제휴사 데이터 연동 구조 기획\n\n◆ 지원자격\n관련 경험 5년 이상이신 분\n"
@@ -172,3 +175,29 @@ async def test_실행이_원문에서_뽑은_칸을_버리지_않는다(conn: sq
     본문뿐인_건 = read_classification(conn, 2)
     assert 본문뿐인_건["work_location"] == ""
     assert 본문뿐인_건["employment_type"] == ""
+
+
+def test_상한을_넘는_원문은_잘리고_그_사실이_남는다() -> None:
+    """자른 것으로 무엇을 놓쳤는지는 응답을 보는 사람이 알아야 한다."""
+    긴_원문 = BODY + "가" * MAX_BODY_CHARS
+    client = FakeClient(ANSWER)
+
+    result = asyncio.run(
+        classify_body(긴_원문, title="공고 1", settings=settings_with_key(), client=client)
+    )
+
+    보낸_글 = client.calls[0]["contents"]
+    assert "가" * MAX_BODY_CHARS not in 보낸_글
+    assert result.notes and str(len(긴_원문)) in result.notes[0]
+    assert str(MAX_BODY_CHARS) in result.notes[0]
+
+
+def test_상한은_잰_원문_전부를_담는다() -> None:
+    """9.3 의 결정을 고정한다. 상한을 내리면 여기서 어느 사이트가 잘리는지 바로 나온다.
+
+    2026-08-28 측정에서 원문이 가장 긴 곳은 토스 10,312자다
+    (`.claude/site-recipes/source-text-container.md`).
+    """
+    길이 = {site: len(parsed(site).source_text) for site in HTML_DETAIL}
+
+    assert max(길이.values()) <= MAX_BODY_CHARS, 길이

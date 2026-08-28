@@ -22,10 +22,10 @@
 받은 값은 `app/classify/grounding.py` 가 그 자리에서 제목과 본문에 돌려 보고, 근거를 못 찾은
 칸은 버리고 `dropped` 에 이름을 남긴다 (`.claude/rules/llm.md`).
 
-**보내는 것은 제목과 본문뿐이고 상한이 있다.** 원본 HTML 도 페이지도 보내지 않는다. 본문이
-상한을 넘으면 잘라 보내고 그 사실을 `notes` 에 남긴다. 자른 것으로 무엇을 놓쳤는지는 응답을
-보는 사람이 알아야 한다. 제목은 자르지 않는다 — 한 줄이고, 그 한 줄이 `job_role` 의
-출처다.
+**보내는 것은 제목과 상세 원문뿐이고 상한이 있다.** 원본 HTML 도 페이지도 보내지 않는다.
+원문이 없는 건은 본문으로 떨어진다 (`app/classify/store.py`). 상한을 넘으면 잘라 보내고 그
+사실을 `notes` 에 남긴다. 자른 것으로 무엇을 놓쳤는지는 응답을 보는 사람이 알아야 한다.
+제목은 자르지 않는다 — 한 줄이고, 그 한 줄이 `job_role` 의 출처다.
 
 **깨진 응답만 1회 다시 묻는다.** 스키마에 없는 칸을 지어낸 응답은 다시 물어도 같은 답이 온다.
 
@@ -62,9 +62,17 @@ FEATURE = "classify"
 # 깨진 응답에 한해 한 번 더. 2회를 넘기지 않는다 (`.claude/rules/llm.md`).
 MAX_ATTEMPTS = 2
 
-# 한 번에 보내는 본문의 상한. 2026-08-26 기준 저장된 640건의 최대 본문이 11,584자라 지금은
-# 아무것도 잘리지 않는다. 그래도 상한을 두는 것은, 상한이 없으면 사이트 하나가 본문에 페이지
-# 전체를 담기 시작한 날 그것이 그대로 나가기 때문이다
+# 한 번에 보내는 글의 상한. 상한이 없으면 사이트 하나가 페이지 전체를 담기 시작한 날 그것이
+# 그대로 나간다.
+#
+# 보내는 값이 본문에서 상세 원문으로 바뀌어(Push 9) 2026-08-28 에 다시 쟀고, **그대로 둔다.**
+# 열한 픽스처에서 원문이 가장 긴 곳이 토스 10,312자이고 그다음이 네이버 3,872자다. 일곱 곳
+# 전부 지금 상한 안이라 원문 때문에 잘리는 건이 없다 — 올릴 근거가 측정에 없다
+# (`.claude/site-recipes/source-text-container.md`).
+#
+# 상한을 넘는 것은 원문이 아니라 LG 의 본문 38,019자다. LG 는 상세가 API 라 원문을 뽑지
+# 않아 이 값은 Push 9 로 달라지지 않았고, 그 하나를 위해 상한을 세 배로 올리는 것은 그 뒤가
+# 무엇인지 재 본 뒤의 일이다. 지금은 잘리고 잘린 사실이 `notes` 에 남는다
 MAX_BODY_CHARS = 12000
 
 _SYSTEM_INSTRUCTION = (
@@ -187,7 +195,9 @@ def chosen(settings: Settings) -> tuple[Provider, str]:
 
 
 def build_prompt(body: str, title: str = "") -> tuple[str, list[str]]:
-    """보낼 프롬프트와 남길 메모. 상한을 넘긴 본문은 자르고 그 사실을 적는다.
+    """보낼 프롬프트와 남길 메모. 상한을 넘긴 글은 자르고 그 사실을 적는다.
+
+    `body` 는 상세 원문이거나, 원문이 없는 건에서 본문이다 (`app/classify/store.py`).
 
     `title` 이 `job_role` 의 출처다. 제목을 보내지 않으면 그 칸은 영원히 빈다. 제목이 없는
     공고는 빈 줄이 들어가고, 모델은 옮길 것이 없어 빈 문자열을 낸다 — 수집이 제목을 못 뽑는
@@ -200,7 +210,7 @@ def build_prompt(body: str, title: str = "") -> tuple[str, list[str]]:
     notes: list[str] = []
     text = body
     if len(text) > MAX_BODY_CHARS:
-        notes.append(f"본문이 {len(text)}자라 앞 {MAX_BODY_CHARS}자만 보냈다")
+        notes.append(f"보낸 글이 {len(text)}자라 앞 {MAX_BODY_CHARS}자만 보냈다")
         text = text[:MAX_BODY_CHARS]
     choices = {name: " / ".join((*values, UNDECIDED)) for name, values in JUDGE_CHOICES.items()}
     return _PROMPT.format(body=text, title=title.strip(), **choices), notes
