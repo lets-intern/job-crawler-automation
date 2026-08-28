@@ -1,0 +1,34 @@
+{# 회사 목록. 행은 정규화가 만들고 이 화면은 고치기만 한다.
+
+   빈 목록을 "회사 없음" 으로 끝내지 않는다. 행이 언제 생기는지 모르면 운영자는 여기서
+   회사를 손으로 만들 자리를 찾는다 (`.claude/rules/writing.md`). #}
+{% from "macros.html" import blank, empty_row %}
+<div class="table-scroll">
+  <table class="data-table">
+    <caption>회사 {{ rows | length }}곳</caption>
+    <thead>
+      <tr>
+        <th scope="col">회사명</th>
+        <th scope="col">모회사</th>
+        <th scope="col">로고</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td class="cell-text font-medium text-slate-900">{{ row.name }}</td>
+        <td class="cell-text">{{ row.parent_name if row.parent_name else blank() }}</td>
+        <td class="cell-text">
+          {% if row.logo_url %}
+          <a href="{{ row.logo_url }}" target="_blank" rel="noreferrer">{{ row.logo_url }}</a>
+          {% else %}
+          {{ blank("로고 없음") }}
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      {{ empty_row(3, "회사 행이 아직 없다. 수집한 공고가 정규화되면 그 회사명으로 행이 생긴다") }}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

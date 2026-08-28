@@ -18,6 +18,7 @@ from app.api import (
     rules,
     settings,
     ui,
+    ui_companies,
     ui_crawlers,
     ui_llm,
     ui_notify,
@@ -86,6 +87,7 @@ app.include_router(ui_rules.router)
 app.include_router(ui_rules_preview.router)
 app.include_router(review_filter.router)
 app.include_router(review.router)
+app.include_router(ui_companies.router)
 app.include_router(ui_settings.router)
 app.include_router(ui_notify.router)
 app.include_router(ui_storage.router)

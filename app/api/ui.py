@@ -53,6 +53,7 @@ NAV: tuple[tuple[str, str], ...] = (
     ("/workflows", "워크플로우"),
     ("/rules", "정규화 규칙"),
     ("/review", "데이터 검수"),
+    ("/companies", "회사"),
     ("/settings", "운영 설정"),
 )
 
@@ -374,6 +375,11 @@ def workflows_page(request: Request) -> HTMLResponse:
 @router.get("/rules", response_class=HTMLResponse)
 def rules_page(request: Request) -> HTMLResponse:
     return render_page(request, "pages/rules.html")
+
+
+@router.get("/companies", response_class=HTMLResponse)
+def companies_page(request: Request) -> HTMLResponse:
+    return render_page(request, "pages/companies.html")
 
 
 @router.get("/jobs")

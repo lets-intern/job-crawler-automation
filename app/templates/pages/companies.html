@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% from "macros.html" import empty %}
+{% block title %}회사{% endblock %}
+{% block heading %}회사{% endblock %}
+{% block content %}
+<section>
+  <h3>회사 목록</h3>
+  <p>
+    로고는 회사 단위 값이다. 공고와 이어 주는 값은
+    <span class="font-semibold text-slate-900">회사명</span>이라, 여기서 한 번 등록하면 그
+    이름을 가진 공고 전부에 붙는다. 공고마다 따로 넣는 자리는 없다.
+  </p>
+  <p class="text-sm text-slate-600">
+    회사 행은 정규화가 만든다. 처음 보는 회사명이 들어오면 로고가 빈 행이 생기고, 채우는 것만
+    여기서 한다. 공고가 다 사라진 회사의 행도 남는다.
+  </p>
+  <div id="company-list" hx-get="/ui/companies" hx-trigger="load" hx-swap="innerHTML">
+    {{ empty("회사 목록을 불러오는 중") }}
+  </div>
+</section>
+{% endblock %}
