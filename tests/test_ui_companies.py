@@ -94,10 +94,14 @@ def client(tmp_path: pathlib.Path, conn: sqlite3.Connection) -> Iterator[TestCli
         app.dependency_overrides.clear()
 
 
-def test_네비게이션에_회사가_있다() -> None:
-    """개별 화면이 아니라 `데이터` 묶음 안에 있다 (`app/api/ui.py` 의 `NAV_GROUPS`)."""
-    data_group = next(members for path, label, members in NAV_GROUPS if label == "데이터")
-    assert ("/companies", "회사") in data_group
+def test_네비게이션에_회사_로고가_있다() -> None:
+    """개별 화면이 아니라 `데이터 확인` 묶음 안에 있다 (`app/api/ui.py` 의 `NAV_GROUPS`).
+
+    이름도 `회사` 에서 `회사 로고` 로 바뀌었다 — 이 화면이 실제로 하는 일이 로고 관리다
+    (2026-08-29 결정).
+    """
+    data_group = next(members for path, label, members in NAV_GROUPS if label == "데이터 확인")
+    assert ("/companies", "회사 로고") in data_group
 
 
 def test_회사_화면이_열리고_네비게이션이_켜진다(client: TestClient) -> None:
