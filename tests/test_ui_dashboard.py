@@ -401,9 +401,11 @@ def test_예상_비용이_참고_모델_단가로_계산된다(
 
     assert COST_REFERENCE_MODEL in body
     assert "$1.7500" in body
+    assert "2,415원" in body  # $1.75 * 1,380원/달러(app.api.ui_dashboard._KRW_PER_USD)
 
 
 def test_호출이_없으면_예상_비용은_0이다(client: TestClient) -> None:
     body = client.get("/ui/dashboard").text
 
     assert "$0.0000" in body
+    assert "0원" in body

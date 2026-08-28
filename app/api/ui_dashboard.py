@@ -137,8 +137,12 @@ COST_REFERENCE_MODEL = "gemini-3.1-flash-lite"
 _INPUT_USD_PER_MILLION = 0.25
 _OUTPUT_USD_PER_MILLION = 1.50
 
+# 2026-08-29 확인한 원/달러 환율의 어림값(1,380원). 환율은 매일 바뀌므로 이 값도 대략적인
+# 참고치다 — 정확한 원화 청구액이 아니라 "요즘 대략 얼마 나오는지" 를 보는 용도다
+_KRW_PER_USD = 1380
 
-def _daily_cost(conn: sqlite3.Connection, modifier: str) -> dict[str, float]:
+
+def _daily_cost_usd(conn: sqlite3.Connection, modifier: str) -> dict[str, float]:
     """일별 예상 비용(USD). 입력·출력 단가가 달라 `total_tokens` 가 아니라 둘을 따로 곱한다."""
     rows = conn.execute(
         """
@@ -169,6 +173,7 @@ class TrendDay:
     completed: int
     tokens: int
     cost_usd: float
+    cost_krw: int
     added_pct: int
     completed_pct: int
     tokens_pct: int
@@ -183,7 +188,7 @@ def trend(conn: sqlite3.Connection, days: int = TREND_DAYS) -> list[TrendDay]:
     added = _daily_added(conn, modifier)
     completed = _daily_completed(conn, modifier)
     tokens = _daily_tokens(conn, modifier)
-    cost = _daily_cost(conn, modifier)
+    cost = _daily_cost_usd(conn, modifier)
     day_list = _day_range(days)
     peak = max([*added.values(), *completed.values(), 1])
     token_peak = max([*tokens.values(), 1])
@@ -191,13 +196,15 @@ def trend(conn: sqlite3.Connection, days: int = TREND_DAYS) -> list[TrendDay]:
     for d in day_list:
         key = d.isoformat()
         a, c, t = added.get(key, 0), completed.get(key, 0), tokens.get(key, 0)
+        cost_usd = cost.get(key, 0.0)
         result.append(
             TrendDay(
                 label=d.strftime("%m/%d"),
                 added=a,
                 completed=c,
                 tokens=t,
-                cost_usd=cost.get(key, 0.0),
+                cost_usd=cost_usd,
+                cost_krw=round(cost_usd * _KRW_PER_USD),
                 added_pct=_pct(a, peak),
                 completed_pct=_pct(c, peak),
                 tokens_pct=_pct(t, token_peak),

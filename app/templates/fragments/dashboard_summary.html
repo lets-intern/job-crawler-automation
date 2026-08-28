@@ -68,17 +68,19 @@
     <div class="mt-1 flex justify-between gap-1 text-[10px] text-slate-400">
       {% for day in trend_days %}
       <span class="cursor-default"
-            title="{{ day.label }} — 추가 {{ day.added }}건, 완성 {{ day.completed }}건, 토큰 {{ "{:,}".format(day.tokens) }}, 예상 비용 ${{ "%.4f"|format(day.cost_usd) }}">{{ day.label }}</span>
+            title="{{ day.label }} — 추가 {{ day.added }}건, 완성 {{ day.completed }}건, 토큰 {{ "{:,}".format(day.tokens) }}, 예상 비용 {{ "{:,}".format(day.cost_krw) }}원(${{ "%.4f"|format(day.cost_usd) }})">{{ day.label }}</span>
       {% endfor %}
     </div>
   </div>
   {# 실제로 어느 제공자·모델을 쓰든, 이 값 하나로 어림잡은 추정치다(`app/api/ui_dashboard.py`
-     의 `COST_REFERENCE_MODEL`). 실제 청구액과는 다를 수 있다 #}
+     의 `COST_REFERENCE_MODEL`·`_KRW_PER_USD`). 실제 청구액과는 다를 수 있다 #}
   <p class="mb-0 mt-3 border-t border-slate-100 pt-3 text-xs text-slate-500">
-    예상 비용({{ cost_reference_model }} 기준, 추정) — 오늘
-    <span class="font-semibold text-slate-700">${{ "%.4f"|format(trend_days[-1].cost_usd if trend_days else 0) }}</span>
+    예상 비용({{ cost_reference_model }} 기준, 원/달러 환율 어림 반영, 추정) — 오늘
+    <span class="font-semibold text-slate-700">{{ "{:,}".format(trend_days[-1].cost_krw if trend_days else 0) }}원</span>
+    (${{ "%.4f"|format(trend_days[-1].cost_usd if trend_days else 0) }})
     · 이 기간 합계
-    <span class="font-semibold text-slate-700">${{ "%.4f"|format(trend_days | sum(attribute="cost_usd")) }}</span>
+    <span class="font-semibold text-slate-700">{{ "{:,}".format(trend_days | sum(attribute="cost_krw")) }}원</span>
+    (${{ "%.4f"|format(trend_days | sum(attribute="cost_usd")) }})
   </p>
 </div>
 
