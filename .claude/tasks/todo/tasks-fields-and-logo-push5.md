@@ -2,7 +2,7 @@
 
 > PRD: `.claude/tasks/todo/prd-fields-and-logo.md`
 > Push 범위: MinIO 를 붙이고 어드민에서 엔드포인트를 바꿀 수 있게 한다
-> 상태: 진행 중
+> 상태: 완료 (2026-08-28)
 
 ## 관련 파일
 
@@ -26,7 +26,7 @@
 
 ## 작업
 
-- [ ] 5.0 저장소
+- [x] 5.0 저장소
     - [x] 5.1 **규칙 파일 두 개를 먼저 고친다.** `.claude/rules/core.md` 는 두 번째 컨테이너를
           들이지 말라고 하고, `.claude/rules/crawling.md` 는 우리가 운영하는 서비스가
           `app/notify/` 하나뿐이라고 한다. 둘 다 이 Push 로 거짓이 된다. 예외와 근거를 적는다.
