@@ -40,7 +40,7 @@ from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse
 
 from app.api.rules import get_connect_factory, get_connection
-from app.api.side import get_start
+from app.api.side import Start, get_start
 from app.api.ui import render, render_error
 from app.api.workflows import WorkflowScheduler, get_workflow_scheduler
 from app.classify.store import ALL, RECENT, scope_count
@@ -439,6 +439,7 @@ def run_side_workflow_fragment(
     side_workflow_id: int,
     conn: Annotated[sqlite3.Connection, Depends(get_connection)],
     connect: Annotated[ConnectFactory, Depends(get_connect_factory)],
+    start: Annotated[Start, Depends(get_start)],
 ) -> HTMLResponse:
     """지금 한 번 돌린다. 멈춘 워크플로우도 손으로는 돌릴 수 있다 (`app/api/side.py` 와 같은 일).
 
@@ -446,10 +447,14 @@ def run_side_workflow_fragment(
     않는다 — 실제로 무엇을 돌릴지는 `app/side/runner.py` 하나가 정한다.
 
     `connect` 를 요청 연결(`conn`)로 대신하지 않는다. 일은 자기 연결을 연 스레드가 하고
-    요청 연결은 응답과 함께 닫히기 때문이다 (`app/side/runner.py` 의 `start`). 이 의존성을
-    테스트가 갈아끼워야 실제로 도는 실행을 볼 수 있다.
+    요청 연결은 응답과 함께 닫히기 때문이다 (`app/side/runner.py` 의 `start`).
+
+    **`start` 는 함수 안에서 `get_start()` 를 직접 부르지 않고 `Depends` 로 받는다.**
+    2026-08-29 이전에는 직접 불렀는데, 그러면 `app.dependency_overrides` 로 갈아끼운 테스트
+    더블이 FastAPI 의존성 해석을 거치지 않아 무시되고 실제 `runner.start` 가 그대로 불려
+    실제 제공자를 호출했다 — 로컬에 진짜 키가 있으면 느리게라도 성공해 넘어갔지만 CI 에는
+    키가 없어 매번 `no_api_key` 로 실패했다(`app/classify/classifier.py::build_client`).
     """
-    start = get_start()
     try:
         start(conn, connect, side_workflow_id, trigger="manual")
     except store.SideWorkflowNotFoundError as exc:

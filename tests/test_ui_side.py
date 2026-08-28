@@ -380,14 +380,42 @@ def test_지금_실행하면_카드가_돌아오고_대상이_없으면_바로_�
         assert "성공" in card.text or "기록 없음" in card.text
 
 
-def test_돌고_있는_카드는_스스로_폴링을_건다(path: pathlib.Path, conn: sqlite3.Connection) -> None:
+def test_돌고_있는_카드는_스스로_폴링을_건다(client: TestClient, conn: sqlite3.Connection) -> None:
+    """실행 중인 카드는 스스로 2초마다 다시 부른다.
+
+    2026-08-29 실제 `POST /run` 뒤 즉시 확인하는 방식에서 이 방식으로 바꿨다. 배경 스레드가
+    끝나는 속도는 환경(특히 CI 러너)마다 달라, 매 요청 직후 "아직 돌고 있다" 를 확인하려던
+    원래 방식은 스레드가 그 사이 이미 끝나 버리면 실패로 보였다 — 열린 실행 행을 직접 만들어
+    `running` 상태 자체를 확정하면 이 화면 조각의 렌더링만 결정적으로 본다. 실제 실행이
+    끝까지 성공으로 도는지는 `test_지금_실행하면_끝까지_성공으로_닫힌다` 가 따로 확인한다.
+    """
+    from app.side import runs as runs_module
+
+    workflow = store.create(conn, kind="classify", name="분류 중")
+    runs_module.start(conn, workflow.id, trigger="manual")
+
+    card = client.get(f"/ui/side/{workflow.id}/card")
+
+    assert "every 2s" in card.text
+
+
+def test_지금_실행하면_끝까지_성공으로_닫힌다(path: pathlib.Path, conn: sqlite3.Connection) -> None:
+    """`POST /run` 이 배경 스레드에서 끝까지 돌아 성공으로 닫히는지 본다.
+
+    완료 속도가 환경마다 다르므로 즉시 확인하지 않고 끝날 때까지 짧게 폴링한다
+    (`test_지금_실행하면_카드가_돌아오고_대상이_없으면_바로_끝난다` 와 같은 방식).
+    """
     seed(conn)
     workflow = store.create(conn, kind="classify", name="분류 중")
     for client in _client_with_fake_provider(path, (GOOD, GOOD, GOOD)):
         client.post(f"/ui/side/{workflow.id}/run")
+
+        deadline = time.monotonic() + 10
         card = client.get(f"/ui/side/{workflow.id}/card")
-        # 도는 동안에는 폴링 속성이 붙어 있다
-        assert "every 2s" in card.text or "성공" in card.text
+        while "실행 중" in card.text and time.monotonic() < deadline:
+            time.sleep(0.05)
+            card = client.get(f"/ui/side/{workflow.id}/card")
+        assert "성공" in card.text, card.text
 
 
 # ---------------------------------------------------------------------------
