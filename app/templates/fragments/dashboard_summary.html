@@ -50,26 +50,27 @@
     <span><span class="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500 align-middle"></span> 완성(근사)</span>
     <span><span class="inline-block h-2.5 w-2.5 rounded-full bg-indigo-500 align-middle"></span> AI 토큰(이 기간 중 최댓값 기준, 추가·완성과 축이 다르다)</span>
   </p>
-  {# 각 날짜 칸이 이 줄의 높이(9rem)를 실제로 물려받아야 안의 막대가 쓰는 퍼센트 높이가
-     계산된다 — 부모가 `items-end` 로 아래 정렬만 되면 칸 자체의 높이가 정해지지 않고,
-     정해지지 않은 높이에 붙는 퍼센트는 0으로 계산돼 막대가 전부 안 보인다. 그래서 이
-     줄은 늘려 맞추고(`items-stretch`, 기본값), 막대 자리는 `flex-1` 로 라벨을 뺀 나머지
-     높이를 실제로 차지하게 한다 #}
-  <div class="mt-3 flex gap-2 overflow-x-auto border-t border-slate-100 pt-3" style="height: 9rem">
-    {% for day in trend_days %}
-    <div class="flex min-w-[2.5rem] flex-1 flex-col items-center"
-         title="{{ day.label }} — 추가 {{ day.added }}건, 완성 {{ day.completed }}건, 토큰 {{ "{:,}".format(day.tokens) }}">
-      <div class="flex w-full flex-1 items-end justify-center gap-1">
-        <div class="w-2 rounded-full bg-gradient-to-t from-slate-300 to-slate-200"
-             style="height: {{ day.added_pct }}%"></div>
-        <div class="w-2 rounded-full bg-gradient-to-t from-emerald-500 to-emerald-300"
-             style="height: {{ day.completed_pct }}%"></div>
-        <div class="w-2 rounded-full bg-gradient-to-t from-indigo-500 to-indigo-300"
-             style="height: {{ day.tokens_pct }}%"></div>
-      </div>
-      <span class="mt-1 shrink-0 text-[10px] text-slate-400">{{ day.label }}</span>
+  {# 서버가 미리 SVG viewBox(0~100) 좌표를 계산해 넘긴다(`app/api/ui_dashboard.py` 의
+     `chart_points`) — 템플릿은 좌표 계산을 하지 않는다. `preserveAspectRatio="none"` 이라
+     칸 너비에 맞춰 가로로만 늘어나고, `vector-effect="non-scaling-stroke"` 가 그렇게
+     늘어나도 선 굵기를 그대로 지킨다. #}
+  <div class="mt-3 border-t border-slate-100 pt-3">
+    <svg viewBox="0 0 100 100" preserveAspectRatio="none" class="h-36 w-full">
+      {% if added_line %}
+      <polyline points="{{ added_line }}" fill="none" stroke="#94a3b8" stroke-width="2"
+                stroke-linejoin="round" vector-effect="non-scaling-stroke"></polyline>
+      <polyline points="{{ completed_line }}" fill="none" stroke="#10b981" stroke-width="2"
+                stroke-linejoin="round" vector-effect="non-scaling-stroke"></polyline>
+      <polyline points="{{ token_line }}" fill="none" stroke="#6366f1" stroke-width="2"
+                stroke-linejoin="round" vector-effect="non-scaling-stroke"></polyline>
+      {% endif %}
+    </svg>
+    <div class="mt-1 flex justify-between gap-1 text-[10px] text-slate-400">
+      {% for day in trend_days %}
+      <span class="cursor-default"
+            title="{{ day.label }} — 추가 {{ day.added }}건, 완성 {{ day.completed }}건, 토큰 {{ "{:,}".format(day.tokens) }}">{{ day.label }}</span>
+      {% endfor %}
     </div>
-    {% endfor %}
   </div>
 </div>
 

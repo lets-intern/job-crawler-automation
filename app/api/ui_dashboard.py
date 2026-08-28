@@ -131,11 +131,10 @@ def _daily_tokens(conn: sqlite3.Connection, modifier: str) -> dict[str, int]:
 
 @dataclass(frozen=True)
 class TrendDay:
-    """그래프 막대 하나. `*_pct` 는 화면에 그릴 막대 높이(0~100)다 — 추가·완성 둘은 같은
-    최댓값을 기준으로 비율을 맞춰 서로 견줄 수 있게 하고, 토큰은 단위가 전혀 달라(건수가
-    아니라 토큰 수) 자기 자신의 최댓값을 기준으로 따로 맞춘다. 0이 아닌데 반올림으로 안
-    보일 만큼 작아지는 막대가 없게 최소 높이를 얹었다. 템플릿은 픽셀·SVG 계산 없이 이
-    값을 그대로 쓴다."""
+    """그래프 한 날짜. `*_pct` 는 0~100 값이다 — 추가·완성 둘은 같은 최댓값을 기준으로
+    비율을 맞춰 서로 견줄 수 있게 하고, 토큰은 단위가 전혀 달라(건수가 아니라 토큰 수)
+    자기 자신의 최댓값을 기준으로 따로 맞춘다. 선 그래프라 0건은 그대로 0이다 — 막대와
+    달리 안 보일 걱정이 없다."""
 
     label: str
     added: int
@@ -146,15 +145,8 @@ class TrendDay:
     tokens_pct: int
 
 
-# 막대 높이 하한. 실제 비율이 이보다 낮아도 0이 아니면 이 높이로 그린다 — 몇 건 안 되는
-# 날이 그래프에서 아예 안 보이는 막대가 되지 않게 한다
-_MIN_BAR_PCT = 6
-
-
-def _bar_pct(count: int, peak: int) -> int:
-    if count == 0:
-        return 0
-    return max(round(count / peak * 100), _MIN_BAR_PCT)
+def _pct(count: int, peak: int) -> int:
+    return round(count / peak * 100)
 
 
 def trend(conn: sqlite3.Connection, days: int = TREND_DAYS) -> list[TrendDay]:
@@ -175,12 +167,47 @@ def trend(conn: sqlite3.Connection, days: int = TREND_DAYS) -> list[TrendDay]:
                 added=a,
                 completed=c,
                 tokens=t,
-                added_pct=_bar_pct(a, peak),
-                completed_pct=_bar_pct(c, peak),
-                tokens_pct=_bar_pct(t, token_peak),
+                added_pct=_pct(a, peak),
+                completed_pct=_pct(c, peak),
+                tokens_pct=_pct(t, token_peak),
             )
         )
     return result
+
+
+@dataclass(frozen=True)
+class ChartPoint:
+    """선 그래프 한 점의 SVG 좌표(viewBox `0 0 100 100`). `y_*` 는 100 에서 뺀 값이다 —
+    SVG 는 위가 0 이라, 값이 클수록 위로 가려면 빼야 한다. `day` 를 그대로 들고 있어
+    템플릿이 툴팁에 실제 값을 적을 수 있다."""
+
+    x: float
+    y_added: float
+    y_completed: float
+    y_tokens: float
+    day: TrendDay
+
+
+def chart_points(days: list[TrendDay]) -> list[ChartPoint]:
+    n = len(days)
+    step = 100 / (n - 1) if n > 1 else 0.0
+    return [
+        ChartPoint(
+            x=round(i * step, 2),
+            y_added=100 - d.added_pct,
+            y_completed=100 - d.completed_pct,
+            y_tokens=100 - d.tokens_pct,
+            day=d,
+        )
+        for i, d in enumerate(days)
+    ]
+
+
+def polyline(points: list[ChartPoint], attr: str) -> str:
+    """SVG `points` 속성 문자열. 점이 하나뿐이면 선을 그릴 수 없어 빈 문자열이다."""
+    if len(points) < 2:
+        return ""
+    return " ".join(f"{p.x},{getattr(p, attr)}" for p in points)
 
 
 @dataclass(frozen=True)
@@ -224,6 +251,18 @@ class FeatureBar:
     pct: int
 
 
+# 이 막대 그래프의 높이 하한. 실제 비율이 이보다 낮아도 0이 아니면 이 높이로 그린다 —
+# 셋 중 하나가 아주 작으면 그래프에서 아예 안 보이는 막대가 된다. 선 그래프(`_pct`)는
+# 점을 이어 읽어서 이 하한이 필요 없다
+_MIN_BAR_PCT = 6
+
+
+def _bar_pct(count: int, peak: int) -> int:
+    if count == 0:
+        return 0
+    return max(round(count / peak * 100), _MIN_BAR_PCT)
+
+
 def token_usage(conn: sqlite3.Connection) -> list[FeatureBar]:
     """기능별(셀렉터 생성·수정, 분류) 누적 토큰 사용량. `.claude/rules/llm.md` 가 모든 호출을
     `llm_calls` 에 남기라고 정한 것이 이 그래프가 가능한 이유다."""
@@ -251,11 +290,15 @@ def dashboard_summary_fragment(
     request: Request, conn: Annotated[sqlite3.Connection, Depends(get_connection)]
 ) -> HTMLResponse:
     days = trend(conn)
+    points = chart_points(days)
     return render(
         request,
         "fragments/dashboard_summary.html",
         metrics=metrics(conn, days),
         trend_days=days,
+        added_line=polyline(points, "y_added"),
+        completed_line=polyline(points, "y_completed"),
+        token_line=polyline(points, "y_tokens"),
         cards=recent_completed(conn, RECENT_LIMIT),
         quick_links=QUICK_LINKS,
         token_bars=token_usage(conn),
