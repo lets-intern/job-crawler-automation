@@ -103,7 +103,7 @@ from datetime import datetime
 from bs4 import BeautifulSoup
 
 from app import companies
-from app.classify.schema import CLASSIFY_FIELDS
+from app.classify.schema import STORED_CLASSIFY_FIELDS
 from app.classify.store import read_classification
 
 # 어디서 줄이 바뀌어야 하는지는 HTML 이 정하고, 그 목록은 저기 하나뿐이다. 여기에 같은
@@ -229,21 +229,25 @@ def normalize_fields(
 def apply_classification(
     fields: dict[str, str | None], classification: Mapping[str, str] | None
 ) -> dict[str, str | None]:
-    """아홉 칸을 분류 결과로 바꾼다. 규칙이 만든 값이 있어도 덮고, 빈 칸이면 비운다.
+    """아홉 칸과 직무 분류 둘을 분류 결과로 바꾼다. 규칙이 만든 값이 있어도 덮고, 빈 칸이면
+    비운다.
 
     분류가 없으면(아직 돌지 않았으면) 아무것도 하지 않는다. 그 공고는 규칙이 만든 값을 그대로
     가진 채로 남고, 나중에 분류를 돌리면 재정규화 없이도 다음 정규화에서 넘어간다.
 
-    수집이 주는 여섯 칸은 `CLASSIFY_FIELDS` 에 없으므로 여기를 지나가지 않는다.
+    수집이 주는 여섯 칸은 `STORED_CLASSIFY_FIELDS` 에 없으므로 여기를 지나가지 않는다.
+    `job_major`/`job_minor` 는 `job_taxonomy` 표에서 고르는 판정 칸이라 정적 스키마 목록
+    (`CLASSIFY_FIELDS`)에는 없지만, 저장 경로는 이 둘까지 아는 `STORED_CLASSIFY_FIELDS` 를
+    쓴다(`app/classify/schema.py`).
 
     **`career_level` 만 빈 칸을 "무관" 으로 채운다 (2026-08-28 결정).** 근거가 없어 판단하지
     못한 것과 사이트가 경력무관이라고 밝힌 것은 원래 다른 뜻이지만, 실사용에서는 사이트가
-    경력을 아예 언급하지 않은 공고 대부분이 실제로 경력무관이다. 다른 여덟 칸은 이 규칙을
-    타지 않는다 — 빈 칸이 그대로 있어야 검수 화면에서 못 뽑은 것을 잡아낼 수 있다.
+    경력을 아예 언급하지 않은 공고 대부분이 실제로 경력무관이다. 다른 칸은 이 규칙을 타지
+    않는다 — 빈 칸이 그대로 있어야 검수 화면에서 못 뽑은 것을 잡아낼 수 있다.
     """
     if not classification:
         return fields
-    for name in CLASSIFY_FIELDS:
+    for name in STORED_CLASSIFY_FIELDS:
         fields[name] = classification.get(name, "").strip() or None
     if fields.get("career_level") is None:
         fields["career_level"] = "무관"

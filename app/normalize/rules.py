@@ -58,7 +58,9 @@ from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 # 0016 이 `department`·`job_category`·`headcount` 를 뺐다. 값이 자리에 맞게 들어오지 않는
 # 칸이었다 (`migrations/0016_drop_department_category_headcount.sql`). 0017 이 `job_role` 을
 # 더했다 — 지운 직군과 달리 닫힌 목록이 아니라 제목에서 옮기는 자유 텍스트다
-# (`migrations/0017_job_role.sql`).
+# (`migrations/0017_job_role.sql`). 0025 가 `job_major`·`job_minor` 를 더했다 — `career_level`
+# 처럼 셀렉터가 채우는 칸이 아니라 분류가 `job_taxonomy` 표에서 골라 덮는 칸이다
+# (`migrations/0025_job_major_minor.sql`).
 NORMALIZED_FIELDS: tuple[str, ...] = (
     "company",
     "title",
@@ -74,6 +76,8 @@ NORMALIZED_FIELDS: tuple[str, ...] = (
     "preferred",
     "hiring_process",
     "etc_info",
+    "job_major",
+    "job_minor",
 )
 
 # `normalization_rules.rule_type` 의 CHECK 제약과 같은 값이어야 한다.

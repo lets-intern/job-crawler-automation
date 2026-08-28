@@ -25,7 +25,7 @@ import sqlite3
 from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
-from app.classify.schema import CLASSIFY_FIELDS, COLLECTED_REVIEW_FIELDS
+from app.classify.schema import COLLECTED_REVIEW_FIELDS, STORED_CLASSIFY_FIELDS
 
 # `raw_jobs.raw_data_json` 에서 원문·본문·제목을 꺼내는 자리. JSON 함수는 SQLite 3.38+ 에 있다
 _BODY = "json_extract(r.raw_data_json, '$.body')"
@@ -62,7 +62,7 @@ CLASSIFY_SCOPES: tuple[str, ...] = (UNCLASSIFIED, EMPTY_FIELDS, RECENT, ALL)
 # 분류 행의 칸이 전부 비었는지 보는 조건. 칸 목록은 `app/classify/schema.py` 가 정한다 —
 # 0016 이 셋을 지웠고 0017 이 하나를 더했다. 칸 이름이나 개수를 여기 적어 두면 다음에 칸이
 # 늘거나 줄 때 이 조회만 옛 목록으로 남는다
-_ALL_FIELDS_EMPTY = " AND ".join(f"coalesce(c.{name}, '') = ''" for name in CLASSIFY_FIELDS)
+_ALL_FIELDS_EMPTY = " AND ".join(f"coalesce(c.{name}, '') = ''" for name in STORED_CLASSIFY_FIELDS)
 
 
 class ClassifyScopeError(ValueError):
@@ -257,12 +257,12 @@ def read_classification(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, 
     돌았는데 본문이 아무것도 주지 않은 것이다.
     """
     row = conn.execute(
-        f"SELECT {', '.join(CLASSIFY_FIELDS)} FROM job_classifications WHERE raw_job_id = ?",
+        f"SELECT {', '.join(STORED_CLASSIFY_FIELDS)} FROM job_classifications WHERE raw_job_id = ?",
         (raw_job_id,),
     ).fetchone()
     if row is None:
         return {}
-    return {name: str(row[name] or "") for name in CLASSIFY_FIELDS}
+    return {name: str(row[name] or "") for name in STORED_CLASSIFY_FIELDS}
 
 
 def read_evidence(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, str]:
@@ -296,8 +296,8 @@ def save_classification(
     `evidence` 는 판정 칸을 그렇게 고른 근거 문장이다. 남기지 않으면 나중에 "이 공고가 왜
     경력으로 분류됐나" 에 답할 수 없다 (`migrations/0015_classification_evidence.sql`).
     """
-    columns = (*CLASSIFY_FIELDS, "dropped_fields", "model", "evidence_json")
-    values = [fields.get(name, "").strip() or None for name in CLASSIFY_FIELDS]
+    columns = (*STORED_CLASSIFY_FIELDS, "dropped_fields", "model", "evidence_json")
+    values = [fields.get(name, "").strip() or None for name in STORED_CLASSIFY_FIELDS]
     values.append(", ".join(dropped))
     values.append(model)
     values.append(json.dumps(dict(evidence or {}), ensure_ascii=False))

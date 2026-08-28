@@ -218,6 +218,31 @@ def test_분류가_없으면_경력_구분도_채우지_않는다() -> None:
     assert fields["career_level"] is None
 
 
+def test_직무_대분류_소분류가_분류_결과로_채워진다() -> None:
+    """`job_major`/`job_minor` 도 다른 아홉 칸과 같은 경로(`CLASSIFY_FIELDS`)를 탄다."""
+    record = fixture_record()
+    fields = normalize_fields(
+        record, [], classification={"job_major": "IT·개발", "job_minor": "서버·백엔드"}
+    )
+    assert fields["job_major"] == "IT·개발"
+    assert fields["job_minor"] == "서버·백엔드"
+
+
+def test_대분류만_있고_소분류가_비면_소분류는_None이다() -> None:
+    """본문으로 소분류가 갈리지 않는 공고. 찍어서 채우지 않는다(PRD 2절)."""
+    record = fixture_record()
+    fields = normalize_fields(record, [], classification={"job_major": "IT·개발"})
+    assert fields["job_major"] == "IT·개발"
+    assert fields["job_minor"] is None
+
+
+def test_분류가_없으면_직무_분류도_비어있다() -> None:
+    record = fixture_record()
+    fields = normalize_fields(record, [], classification=None)
+    assert fields["job_major"] is None
+    assert fields["job_minor"] is None
+
+
 def test_load_rules_reads_stored_rows(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
