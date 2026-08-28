@@ -30,7 +30,7 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse
 
 from app.api.settings import get_connection
@@ -60,13 +60,28 @@ SELECT c.name AS name,
        COUNT(j.id) AS job_count
 FROM companies c
 LEFT JOIN normalized_jobs j ON j.company = c.name
+{where}
 GROUP BY c.id
+{having}
 ORDER BY job_count DESC, c.name
 """
 
+# 로고가 비었다고 볼 값. NULL 로 지우는 것이 정상 경로지만(`app/companies.py`), 빈 문자열이
+# 들어온 행이 `로고 있음` 으로 걸러지면 그 회사는 이 목록에서 영영 사라진다
+_NO_LOGO = "WHERE c.logo_url IS NULL OR c.logo_url = ''"
 
-def rows(conn: sqlite3.Connection) -> list[CompanyRow]:
-    """회사 전부. 공고 많은 순이다. 읽기 전용이다."""
+
+def rows(conn: sqlite3.Connection, *, no_logo: bool = False, min_jobs: int = 0) -> list[CompanyRow]:
+    """조건에 걸린 회사. 공고 많은 순이다. 읽기 전용이다.
+
+    조건 둘은 함께 걸린다. `로고 없음` 과 `공고 N건 이상` 을 같이 걸면 로고가 없으면서 공고가
+    여러 개인 회사만 남고, 그것이 곧 등록할 목록이다.
+    """
+    threshold = max(min_jobs, 0)
+    sql = _ROWS_SQL.format(
+        where=_NO_LOGO if no_logo else "",
+        having="HAVING job_count >= ?" if threshold else "",
+    )
     return [
         CompanyRow(
             name=str(row["name"]),
@@ -74,7 +89,7 @@ def rows(conn: sqlite3.Connection) -> list[CompanyRow]:
             logo_url=None if row["logo_url"] is None else str(row["logo_url"]),
             job_count=int(row["job_count"]),
         )
-        for row in conn.execute(_ROWS_SQL)
+        for row in conn.execute(sql, (threshold,) if threshold else ())
     ]
 
 
@@ -82,6 +97,23 @@ def rows(conn: sqlite3.Connection) -> list[CompanyRow]:
 def company_list_fragment(
     request: Request,
     conn: Annotated[sqlite3.Connection, Depends(get_connection)],
+    no_logo: Annotated[str, Query()] = "",
+    min_jobs: Annotated[str, Query()] = "",
 ) -> HTMLResponse:
-    """회사 목록 한 벌. 행이 없으면 무엇을 하면 생기는지 적는다."""
-    return render(request, "fragments/company_list.html", rows=rows(conn))
+    """조건에 걸린 회사 목록. 행이 없으면 무엇을 하면 생기는지 적는다.
+
+    `no_logo` 는 체크박스라 켜졌을 때만 값이 온다. 문자열로 받는 것은 브라우저가 보내는
+    `on` 을 그대로 참으로 읽기 위해서다.
+
+    `min_jobs` 도 문자열이다. 숫자 칸을 비우면 빈 값이 오는데, 정수로 받으면 그것이 422 가
+    되어 조건을 지우려던 조작이 오류 조각으로 돌아온다. 빈 값은 조건 없음이다.
+    """
+    threshold = int(min_jobs) if min_jobs.strip().isdigit() else 0
+    matched = rows(conn, no_logo=bool(no_logo), min_jobs=threshold)
+    return render(
+        request,
+        "fragments/company_list.html",
+        rows=matched,
+        total_jobs=sum(row.job_count for row in matched),
+        filtered=bool(no_logo) or threshold > 0,
+    )

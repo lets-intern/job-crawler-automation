@@ -5,7 +5,11 @@
 {% from "macros.html" import blank, empty_row %}
 <div class="table-scroll">
   <table class="data-table">
-    <caption>회사 {{ rows | length }}곳. 공고 많은 순이다 — 로고 하나가 몇 건에 붙는지가 무엇을 먼저 등록할지를 정한다</caption>
+    <caption>
+      {% if filtered %}조건에 걸린 회사{% else %}회사{% endif %}
+      {{ rows | length }}곳, 공고 합계 {{ total_jobs }}건.
+      공고 많은 순이다 — 로고 하나가 몇 건에 붙는지가 무엇을 먼저 등록할지를 정한다
+    </caption>
     <thead>
       <tr>
         <th scope="col">회사명</th>
@@ -29,7 +33,11 @@
         </td>
       </tr>
       {% else %}
+      {% if filtered %}
+      {{ empty_row(4, "이 조건에 걸린 회사가 없다. 조건을 풀면 전체가 다시 나온다") }}
+      {% else %}
       {{ empty_row(4, "회사 행이 아직 없다. 수집한 공고가 정규화되면 그 회사명으로 행이 생긴다") }}
+      {% endif %}
       {% endfor %}
     </tbody>
   </table>

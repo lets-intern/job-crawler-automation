@@ -1,8 +1,11 @@
-"""회사 화면 (6.1.V, 6.2.V).
+"""회사 화면 (6.1.V, 6.2.V, 6.3.V).
 
 보는 것은 넷이다. 네비게이션에 자리가 생겼는지, 그 주소가 열리면서 목록 조각을 부르는지,
 행이 없을 때 화면이 "없음" 으로 끝내지 않고 언제 생기는지 말하는지, 그리고 공고 수가
 많은 회사가 앞에 서는지.
+
+조회 조건 둘(`로고 없음`, `공고 N건 이상`)을 함께 걸면 등록할 목록이 나온다. 걸린 회사 수와
+공고 합계가 실제와 같은지가 그 조건이 쓸모 있는지를 정한다.
 
 공고는 정규화를 지나 넣는다. 화면이 세는 값과 로고가 실제로 붙는 경로가 같은 이름이라야
 숫자가 뜻을 갖는다.
@@ -156,3 +159,90 @@ def test_공고가_하나도_없는_회사도_0건으로_남는다(
 
     assert "폐업한회사" in body
     assert "0건" in body
+
+
+def test_로고_없음_조건이_로고를_넣은_회사를_뺀다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    add_job(conn, "토스", 1)
+    add_job(conn, "당근", 2)
+    companies.set_logo_url(conn, "토스", "https://cdn.test/toss.png")
+    conn.commit()
+
+    body = client.get("/ui/companies", params={"no_logo": "on"}).text
+
+    assert names_in_order(body) == ["당근"]
+
+
+def test_공고_N건_이상_조건이_적은_회사를_뺀다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    for seq in range(1, 4):
+        add_job(conn, "카카오", seq)
+    add_job(conn, "당근", 10)
+    conn.commit()
+
+    body = client.get("/ui/companies", params={"min_jobs": "3"}).text
+
+    assert names_in_order(body) == ["카카오"]
+
+
+def test_둘을_걸면_등록할_목록만_남는다(client: TestClient, conn: sqlite3.Connection) -> None:
+    """로고가 없으면서 공고가 여러 개인 회사. 이것이 먼저 등록할 목록이다."""
+    for seq in range(1, 4):
+        add_job(conn, "로고없는큰회사", seq)
+    for seq in range(4, 7):
+        add_job(conn, "로고있는큰회사", seq)
+    add_job(conn, "로고없는작은회사", 7)
+    companies.set_logo_url(conn, "로고있는큰회사", "https://cdn.test/x.png")
+    conn.commit()
+
+    body = client.get("/ui/companies", params={"no_logo": "on", "min_jobs": "2"}).text
+
+    assert names_in_order(body) == ["로고없는큰회사"]
+
+
+def test_걸린_회사_수와_공고_합계를_적는다(client: TestClient, conn: sqlite3.Connection) -> None:
+    """숫자가 실제와 다르면 무엇을 먼저 등록할지를 이 화면으로 정할 수 없다."""
+    for seq in range(1, 4):
+        add_job(conn, "카카오", seq)
+    for seq in range(4, 6):
+        add_job(conn, "당근", seq)
+    add_job(conn, "작은회사", 6)
+    conn.commit()
+
+    body = client.get("/ui/companies", params={"min_jobs": "2"}).text
+
+    assert "조건에 걸린 회사" in body
+    assert "2곳, 공고 합계 5건" in body
+
+
+def test_조건에_걸린_회사가_없으면_조건_탓임을_말한다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    add_job(conn, "토스", 1)
+    conn.commit()
+
+    body = client.get("/ui/companies", params={"min_jobs": "9"}).text
+
+    assert "이 조건에 걸린 회사가 없다" in body
+
+
+def test_숫자_칸을_비워도_조건_없음으로_읽는다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """정수로 받으면 빈 값이 422 가 되어 조건을 지우려던 조작이 오류로 돌아온다."""
+    add_job(conn, "토스", 1)
+    conn.commit()
+
+    response = client.get("/ui/companies", params={"min_jobs": ""})
+
+    assert response.status_code == 200
+    assert names_in_order(response.text) == ["토스"]
+
+
+def test_화면에_조회_조건_둘이_있다(client: TestClient) -> None:
+    body = client.get("/companies").text
+
+    assert 'name="no_logo"' in body
+    assert 'name="min_jobs"' in body
