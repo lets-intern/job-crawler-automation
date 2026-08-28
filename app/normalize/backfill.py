@@ -18,6 +18,16 @@
 `crawl_runs` 에도 쓰지 않는다. 재정규화는 크롤링 실행이 아니고, 섞어 쓰면 워크플로우의
 성공·실패 통계가 크롤링과 무관한 이유로 움직인다.
 
+## 회사 행은 여기서도 생긴다
+
+이미 쌓인 공고에는 이 경로가 유일한 등록 길이다. 아래 UPDATE 는 `insert_normalized` 를 지나지
+않으므로 회사 등록을 여기서 한 번 더 부른다 (`app/companies.py`). 부르지 않으면 규칙으로
+회사명을 고쳐 재정규화한 뒤에도 새 이름의 행이 없고, 운영자는 로고를 붙일 회사를 화면에서
+찾지 못한다.
+
+있는 행은 덮지 않으므로 몇 번을 돌려도 로고와 모회사 이름은 그대로다. 옛 이름의 행은 남는다 —
+지우는 것은 운영자가 한다.
+
 ## 진행 상황
 
 한 프로세스 안의 메모리에 둔다. 이 서비스는 FastAPI 한 프로세스이고, 재정규화는 그 프로세스가
@@ -37,6 +47,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+from app import companies
 from app.normalize.engine import (
     PARENT_COMPANY,
     NormalizeError,
@@ -183,6 +194,9 @@ def rewrite_one(conn: sqlite3.Connection, raw_job_id: int, rules: list[Rule]) ->
     재정규화가 같은 칸을 쓴다 — 0011 이 더한 열 칸이 여기 없어서, 재정규화로는 그 칸이
     영원히 NULL 로 남고 있었다.
 
+    회사 행도 여기서 보장한다. 이 경로는 UPDATE 라 `insert_normalized` 의 등록을 지나지
+    않는데, 이미 쌓인 공고에는 재정규화가 유일한 등록 길이다.
+
     운영자가 `crawlers.default_company` 를 고쳤으면 그 값이 이 경로로 `parent_company` 에
     반영된다. 공고에서 뽑은 `company` 는 그 영향을 받지 않는다 — 두 칸이 갈린 뒤로 한쪽을
     고치는 일이 다른 쪽을 건드리지 않는다.
@@ -191,6 +205,7 @@ def rewrite_one(conn: sqlite3.Connection, raw_job_id: int, rules: list[Rule]) ->
     않은 필드뿐이고, 그것이 검수가 살아남는 유일한 순서다.
     """
     _, fields = normalized_values(conn, raw_job_id, rules)
+    companies.register(conn, fields["company"], fields[PARENT_COMPANY])
     # 컬럼 이름은 이 모듈이 임포트한 상수에서만 온다. 밖에서 오는 값이 들어오지 않는다
     columns = (*NORMALIZED_FIELDS, PARENT_COMPANY)
     cursor = conn.execute(

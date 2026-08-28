@@ -1,6 +1,6 @@
 """정규화가 회사 행을 만드는지 본다.
 
-확인하는 것은 여섯이다.
+확인하는 것은 일곱이다.
 
 - 같은 회사 공고가 여러 건이어도 행은 하나다
 - 자회사가 빈 건은 모회사 이름으로 행이 생긴다
@@ -8,6 +8,7 @@
 - 행에는 로고가 없다. 채우는 것은 운영자다
 - 값을 미리 보는 경로는 행을 만들지 않는다
 - 스냅샷을 들여오는 경로도 같은 자리를 지나 행을 만든다
+- 재정규화도 행을 만든다. 이미 쌓인 공고에는 그것이 유일한 등록 길이다
 
 픽스처로 돈다. 실사이트에 나가지 않는다.
 """
@@ -24,6 +25,7 @@ import pytest
 from app import companies, db
 from app.api.import_data import import_database
 from app.crawler.runner import run_workflow
+from app.normalize.backfill import BackfillProgress, renormalize
 from app.normalize.engine import insert_normalized, normalized_values
 from app.normalize.rules import build_rule
 from tests.test_company_selector import (
@@ -190,3 +192,60 @@ def test_importing_a_snapshot_registers_its_companies(tmp_path: pathlib.Path) ->
         assert {name for name, _, _ in registered} == stored
     finally:
         conn.close()
+
+
+def add_rule(conn: sqlite3.Connection, config: dict[str, object]) -> None:
+    """`company` 에 mapping 규칙 하나. 재정규화가 DB 에서 규칙을 읽으므로 표에 넣는다."""
+    conn.execute(
+        """
+        INSERT INTO normalization_rules (field_name, rule_type, rule_config_json, priority)
+        VALUES ('company', 'mapping', ?, 0)
+        """,
+        (json.dumps(config, ensure_ascii=False),),
+    )
+
+
+def test_renormalizing_registers_a_company_that_had_no_row(conn: sqlite3.Connection) -> None:
+    """4.5.V 의 앞쪽. 이 표가 생기기 전에 정규화된 공고는 재정규화로만 회사를 얻는다."""
+    raw_job_id = add_raw(conn, "삼성SDS", 1)
+    conn.execute(
+        """
+        INSERT INTO normalized_jobs (raw_job_id, source_url, company, parent_company)
+        VALUES (?, 'https://x/1', '삼성SDS', '삼성전자')
+        """,
+        (raw_job_id,),
+    )
+    assert companies.list_all(conn) == []
+
+    renormalize(conn, BackfillProgress())
+
+    assert names(conn) == [("삼성SDS", "삼성전자", None)]
+
+
+def test_renormalizing_after_a_rename_rule_registers_the_new_name(
+    conn: sqlite3.Connection,
+) -> None:
+    """4.5.V 의 뒤쪽. 규칙으로 이름을 고쳤는데 행이 없으면 로고를 붙일 회사를 찾지 못한다.
+
+    옛 이름의 행은 남는다. 지우는 것은 운영자가 한다.
+    """
+    insert_normalized(conn, add_raw(conn, "삼성전기(주)", 1), [])
+    add_rule(conn, {"map": {"삼성전기(주)": "삼성전기"}})
+
+    renormalize(conn, BackfillProgress())
+
+    assert names(conn) == [
+        ("삼성전기", "삼성전자", None),
+        ("삼성전기(주)", "삼성전자", None),
+    ]
+
+
+def test_renormalizing_twice_keeps_the_operator_s_logo(conn: sqlite3.Connection) -> None:
+    """재정규화는 몇 번을 눌러도 회사 행을 덮지 않는다."""
+    insert_normalized(conn, add_raw(conn, "삼성SDS", 1), [])
+    companies.set_logo_url(conn, "삼성SDS", "https://cdn.test/sds.png")
+
+    renormalize(conn, BackfillProgress())
+    renormalize(conn, BackfillProgress())
+
+    assert names(conn) == [("삼성SDS", "삼성전자", "https://cdn.test/sds.png")]
