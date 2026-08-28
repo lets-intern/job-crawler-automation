@@ -2,6 +2,11 @@
 
 화면이 늘 때마다 위 줄이 계속 길어지지 않게, `NAV` 는 묶음 이름만 놓고 각 묶음의 실제
 화면은 두 번째 줄(`group_nav`)에서 고른다 (`app/api/ui.py` 의 `NAV_GROUPS`).
+
+묶음은 파이프라인 단계로 가른다 — 수집(사이트를 가져온다), 정규화(가져온 것을 다듬는다),
+데이터 확인(다듬은 결과를 본다), 운영 설정(값을 넣어 둔다). 부가 워크플로우는 사이트를
+가져오지 않고 이미 가져온 것을 가공하므로 "수집" 이 아니라 "정규화" 에 있다
+(2026-08-29 결정).
 """
 
 from __future__ import annotations
@@ -50,14 +55,23 @@ def client(path: pathlib.Path, conn: sqlite3.Connection) -> Iterator[TestClient]
         app.dependency_overrides.clear()
 
 
-def test_위_네비게이션은_묶음_셋뿐이다() -> None:
-    assert [label for _, label in NAV] == ["수집", "데이터", "운영 설정"]
+def test_위_네비게이션은_묶음_넷뿐이다() -> None:
+    assert [label for _, label in NAV] == ["수집", "정규화", "데이터 확인", "운영 설정"]
 
 
-def test_묶음_안의_화면을_전부_합치면_여덟이다() -> None:
-    """줄어든 것은 위 줄뿐이다. 화면 자체는 그대로 여덟이다."""
+def test_묶음_안의_화면을_전부_합치면_일곱이다() -> None:
+    """줄어든 것은 위 줄뿐이다. 화면 자체는 그대로 일곱 + 운영 설정이다."""
     grouped = sum(len(members) for _, _, members in NAV_GROUPS)
-    assert grouped == 7  # 운영 설정은 묶이지 않는 여덟 번째 화면이다
+    assert grouped == 7
+
+
+def test_부가_워크플로우는_수집이_아니라_정규화_묶음에_있다() -> None:
+    """사이트를 가져오지 않고 이미 가져온 것을 가공한다 (2026-08-29 결정)."""
+    collect_group = next(members for _, name, members in NAV_GROUPS if name == "수집")
+    normalize_group = next(members for _, name, members in NAV_GROUPS if name == "정규화")
+
+    assert ("/side", "부가 워크플로우") not in collect_group
+    assert ("/side", "부가 워크플로우") in normalize_group
 
 
 @pytest.mark.parametrize(
@@ -66,10 +80,10 @@ def test_묶음_안의_화면을_전부_합치면_여덟이다() -> None:
         ("/", "/"),
         ("/tests", "/"),
         ("/workflows", "/"),
-        ("/side", "/"),
         ("/rules", "/rules"),
-        ("/review", "/rules"),
-        ("/companies", "/rules"),
+        ("/side", "/rules"),
+        ("/review", "/review"),
+        ("/companies", "/review"),
     ],
 )
 def test_묶인_화면은_위에서_자기_묶음이_켜진다(
@@ -87,10 +101,10 @@ def test_묶인_화면은_위에서_자기_묶음이_켜진다(
         ("/", "크롤러 등록"),
         ("/tests", "테스트 실행"),
         ("/workflows", "워크플로우"),
-        ("/side", "부가 워크플로우"),
         ("/rules", "정규화 규칙"),
-        ("/review", "데이터 검수"),
-        ("/companies", "회사"),
+        ("/side", "부가 워크플로우"),
+        ("/review", "데이터 확인"),
+        ("/companies", "회사 로고"),
     ],
 )
 def test_묶인_화면은_두_번째_줄에서_자기_자리가_켜진다(
@@ -103,7 +117,7 @@ def test_묶인_화면은_두_번째_줄에서_자기_자리가_켜진다(
 
 
 def test_묶음_안의_다른_화면도_두_번째_줄에서_보인다(client: TestClient) -> None:
-    """`/` 에 있어도 같은 묶음의 나머지 셋이 눈에 보여야, 늘어난 화면을 찾을 수 있다."""
+    """`/` 에 있어도 같은 묶음의 나머지가 눈에 보여야, 늘어난 화면을 찾을 수 있다."""
     body = client.get("/").text
 
     for member_path, label in next(members for _, name, members in NAV_GROUPS if name == "수집"):

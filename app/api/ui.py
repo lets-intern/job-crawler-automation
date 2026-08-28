@@ -49,11 +49,15 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 # 화면이 늘 때마다 위 줄이 한 칸씩 길어지면, 늘어난 자리를 찾는 일이 화면 하나 늘리는
 # 일보다 커진다. 그래서 위 네비게이션은 묶음 이름만 놓고, 묶음 안의 실제 화면은 그 아래
-# 두 번째 줄(`group_nav`)에서 고른다 — `SETTINGS_NAV` 가 이미 하는 일을 두 묶음에 더 쓴다.
+# 두 번째 줄(`group_nav`)에서 고른다 — `SETTINGS_NAV` 가 이미 하는 일을 세 묶음에 더 쓴다.
 #
-# 묶음을 가르는 기준은 화면 개수가 아니라 파이프라인 단계다. 앞 넷은 수집(등록부터 주기
-# 실행까지), 뒤 셋은 그 수집이 만든 데이터를 다듬고 보는 자리다
-# (`.claude/docs/architecture.md` 의 실행 흐름).
+# 묶음을 가르는 기준은 화면 개수가 아니라 파이프라인 단계다 (2026-08-29 결정,
+# `.claude/docs/architecture.md` 의 실행 흐름).
+#
+# 처음에는 "수집" 하나에 부가 워크플로우까지 넣었다. 부가 워크플로우(LLM 분류·전달)는
+# 사이트를 가져오는 일이 아니라 이미 가져온 데이터를 가공하는 일이라, 그 자리는 틀렸다 —
+# raw_jobs 를 만드는 것이 수집이고 그것을 읽어 normalized_jobs 를 채우거나 고치는 것이
+# 정규화다. 부가 워크플로우는 후자다.
 NAV_GROUPS: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
     (
         "/",
@@ -62,16 +66,22 @@ NAV_GROUPS: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
             ("/", "크롤러 등록"),
             ("/tests", "테스트 실행"),
             ("/workflows", "워크플로우"),
-            ("/side", "부가 워크플로우"),
         ),
     ),
     (
         "/rules",
-        "데이터",
+        "정규화",
         (
             ("/rules", "정규화 규칙"),
-            ("/review", "데이터 검수"),
-            ("/companies", "회사"),
+            ("/side", "부가 워크플로우"),
+        ),
+    ),
+    (
+        "/review",
+        "데이터 확인",
+        (
+            ("/review", "데이터 확인"),
+            ("/companies", "회사 로고"),
         ),
     ),
 )

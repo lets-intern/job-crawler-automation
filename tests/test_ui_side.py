@@ -85,9 +85,13 @@ def _client_with_fake_provider(path: pathlib.Path, texts: tuple[str, ...]) -> It
 
 
 def test_네비게이션에_부가_워크플로우가_있다() -> None:
-    """개별 화면이 아니라 `수집` 묶음 안에 있다 (`app/api/ui.py` 의 `NAV_GROUPS`)."""
-    collect_group = next(members for path, label, members in NAV_GROUPS if label == "수집")
-    assert ("/side", "부가 워크플로우") in collect_group
+    """개별 화면이 아니라 `정규화` 묶음 안에 있다 (`app/api/ui.py` 의 `NAV_GROUPS`).
+
+    `수집` 이 아니다 — 부가 워크플로우는 사이트를 가져오지 않고 이미 가져온 것을 가공한다
+    (2026-08-29 결정).
+    """
+    normalize_group = next(members for path, label, members in NAV_GROUPS if label == "정규화")
+    assert ("/side", "부가 워크플로우") in normalize_group
 
 
 def test_부가_워크플로우_화면이_열리고_네비게이션이_켜진다(client: TestClient) -> None:
