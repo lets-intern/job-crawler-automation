@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Mapping, Sequence
+from typing import Any, Final
 
 from app.classify.schema import CLASSIFY_FIELDS
 
@@ -35,6 +36,70 @@ _SOURCE_TEXT = "json_extract(r.raw_data_json, '$.source_text')"
 _CLASSIFY_TEXT = f"coalesce(nullif({_SOURCE_TEXT}, ''), {_BODY}, '')"
 
 
+# 분류 대상 범위 넷. 이 이름이 `side_workflows.target_scope` 에 그대로 저장되고,
+# 종류마다 어느 값을 받는지는 `app/side/store.py` 가 본다.
+#
+# 이름을 조회하는 쪽에 두는 것은 범위가 무엇을 뜻하는지 아는 곳이 그 조회를 만드는 여기이기
+# 때문이다. 두 벌을 두면 범위를 하나 더할 때 한쪽만 넓어지고, 저장은 되는데 아무것도 고르지
+# 못하는 워크플로우가 생긴다
+UNCLASSIFIED: Final = "unclassified"
+EMPTY_FIELDS: Final = "empty_fields"
+RECENT: Final = "recent"
+ALL: Final = "all"
+
+# 분류 워크플로우가 받는 범위 전부. `app/side/store.py` 의 `SCOPES[classify]` 가 이 값이다
+CLASSIFY_SCOPES: tuple[str, ...] = (UNCLASSIFIED, EMPTY_FIELDS, RECENT, ALL)
+
+
+class ClassifyScopeError(ValueError):
+    """분류가 도는 대상 범위로 쓸 수 없는 값. 부르는 쪽이 사유를 그대로 옮긴다."""
+
+
+def _scope_from(scope: str, days: int | None) -> tuple[str, tuple[Any, ...]]:
+    """범위 하나의 `FROM ... WHERE ...` 와 그 파라미터.
+
+    목록과 건수가 이 문장 하나를 같이 쓴다. 갈리면 확인 창이 적은 대상 건수와 실제로 도는
+    건수가 다른데, 그때 어느 쪽이 맞는지 알 방법이 없다 (PRD 2절).
+
+    **네 범위 모두 "보낼 글이 있다" 를 먼저 요구한다.** 원문도 본문도 없는 공고는 부를 이유가
+    없는 호출이고, 그 호출은 `empty_body` 로 끝나 실패 건수만 부풀린다. 그 조건은
+    `_CLASSIFY_TEXT` 하나가 정한다 — 범위마다 다시 쓰면 범위마다 대상이 갈린다.
+    """
+    if scope not in CLASSIFY_SCOPES:
+        raise ClassifyScopeError(
+            f"분류가 도는 대상 범위가 아니다: {scope!r}. {', '.join(CLASSIFY_SCOPES)} 중 하나다"
+        )
+    if scope == UNCLASSIFIED:
+        # 아직 분류 행이 없는 건. 지금 도는 조회 그대로다 (`pending_ids`)
+        return (
+            f"""
+              FROM raw_jobs r
+              LEFT JOIN job_classifications c ON c.raw_job_id = r.id
+             WHERE c.raw_job_id IS NULL
+               AND {_CLASSIFY_TEXT} <> ''
+            """,
+            (),
+        )
+    raise ClassifyScopeError(f"아직 조회를 만들지 않은 범위다: {scope!r}")
+
+
+def scope_ids(
+    conn: sqlite3.Connection, scope: str, *, days: int | None = None, limit: int | None = None
+) -> list[int]:
+    """그 범위의 공고 id. **최근 수집한 것부터다.** 읽기 전용이다.
+
+    순서는 네 범위가 같다. 상한에 걸려 잘려 나가는 쪽이 언제나 오래된 것이어야 하고, 범위마다
+    순서가 다르면 상한을 걸었을 때 무엇이 도는지 화면이 설명할 수 없다 (2026-08-27 결정).
+    """
+    body, params = _scope_from(scope, days)
+    bound = "" if limit is None else " LIMIT ?"
+    rows = conn.execute(
+        f"SELECT r.id AS id {body} ORDER BY r.id DESC{bound}",
+        params if limit is None else (*params, limit),
+    ).fetchall()
+    return [int(row["id"]) for row in rows]
+
+
 def pending_ids(conn: sqlite3.Connection, limit: int | None = None) -> list[int]:
     """보낼 글이 있고 아직 분류되지 않은 공고. **최근 수집한 것부터다.** 읽기 전용이다.
 
@@ -49,20 +114,7 @@ def pending_ids(conn: sqlite3.Connection, limit: int | None = None) -> list[int]
     올라온 공고이고, 밀린 것은 급하지 않다. 신규가 하루 0~1건이라 이 순서로도 밀린 것은
     결국 다 돈다.
     """
-    bound = "" if limit is None else " LIMIT ?"
-    params: tuple[int, ...] = () if limit is None else (limit,)
-    rows = conn.execute(
-        f"""
-        SELECT r.id AS id
-          FROM raw_jobs r
-          LEFT JOIN job_classifications c ON c.raw_job_id = r.id
-         WHERE c.raw_job_id IS NULL
-           AND {_CLASSIFY_TEXT} <> ''
-         ORDER BY r.id DESC{bound}
-        """,
-        params,
-    ).fetchall()
-    return [int(row["id"]) for row in rows]
+    return scope_ids(conn, UNCLASSIFIED, limit=limit)
 
 
 def pending_count(conn: sqlite3.Connection) -> int:
@@ -71,15 +123,8 @@ def pending_count(conn: sqlite3.Connection) -> int:
     `pending_ids` 와 같은 조건이어야 한다. 갈리면 화면의 남은 건수와 실제로 도는 건수가
     다르다.
     """
-    row = conn.execute(
-        f"""
-        SELECT count(*) AS n
-          FROM raw_jobs r
-          LEFT JOIN job_classifications c ON c.raw_job_id = r.id
-         WHERE c.raw_job_id IS NULL
-           AND {_CLASSIFY_TEXT} <> ''
-        """
-    ).fetchone()
+    body, params = _scope_from(UNCLASSIFIED, None)
+    row = conn.execute(f"SELECT count(*) AS n {body}", params).fetchone()
     return int(row["n"])
 
 

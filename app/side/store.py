@@ -25,6 +25,7 @@ import sqlite3
 from dataclasses import dataclass
 
 from app.classify.batch import MAX_LIMIT
+from app.classify.store import ALL, CLASSIFY_SCOPES, RECENT
 
 CLASSIFY = "classify"
 DELIVER = "deliver"
@@ -36,12 +37,14 @@ STATUSES: tuple[str, ...] = (ACTIVE, PAUSED)
 
 TRIGGER_KINDS: tuple[str, ...] = ("interval", "after_crawl", "manual")
 
-RECENT = "recent"
-
-# 종류마다 받는 대상 범위가 다르다. 앞의 것이 그 종류의 기본값이다 (PRD 2·3 절)
+# 종류마다 받는 대상 범위가 다르다. 앞의 것이 그 종류의 기본값이다 (PRD 2·3 절).
+#
+# 분류가 받는 넷은 `app/classify/store.py` 가 정한다. 그 이름으로 대상을 고르는 조회가
+# 거기 있고, 이름을 두 벌 두면 범위를 하나 더할 때 한쪽만 넓어진다 — 저장은 되는데 아무것도
+# 고르지 못하는 워크플로우가 그렇게 생긴다
 SCOPES: dict[str, tuple[str, ...]] = {
-    CLASSIFY: ("unclassified", "empty_fields", RECENT, "all"),
-    DELIVER: ("undelivered", RECENT, "all"),
+    CLASSIFY: CLASSIFY_SCOPES,
+    DELIVER: ("undelivered", RECENT, ALL),
 }
 
 # 표의 기본값과 같은 값이다. 화면이 폼을 그릴 때 쓴다
