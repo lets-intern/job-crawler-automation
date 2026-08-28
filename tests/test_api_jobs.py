@@ -45,15 +45,14 @@ def seed(conn: sqlite3.Connection, count: int, normalized_at: str | None = None)
         cursor = conn.execute(
             """
             INSERT INTO normalized_jobs
-                   (raw_job_id, company, title, department, deadline, body, requirements,
+                   (raw_job_id, company, title, deadline, body, requirements,
                     source_url, normalized_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 raw_id,
                 f"회사{index}",
                 f"공고 {index}",
-                "개발",
                 "2026-09-30",
                 "본문",
                 "자격요건",
@@ -170,17 +169,14 @@ def test_item_shape_matches_contract(client: TestClient, conn: sqlite3.Connectio
         "id",
         "company",
         "title",
-        "department",
         "deadline",
         "body",
         "requirements",
-        # 0011 이 더한 열 칸. 더하는 방향이라 위의 기존 필드는 그대로다
+        # 0011 이 더한 칸에서 0016 이 셋을 뺀 나머지
         "start_date",
-        "job_category",
         "employment_type",
         "career_level",
         "work_location",
-        "headcount",
         "duties",
         "preferred",
         "hiring_process",
@@ -191,14 +187,12 @@ def test_item_shape_matches_contract(client: TestClient, conn: sqlite3.Connectio
     assert item["normalized_at"] == "2026-08-21T10:00:00Z"
 
 
-# 0011 이 더한 칸. 사이트가 주는 것만 채우고 나머지는 NULL 로 둔다
+# 0011 이 더한 칸에서 0016 이 셋을 뺀 나머지. 사이트가 주는 것만 채우고 나머지는 NULL 로 둔다
 SPLIT_BODY_FIELDS = (
     "start_date",
-    "job_category",
     "employment_type",
     "career_level",
     "work_location",
-    "headcount",
     "duties",
     "preferred",
     "hiring_process",
@@ -220,8 +214,8 @@ def test_new_columns_go_out_filled_or_null(client: TestClient, conn: sqlite3.Con
     assert item["start_date"] == "2026-09-01"
     assert [
         item[name] for name in SPLIT_BODY_FIELDS if name not in ("work_location", "start_date")
-    ] == [None] * 8
-    # 더하는 방향이다. 기존 필드의 값과 뜻은 그대로다
+    ] == [None] * (len(SPLIT_BODY_FIELDS) - 2)
+    # 기존 필드의 값과 뜻은 그대로다
     assert item["deadline"] == "2026-09-30"
 
 
