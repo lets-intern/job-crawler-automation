@@ -235,6 +235,27 @@ def test_분류가_붙은_건도_외래키_없이_지워진다(
     assert int(conn.execute("SELECT count(*) FROM job_classifications").fetchone()[0]) == 0
 
 
+def test_제안이_붙은_건도_외래키_없이_지워진다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """`job_field_suggestions` 도 `raw_job_id` 를 참조한다 (`migrations/0023`).
+
+    이 표를 비우지 않으면 `job_classifications` 때와 같은 이유로 `FOREIGN KEY constraint
+    failed` 로 죽는다 — 실제 운영 중 재현된 두 번째 사례다.
+    """
+    conn.execute(
+        "INSERT INTO job_field_suggestions (raw_job_id, field_name, value)"
+        " VALUES (1, 'company', '엘지전자(주)')"
+    )
+
+    response = client.post("/ui/review/delete", data={"raw_job_id": ["1"]})
+
+    assert response.status_code == 200
+    assert "IntegrityError" not in response.text
+    assert raw_ids(conn) == [2, 3, 4, 5]
+    assert int(conn.execute("SELECT count(*) FROM job_field_suggestions").fetchone()[0]) == 0
+
+
 def test_필터_전체로_지우면_조건에_걸린_것만_사라진다(
     client: TestClient, conn: sqlite3.Connection
 ) -> None:
