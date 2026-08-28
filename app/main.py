@@ -17,6 +17,7 @@ from app.api import (
     review_filter,
     rules,
     settings,
+    side,
     ui,
     ui_companies,
     ui_crawlers,
@@ -86,6 +87,7 @@ app.include_router(workflows.router)
 app.include_router(settings.router)
 app.include_router(rules.router)
 app.include_router(classify.router)
+app.include_router(side.router)
 # 화면. API 라우터 뒤에 붙인다 — `/api/...` 가 먼저 잡힌다
 app.include_router(ui.router)
 app.include_router(ui_crawlers.router)

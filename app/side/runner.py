@@ -36,6 +36,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sqlite3
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -43,6 +44,7 @@ from typing import Any
 from app.classify.batch import ClassifyProgress, classify_ids, get_classify_run
 from app.classify.store import scope_ids
 from app.config import Settings
+from app.normalize.backfill import ConnectFactory
 from app.side import runs, store
 from app.side.runs import FAILED, SUCCESS, SideRun, SideRunCounts
 
@@ -147,7 +149,7 @@ def run_claimed(
         runs.finish(
             conn, run_id, status=FAILED, counts=counts, error_message=f"{type(exc).__name__}: {exc}"
         )
-        return _closed(conn, run_id)
+        return _row(conn, run_id)
     except BaseException as exc:
         runs.finish(
             conn, run_id, status=FAILED, counts=counts, error_message=f"{type(exc).__name__}: {exc}"
@@ -160,7 +162,7 @@ def run_claimed(
         counts=counts,
         error_message=reason,
     )
-    return _closed(conn, run_id)
+    return _row(conn, run_id)
 
 
 def run_once(
@@ -169,14 +171,14 @@ def run_once(
     """실행 한 번을 처음부터 끝까지 돈다. 돌아올 때 행은 닫혀 있다."""
     taken = claim(conn, side_workflow_id, trigger)
     if not taken.started:
-        return _closed(conn, taken.run_id)
+        return _row(conn, taken.run_id)
     return run_claimed(conn, taken.workflow, taken.run_id, body)
 
 
-def _closed(conn: sqlite3.Connection, run_id: int) -> SideRun:
+def _row(conn: sqlite3.Connection, run_id: int) -> SideRun:
     run = runs.read(conn, run_id)
     if run is None:  # pragma: no cover - 방금 적은 행이 사라지는 경로는 없다
-        raise LookupError(f"방금 닫은 실행을 다시 읽지 못했다: {run_id}")
+        raise LookupError(f"방금 적은 실행을 다시 읽지 못했다: {run_id}")
     return run
 
 
@@ -252,3 +254,52 @@ def _classify(
     # 한 건도 처리하지 못했다. 제공자 키가 없거나 호출이 전부 실패한 경우이고, 그것을 성공으로
     # 닫으면 운영자가 보는 것은 "돌았는데 대상이 없었다" 와 구분되지 않는다
     return reasons
+
+
+def start(
+    conn: sqlite3.Connection,
+    connect: ConnectFactory,
+    side_workflow_id: int,
+    *,
+    trigger: str = MANUAL,
+    client: Any | None = None,
+    settings: Settings | None = None,
+) -> SideRun:
+    """실행을 걸고 곧바로 돌아온다. 돌아온 행은 아직 열려 있다.
+
+    자리를 잡는 것(`claim`)은 부르는 쪽 연결에서 그 자리에서 한다. 스레드에 맡기면 응답이
+    나간 뒤에 행이 생겨서, 곧바로 진행을 물어본 화면이 "실행한 적 없음" 을 본다.
+
+    일은 자기 연결을 연 스레드가 한다. 요청 연결은 응답과 함께 닫히므로 쓸 수 없다
+    (`app/api/rules.py` 의 `get_connect_factory`).
+
+    진행 상황을 메모리에 두지 않는다. `side_runs` 행이 그것을 말하고, 그 행은 프로세스가
+    다시 떠도 남는다 — 재정규화와 분류가 메모리에 두어 서버가 뜨면 사라지는 문제를
+    되풀이하지 않는다 (PRD 지금 상태).
+    """
+    taken = claim(conn, side_workflow_id, trigger)
+    if not taken.started:
+        return _row(conn, taken.run_id)
+    threading.Thread(
+        target=_work,
+        args=(connect, taken, client, settings),
+        name=f"side:{side_workflow_id}",
+        daemon=True,
+    ).start()
+    return _row(conn, taken.run_id)
+
+
+def _work(
+    connect: ConnectFactory, taken: Claim, client: Any | None, settings: Settings | None
+) -> None:
+    """스레드가 도는 자리. 여기서 올라간 예외는 아무도 보지 못한다."""
+    try:
+        conn = connect()
+    except Exception:  # pragma: no cover - 연결을 못 여는 상황은 여기서 만들 수 없다
+        # 행을 닫을 연결조차 없다. 열린 채로 남고 다음 기동의 `close_orphans` 가 닫는다
+        logger.exception("부가 워크플로우 %s 의 실행 연결을 열지 못했다", taken.workflow.id)
+        return
+    try:
+        run_claimed(conn, taken.workflow, taken.run_id, _body(client, settings))
+    finally:
+        conn.close()
