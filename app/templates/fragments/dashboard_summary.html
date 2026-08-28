@@ -9,8 +9,8 @@
    다르게 보이면 어느 쪽이 진짜 모양인지 믿을 수 없다. #}
 {% from "fragments/complete_card.html" import complete_card %}
 {% macro delta_word(n) %}
-  {% if n > 0 %}<span class="text-emerald-600">▲ 어제보다 {{ n }}</span>
-  {% elif n < 0 %}<span class="text-slate-400">▼ 어제보다 {{ -n }}</span>
+  {% if n > 0 %}<span class="text-emerald-600">▲ 어제보다 {{ "{:,}".format(n) }}</span>
+  {% elif n < 0 %}<span class="text-slate-400">▼ 어제보다 {{ "{:,}".format(-n) }}</span>
   {% else %}<span class="text-slate-400">어제와 같음</span>
   {% endif %}
 {% endmacro %}
