@@ -14,6 +14,12 @@
 -- 건드리지 않는다 — 셀렉터가 뽑아 둔 값은 그대로 남고 정규화가 그것을 읽지 않게 될 뿐이다
 -- (`.claude/rules/data-safety.md`). `job_classifications` 의 지난 판정도 그대로 둔다.
 --
+-- **`job_field_overrides` 의 행은 지우지 않는다.** 지운 칸에 사람이 고쳐 둔 값이 남아 있어도
+-- `apply_overrides` 가 `OVERRIDABLE_FIELDS` 밖의 필드를 건너뛰므로 읽히지 않는다
+-- (`app/normalize/engine.py`). 그 행은 되돌릴 때 필요하다 — 지우면 검수 결과가 사라지고,
+-- 되살릴 방법이 없다. `job_field_overrides.field_name` 의 CHECK 도 넓힌 채로 둔다. 그 컬럼은
+-- 인덱스에 걸려 있어 좁히려면 표를 다시 만들어야 하고, 좁혀서 얻는 것이 없다.
+--
 -- 되돌리기: `migrate down` 이 컬럼 셋을 다시 만들고 규칙 둘을 되살린다. **컬럼은 돌아오지만
 -- 값은 돌아오지 않는다.** 세 칸은 전부 NULL 로 되살아난다 — 지워진 값을 어디에도 옮겨 두지
 -- 않았기 때문이다. 값이 다시 필요하면 재크롤링 없이 재정규화하면 된다. 출처인 `raw_jobs` 는

@@ -244,3 +244,26 @@ async def test_every_normalized_column_can_be_corrected(conn: sqlite3.Connection
     assert [row[field] for field in OVERRIDABLE_FIELDS] == [
         f"{field} 를 사람이 고쳤다" for field in OVERRIDABLE_FIELDS
     ]
+
+
+async def test_an_override_on_a_dropped_field_does_not_break_renormalization(
+    conn: sqlite3.Connection,
+) -> None:
+    """0016 이 지운 칸의 보정 행은 남겨 두고 읽지 않는다.
+
+    지우지 않는 것은 되돌릴 때 필요해서다. 읽히지 않는 것은 `apply_overrides` 가
+    `OVERRIDABLE_FIELDS` 밖의 필드를 건너뛰기 때문이고, 그래서 그 행이 남아 있어도
+    재정규화가 실패하지 않는다 (`migrations/0016_drop_department_category_headcount.sql`).
+    """
+    await collect(conn)
+    set_override(conn, 1, "department", "사람이 고친 부서")
+    set_override(conn, 1, "title", HUMAN_TITLE)
+
+    run_renormalize(conn)
+
+    assert normalized(conn, 1)["title"] == HUMAN_TITLE
+    # 행은 그대로 남아 있다. 되돌릴 때 이것이 있어야 검수 결과가 살아난다
+    kept = conn.execute(
+        "SELECT value FROM job_field_overrides WHERE raw_job_id = 1 AND field_name = 'department'"
+    ).fetchone()
+    assert kept["value"] == "사람이 고친 부서"
