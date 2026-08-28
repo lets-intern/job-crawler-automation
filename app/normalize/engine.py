@@ -30,6 +30,16 @@
 것은 `mapping` 규칙의 일이다. `parent_company` 에는 규칙을 태우지 않는다 — 사이트가 준 원문이
 아니라 운영자가 크롤러에 적어 둔 값을 그대로 옮기는 칸이다.
 
+## 처음 보는 회사는 행이 생긴다
+
+`normalized_jobs` 에 한 건이 들어갈 때 그 회사의 `companies` 행이 없으면 로고가 빈 행을
+만든다 (`app/companies.py`). 이름은 자회사가 있으면 자회사, 없으면 모회사다. 있는 행은
+덮지 않는다 — 운영자가 화면에서 고친 로고와 모회사 이름이 다음 수집에 도로 덮이면 그 화면은
+아무 일도 하지 못한다.
+
+만드는 자리는 `insert_normalized` 하나다. 값을 미리 보는 경로(`normalized_values`)에서
+만들면 규칙 화면에서 미리보기를 누른 것만으로 회사가 늘어난다.
+
 ## 여섯 칸은 수집이, 아홉 칸은 분류가 가진다
 
 수집은 어느 사이트나 확실히 주는 여섯 칸만 한다 — `title` `body` `company` `deadline`
@@ -86,6 +96,7 @@ from datetime import datetime
 
 from bs4 import BeautifulSoup
 
+from app import companies
 from app.classify.schema import CLASSIFY_FIELDS
 from app.classify.store import read_classification
 
@@ -331,6 +342,7 @@ def insert_normalized(conn: sqlite3.Connection, raw_job_id: int, rules: Sequence
     `delivered_at` 은 쓰지 않는다. 제공 API 경로만 쓴다 (`.claude/rules/data-safety.md`).
     """
     source_url, fields = normalized_values(conn, raw_job_id, rules)
+    companies.register(conn, fields["company"], fields[PARENT_COMPANY])
     # 컬럼 이름은 이 모듈의 상수에서만 온다. 밖에서 오는 값이 들어오지 않는다. 손으로 적은
     # 목록을 두면 칸이 늘 때마다 여기와 `NORMALIZED_FIELDS` 가 갈리고, 갈린 순간 새 칸은
     # 조용히 NULL 로만 남는다

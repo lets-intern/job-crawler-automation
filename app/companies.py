@@ -12,6 +12,13 @@
 `삼성전기` 와 `삼성전기(주)` 는 DB 가 다른 이름으로 본다. 그 둘을 같은 이름으로 만드는 것은
 `company` 에 걸린 mapping 규칙의 일이고, 이 모듈은 정규화가 확정한 이름을 그대로 받는다.
 
+## 행은 정규화가 만든다
+
+`register` 를 부르는 자리는 `app/normalize/engine.py` 의 `insert_normalized` 하나다. 공고가
+`normalized_jobs` 에 들어갈 때 그 회사의 행이 없으면 로고가 빈 행이 생긴다. 자동으로 만들지
+않으면 운영자가 회사명을 화면에서 손으로 다시 치게 되고, 오타 하나면 그 로고는 어느 공고에도
+붙지 않는다 (`.claude/tasks/todo/prd-fields-and-logo.md` 4장).
+
 ## 지우는 함수가 없다
 
 공고가 다 사라진 회사도 행이 남는다. 지우는 것은 운영자가 한다 —
@@ -69,6 +76,29 @@ def ensure(conn: sqlite3.Connection, name: str, parent_name: str | None = None) 
         (cleaned, parent or None),
     )
     return cursor.rowcount == 1
+
+
+def register(
+    conn: sqlite3.Connection, company: str | None, parent_company: str | None
+) -> str | None:
+    """정규화가 확정한 두 칸으로 회사 행 하나를 보장한다. 그 이름을 돌려준다.
+
+    **자회사가 있으면 자회사, 없으면 모회사가 이름이다.** 로고는 공고에 나오는 회사에 붙어야
+    하고, 삼성 채용 사이트에서 삼성SDS 공고에 붙을 로고는 삼성SDS 의 것이다. 자회사를 말하지
+    않는 사이트(토스·우아한형제들)는 모회사가 곧 그 회사라 그 이름으로 행이 생긴다.
+
+    이름이 곧 모회사면 `parent_name` 은 비운다. 자기 자신을 모회사로 적으면 화면이 그 행을
+    "모회사가 따로 있는 회사" 로 읽는다.
+
+    둘 다 비어 있으면 아무것도 만들지 않고 None 이다. 이름 없는 회사 행은 어느 공고와도
+    이어지지 않는다.
+    """
+    name = (company or "").strip() or (parent_company or "").strip()
+    if not name:
+        return None
+    parent = (parent_company or "").strip()
+    ensure(conn, name, None if parent == name else parent)
+    return name
 
 
 def list_all(conn: sqlite3.Connection) -> list[Company]:
