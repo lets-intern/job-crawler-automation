@@ -42,11 +42,11 @@
         - [x] 11.4.V 검증(정규화): 원문에 없는 값이 제안으로 남지 않는지 pytest
               (`test_a_suggestion_without_evidence_in_the_source_is_thrown_away`,
               `test_a_reflowed_suggestion_still_counts_as_grounded`)
-    - [ ] 11.5 **수집이 채우는 여섯 칸도 제안 대상에 넣되 자동으로 덮지 않는다.**
+    - [x] 11.5 **수집이 채우는 여섯 칸도 제안 대상에 넣되 자동으로 덮지 않는다.**
           `deadline` 은 마감 지난 공고를 거르는 데 쓰이고 `company` 는 계열사를 가르는 값이라,
           모델 판단 하나로 바뀌면 안 된다. 정규화의 어느 경로도 제안을 읽지 않는다는 것을
-          테스트로 못박는다
-        - [ ] 11.5.V 검증(정규화): 제안이 있는 건을 재정규화해도 확정 값이 그대로인지 pytest
+          테스트로 못박는다. `app/normalize/engine.py` 는 이 push 에서 한 줄도 고치지 않았다
+        - [x] 11.5.V 검증(정규화): 제안이 있는 건을 재정규화해도 확정 값이 그대로인지 pytest
     - [ ] 11.6 검수 화면의 칸에 `제안 있음` 을 낱말로 적고, 제안 값과 이유를 보인다.
           수락하면 `job_field_overrides` 로 들어가고 거절하면 제안 행만 지운다. 어느 쪽이든
           `raw_jobs` 와 `normalized_jobs` 는 건드리지 않는다
