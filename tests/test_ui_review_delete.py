@@ -122,6 +122,21 @@ def test_행마다_체크박스가_있고_지우기_폼이_표를_감싼다(clie
         assert f'name="raw_job_id" value="{raw_job_id}"' in html
 
 
+def test_고른_공고_지우기는_접혀서_시작한다(client: TestClient) -> None:
+    """2026-08-29 결정. 고르기·지우기는 가끔 하는 일이라 공고 목록보다 먼저 보일 이유가 없다."""
+    html = client.get("/ui/review").text
+
+    assert "<details>" in html
+    assert "고른 공고 지우기 (열기)" in html
+    details_start = html.index("<details>")
+    select_form_field = html.index('id="review-select-filtered"')
+    table_start = html.index("<caption>검수 대상 공고</caption>")
+    summary_end = html.index("</summary>", details_start)
+    # summary 뒤에 체크박스가 있고, 체크박스는 표(공고 목록)보다 앞에 있다 — details 가
+    # 지우기 도구를 감싸되 표 자체는 감싸지 않는다
+    assert details_start < summary_end < select_form_field < table_start
+
+
 def test_지금_걸린_조건이_지우기_폼과_함께_간다(client: TestClient) -> None:
     """`조건 전체` 가 화면에 보이는 것과 같은 조건이어야 한다."""
     html = client.get("/ui/review", params={"workflow_id": "1", "status": "none"}).text

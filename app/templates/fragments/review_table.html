@@ -115,8 +115,11 @@
   {% for name, value in delete_criteria.items() %}
   <input type="hidden" name="{{ name }}" value="{{ value }}">
   {% endfor %}
+  {# 닫힌 채로 시작한다. 고르기·지우기는 가끔 하는 일이고, 접혀 있어도 체크박스 변화를 듣는
+     `review.html` 의 스크립트는 `document.body` 에 걸려 있어 그대로 동작한다 #}
+  <details>
+    <summary class="cursor-pointer text-sm font-medium text-slate-700">고른 공고 지우기 (열기)</summary>
   <fieldset>
-    <legend>고른 공고 지우기</legend>
     <p>
       <label for="review-select-filtered" class="inline-flex items-center gap-2">
         <input id="review-select-filtered" type="checkbox" name="all_filtered" value="1">
@@ -152,6 +155,7 @@
     </p>
     {% endif %}
   </fieldset>
+  </details>
 <div class="table-scroll">
 <table class="data-table">
   <caption>검수 대상 공고</caption>
