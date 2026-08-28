@@ -78,24 +78,6 @@
       }
     },
     {
-      "field_name": "department",
-      "rule_type": "trim",
-      "priority": 0,
-      "config": {
-        "collapse_whitespace": true
-      }
-    },
-    {
-      "field_name": "department",
-      "rule_type": "regex",
-      "priority": 10,
-      "config": {
-        "pattern": "^[\\s·\\-/|>]+|[\\s·\\-/|>]+$",
-        "replacement": ""
-      },
-      "why": "부서명 앞뒤에 붙어 오는 구분기호를 뗀다"
-    },
-    {
       "field_name": "deadline",
       "rule_type": "trim",
       "priority": 0,

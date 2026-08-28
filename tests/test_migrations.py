@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from app import db
+from app.normalize.engine import load_rules
 from app.normalize.rules import NORMALIZED_FIELDS
 
 # .claude/docs/data-model.md 의 컬럼. 문서에 없는 컬럼은 늘리지 않는다
@@ -144,6 +145,7 @@ ALL_VERSIONS = [
     "0013",
     "0014",
     "0015",
+    "0016",
 ]
 
 
@@ -515,18 +517,26 @@ def test_html_text_rule_type_is_allowed(conn: sqlite3.Connection) -> None:
         _rule(conn, "uppercase")
 
 
+# 이 파일이 직접 넣은 규칙만 고르는 조건. 0016 의 역적용이 `department` 규칙 둘을 되살리므로
+# (`migrations/0016_drop_department_category_headcount.sql`), 0009 를 보는 검사는 자기가 넣은
+# 행만 세야 무엇을 보고 있는지가 흐려지지 않는다
+_OWN_RULES = "WHERE note = '메모'"
+
+
 def test_html_text_migration_keeps_the_rules_it_did_not_add(conn: sqlite3.Connection) -> None:
     """컬럼을 갈아 끼우는 동안 기존 규칙의 id 와 메모가 그대로 남는다."""
     db.migrate_up(conn)
     db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0009"))
     _rule(conn, "trim", priority=7)
     before = conn.execute(
-        "SELECT id, rule_type, priority, note FROM normalization_rules"
+        f"SELECT id, rule_type, priority, note FROM normalization_rules {_OWN_RULES}"
     ).fetchall()
 
     db.migrate_up(conn)
 
-    after = conn.execute("SELECT id, rule_type, priority, note FROM normalization_rules").fetchall()
+    after = conn.execute(
+        f"SELECT id, rule_type, priority, note FROM normalization_rules {_OWN_RULES}"
+    ).fetchall()
     assert [tuple(row) for row in after] == [tuple(row) for row in before]
 
 
@@ -538,7 +548,7 @@ def test_html_text_down_drops_only_its_own_rules(conn: sqlite3.Connection) -> No
 
     db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0009"))
 
-    rows = conn.execute("SELECT rule_type FROM normalization_rules").fetchall()
+    rows = conn.execute(f"SELECT rule_type FROM normalization_rules {_OWN_RULES}").fetchall()
     assert [row["rule_type"] for row in rows] == ["trim"]
 
 
@@ -878,3 +888,45 @@ def test_the_override_down_drops_the_corrections_the_old_check_cannot_hold(
     rows = conn.execute("SELECT field_name FROM job_field_overrides").fetchall()
     assert [row["field_name"] for row in rows] == ["title"]
     assert conn.execute("SELECT count(*) AS n FROM raw_jobs").fetchone()["n"] == 1
+
+
+def _rules(connection: sqlite3.Connection) -> list[tuple[str, str, int]]:
+    rows = connection.execute(
+        "SELECT field_name, rule_type, priority FROM normalization_rules ORDER BY id"
+    ).fetchall()
+    return [(row["field_name"], row["rule_type"], row["priority"]) for row in rows]
+
+
+def _at_0015(connection: sqlite3.Connection) -> None:
+    """0016 직전 상태로 만든다. 지운 세 칸이 아직 있는 스키마다."""
+    db.migrate_up(connection)
+    db.migrate_down(connection, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0016"))
+    connection.execute("DELETE FROM normalization_rules")
+
+
+def test_dropped_field_rules_go_before_the_columns(conn: sqlite3.Connection) -> None:
+    """0016 은 지운 칸의 규칙을 먼저 지운다. 남기면 `load_rules` 가 정규화 전체를 세운다."""
+    _at_0015(conn)
+    conn.executemany(
+        """
+        INSERT INTO normalization_rules (field_name, rule_type, rule_config_json, priority)
+        VALUES (?, 'trim', '{}', 0)
+        """,
+        [("department",), ("job_category",), ("headcount",), ("title",)],
+    )
+
+    db.migrate_up(conn)
+
+    # 예외 없이 돌고, 남은 것은 지우지 않은 칸의 규칙뿐이다
+    assert [rule.field_name for rule in load_rules(conn)] == ["title"]
+    assert _rules(conn) == [("title", "trim", 0)]
+
+
+def test_dropped_field_rules_come_back_on_down(conn: sqlite3.Connection) -> None:
+    """되돌리면 `seeds/normalization-rules.json` 의 `department` 규칙 둘이 되살아난다."""
+    db.migrate_up(conn)
+    conn.execute("DELETE FROM normalization_rules")
+
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0016"))
+
+    assert _rules(conn) == [("department", "trim", 0), ("department", "regex", 10)]
