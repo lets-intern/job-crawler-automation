@@ -2,7 +2,7 @@
 
    빈 목록을 "회사 없음" 으로 끝내지 않는다. 행이 언제 생기는지 모르면 운영자는 여기서
    회사를 손으로 만들 자리를 찾는다 (`.claude/rules/writing.md`). #}
-{% from "macros.html" import blank, empty_row %}
+{% from "macros.html" import empty_row %}
 <div class="table-scroll">
   <table class="data-table">
     <caption>
@@ -20,18 +20,7 @@
     </thead>
     <tbody>
       {% for row in rows %}
-      <tr>
-        <td class="cell-text font-medium text-slate-900">{{ row.name }}</td>
-        <td class="cell-text">{{ row.parent_name if row.parent_name else blank() }}</td>
-        <td class="num">{{ row.job_count }}건</td>
-        <td class="cell-text">
-          {% if row.logo_url %}
-          <a href="{{ row.logo_url }}" target="_blank" rel="noreferrer">{{ row.logo_url }}</a>
-          {% else %}
-          {{ blank("로고 없음") }}
-          {% endif %}
-        </td>
-      </tr>
+      {% include "fragments/company_row.html" %}
       {% else %}
       {% if filtered %}
       {{ empty_row(4, "이 조건에 걸린 회사가 없다. 조건을 풀면 전체가 다시 나온다") }}

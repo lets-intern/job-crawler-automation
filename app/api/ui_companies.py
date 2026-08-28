@@ -30,11 +30,12 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse
 
+from app import companies
 from app.api.settings import get_connection
-from app.api.ui import render
+from app.api.ui import render, render_error
 
 logger = logging.getLogger(__name__)
 
@@ -71,17 +72,10 @@ ORDER BY job_count DESC, c.name
 _NO_LOGO = "WHERE c.logo_url IS NULL OR c.logo_url = ''"
 
 
-def rows(conn: sqlite3.Connection, *, no_logo: bool = False, min_jobs: int = 0) -> list[CompanyRow]:
-    """조건에 걸린 회사. 공고 많은 순이다. 읽기 전용이다.
-
-    조건 둘은 함께 걸린다. `로고 없음` 과 `공고 N건 이상` 을 같이 걸면 로고가 없으면서 공고가
-    여러 개인 회사만 남고, 그것이 곧 등록할 목록이다.
-    """
-    threshold = max(min_jobs, 0)
-    sql = _ROWS_SQL.format(
-        where=_NO_LOGO if no_logo else "",
-        having="HAVING job_count >= ?" if threshold else "",
-    )
+def _select(
+    conn: sqlite3.Connection, where: str, having: str, params: tuple[object, ...]
+) -> list[CompanyRow]:
+    """세는 SQL 한 벌. 조건만 갈아 끼운다 — 목록과 한 줄이 같은 셈을 쓴다."""
     return [
         CompanyRow(
             name=str(row["name"]),
@@ -89,8 +83,29 @@ def rows(conn: sqlite3.Connection, *, no_logo: bool = False, min_jobs: int = 0) 
             logo_url=None if row["logo_url"] is None else str(row["logo_url"]),
             job_count=int(row["job_count"]),
         )
-        for row in conn.execute(sql, (threshold,) if threshold else ())
+        for row in conn.execute(_ROWS_SQL.format(where=where, having=having), params)
     ]
+
+
+def rows(conn: sqlite3.Connection, *, no_logo: bool = False, min_jobs: int = 0) -> list[CompanyRow]:
+    """조건에 걸린 회사. 공고 많은 순이다. 읽기 전용이다.
+
+    조건 둘은 함께 걸린다. `로고 없음` 과 `공고 N건 이상` 을 같이 걸면 로고가 없으면서 공고가
+    여러 개인 회사만 남고, 그것이 곧 등록할 목록이다.
+    """
+    threshold = max(min_jobs, 0)
+    return _select(
+        conn,
+        _NO_LOGO if no_logo else "",
+        "HAVING job_count >= ?" if threshold else "",
+        (threshold,) if threshold else (),
+    )
+
+
+def read_row(conn: sqlite3.Connection, name: str) -> CompanyRow | None:
+    """회사 한 줄. 없으면 None 이다. 목록과 같은 셈으로 공고 수를 얹는다."""
+    found = _select(conn, "WHERE c.name = ?", "", (name.strip(),))
+    return found[0] if found else None
 
 
 @router.get("/ui/companies", response_class=HTMLResponse)
@@ -116,4 +131,57 @@ def company_list_fragment(
         rows=matched,
         total_jobs=sum(row.job_count for row in matched),
         filtered=bool(no_logo) or threshold > 0,
+    )
+
+
+def attach_note(row: CompanyRow, *, cleared: bool) -> str:
+    """저장 뒤에 적는 문장. 이 로고가 몇 건에 붙는지가 그 문장의 전부다.
+
+    건수를 적는 이유는 공고마다 넣는 자리가 없기 때문이다. 숫자가 없으면 운영자는 방금 한
+    일이 한 건에 붙은 것인지 백 건에 붙은 것인지 알 수 없고, 그것을 확인하러 검수 화면으로
+    간다.
+    """
+    if cleared:
+        if row.job_count == 0:
+            return "로고를 지웠다. 이 회사명을 가진 공고는 아직 없다"
+        return f"로고를 지웠다. 이 회사명을 가진 공고 {row.job_count}건에서 함께 빠진다"
+    if row.job_count == 0:
+        return (
+            "저장했다. 지금은 이 회사명을 가진 공고가 없다 — 그 이름으로 들어오는 공고부터 붙는다"
+        )
+    return (
+        f"저장했다. 이 로고는 회사명이 같은 공고 {row.job_count}건에 붙는다 — "
+        "공고마다 따로 넣지 않는다"
+    )
+
+
+@router.put("/ui/companies/logo", response_class=HTMLResponse)
+def save_logo_fragment(
+    request: Request,
+    conn: Annotated[sqlite3.Connection, Depends(get_connection)],
+    name: Annotated[str, Form()],
+    logo_url: Annotated[str, Form()] = "",
+) -> HTMLResponse:
+    """로고 주소를 그 회사 행에 적는다. 고친 줄 하나만 돌려준다.
+
+    회사명을 주소가 아니라 폼 값으로 받는다. 이름에 슬래시나 물음표가 든 회사가 하나라도
+    생기면 주소에 넣은 이름은 다른 경로로 읽힌다.
+
+    목록을 통째로 다시 부르지 않는다. 그러면 방금 적은 문장이 사라지고, 걸어 둔 조회 조건에
+    따라 그 회사가 목록에서 빠져 무엇이 저장됐는지 확인할 자리가 없어진다.
+    """
+    cleaned = logo_url.strip()
+    try:
+        companies.set_logo_url(conn, name, cleaned)
+    except companies.CompanyNotFoundError as exc:
+        return render_error(request, "not_found", str(exc))
+    row = read_row(conn, name)
+    if row is None:  # pragma: no cover - 방금 고친 행이 사라지는 경로는 없다
+        return render_error(request, "not_found", f"회사 행이 없다: {name!r}")
+    logger.info("회사 로고를 적었다: %s -> %r (공고 %d건)", row.name, cleaned, row.job_count)
+    return render(
+        request,
+        "fragments/company_row.html",
+        row=row,
+        message=attach_note(row, cleared=not cleaned),
     )

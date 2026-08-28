@@ -1,0 +1,32 @@
+{# 회사 한 줄. 목록이 그리고, 로고를 저장한 뒤에도 이 줄 하나만 갈린다.
+
+   저장이 목록을 통째로 다시 부르지 않는 이유는 두 가지다. 방금 적은 문장이 사라지고,
+   걸어 둔 조회 조건(`로고 없음`)에 따라 그 회사가 목록에서 빠져 무엇이 저장됐는지 확인할
+   자리가 없어진다. #}
+{% from "macros.html" import blank, wait %}
+<tr>
+  <td class="cell-text font-medium text-slate-900">{{ row.name }}</td>
+  <td class="cell-text">{{ row.parent_name if row.parent_name else blank() }}</td>
+  <td class="num">{{ row.job_count }}건</td>
+  <td class="cell-text">
+    {% if message %}
+    <p class="text-sm font-medium text-slate-900">{{ message }}</p>
+    {% endif %}
+    {% if row.logo_url %}
+    <p><a href="{{ row.logo_url }}" target="_blank" rel="noreferrer">{{ row.logo_url }}</a></p>
+    {% else %}
+    <p>{{ blank("로고 없음") }}</p>
+    {% endif %}
+    {# 주소를 비우고 저장하면 지운다. 지우기 단추를 따로 두지 않는다 —
+       비움이 곧 지움이어야 화면에 길이 하나만 남는다 (`app/companies.py`) #}
+    <form hx-put="/ui/companies/logo" hx-target="closest tr" hx-swap="outerHTML"
+          hx-disabled-elt="find button" hx-indicator="closest td">
+      <input type="hidden" name="name" value="{{ row.name }}">
+      <input name="logo_url" type="url" value="{{ row.logo_url or '' }}"
+             aria-label="{{ row.name }} 로고 주소" placeholder="https://..."
+             class="w-full max-w-md">
+      <button type="submit">저장</button>
+      {{ wait("저장하는 중") }}
+    </form>
+  </td>
+</tr>

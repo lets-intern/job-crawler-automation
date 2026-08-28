@@ -1,4 +1,4 @@
-"""회사 화면 (6.1.V, 6.2.V, 6.3.V).
+"""회사 화면 (6.1.V, 6.2.V, 6.3.V, 6.4.V).
 
 보는 것은 넷이다. 네비게이션에 자리가 생겼는지, 그 주소가 열리면서 목록 조각을 부르는지,
 행이 없을 때 화면이 "없음" 으로 끝내지 않고 언제 생기는지 말하는지, 그리고 공고 수가
@@ -6,6 +6,10 @@
 
 조회 조건 둘(`로고 없음`, `공고 N건 이상`)을 함께 걸면 등록할 목록이 나온다. 걸린 회사 수와
 공고 합계가 실제와 같은지가 그 조건이 쓸모 있는지를 정한다.
+
+로고를 저장하면 그 회사명을 가진 공고 전부에 붙는다. 붙는 건수를 문장으로 알리는지, 그리고
+그 숫자가 실제 공고 수와 같은지를 본다 — 공고마다 넣는 자리가 없으므로 그 문장이 운영자가
+방금 한 일의 크기를 아는 유일한 자리다.
 
 공고는 정규화를 지나 넣는다. 화면이 세는 값과 로고가 실제로 붙는 경로가 같은 이름이라야
 숫자가 뜻을 갖는다.
@@ -246,3 +250,104 @@ def test_화면에_조회_조건_둘이_있다(client: TestClient) -> None:
 
     assert 'name="no_logo"' in body
     assert 'name="min_jobs"' in body
+
+
+def test_로고를_저장하면_붙는_건수를_문장으로_알린다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    for seq in range(1, 4):
+        add_job(conn, "카카오", seq)
+    conn.commit()
+
+    response = client.put(
+        "/ui/companies/logo",
+        data={"name": "카카오", "logo_url": "https://cdn.test/kakao.png"},
+    )
+
+    assert response.status_code == 200
+    assert "공고 3건에 붙는다" in response.text
+    assert "공고마다 따로 넣지 않는다" in response.text
+    stored = companies.read(conn, "카카오")
+    assert stored is not None and stored.logo_url == "https://cdn.test/kakao.png"
+
+
+def test_알린_건수가_그_회사의_공고_수와_같다(client: TestClient, conn: sqlite3.Connection) -> None:
+    """다른 회사의 공고까지 세면 운영자는 붙지도 않은 건수를 붙었다고 읽는다."""
+    for seq in range(1, 3):
+        add_job(conn, "토스", seq)
+    for seq in range(3, 8):
+        add_job(conn, "당근", seq)
+    conn.commit()
+
+    body = client.put(
+        "/ui/companies/logo", data={"name": "토스", "logo_url": "https://cdn.test/t.png"}
+    ).text
+
+    counted = conn.execute(
+        "SELECT count(*) AS n FROM normalized_jobs WHERE company = '토스'"
+    ).fetchone()["n"]
+    assert counted == 2
+    assert f"공고 {counted}건에 붙는다" in body
+
+
+def test_공고가_없는_회사에_저장하면_다음부터_붙는다고_말한다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    companies.ensure(conn, "새회사")
+    conn.commit()
+
+    body = client.put(
+        "/ui/companies/logo", data={"name": "새회사", "logo_url": "https://cdn.test/n.png"}
+    ).text
+
+    assert "지금은 이 회사명을 가진 공고가 없다" in body
+
+
+def test_주소를_비우면_지우고_빠지는_건수를_말한다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """지우기 단추를 따로 두지 않는다. 비움이 곧 지움이다."""
+    for seq in range(1, 3):
+        add_job(conn, "토스", seq)
+    companies.set_logo_url(conn, "토스", "https://cdn.test/t.png")
+    conn.commit()
+
+    body = client.put("/ui/companies/logo", data={"name": "토스", "logo_url": " "}).text
+
+    assert "로고를 지웠다" in body
+    assert "공고 2건에서 함께 빠진다" in body
+    stored = companies.read(conn, "토스")
+    assert stored is not None and stored.logo_url is None
+
+
+def test_없는_회사에_저장하면_사유를_말한다(client: TestClient) -> None:
+    """행을 만드는 것은 정규화다. 화면이 손으로 만들면 오타 하나로 로고가 안 붙는다."""
+    response = client.put(
+        "/ui/companies/logo", data={"name": "없는회사", "logo_url": "https://cdn.test/x.png"}
+    )
+
+    assert response.status_code == 200
+    assert "회사 행이 없다" in response.text
+
+
+def test_저장한_뒤에도_그_줄만_갈린다(client: TestClient, conn: sqlite3.Connection) -> None:
+    """목록을 통째로 다시 부르면 방금 적은 문장이 사라진다."""
+    add_job(conn, "토스", 1)
+    add_job(conn, "당근", 2)
+    conn.commit()
+
+    body = client.put(
+        "/ui/companies/logo", data={"name": "토스", "logo_url": "https://cdn.test/t.png"}
+    ).text
+
+    assert names_in_order(body) == ["토스"]
+
+
+def test_목록에_로고_저장_폼이_있다(client: TestClient, conn: sqlite3.Connection) -> None:
+    add_job(conn, "토스", 1)
+    conn.commit()
+
+    body = client.get("/ui/companies").text
+
+    assert 'hx-put="/ui/companies/logo"' in body
+    assert 'name="logo_url"' in body
