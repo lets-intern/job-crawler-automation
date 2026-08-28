@@ -29,9 +29,11 @@ from app.classify.classifier import ClassifyError, chosen, classify_body
 from app.classify.store import (
     pending_count,
     pending_ids,
+    read_current_values,
     read_source,
     read_title,
     save_classification,
+    save_suggestions,
 )
 from app.config import Settings
 from app.llm import settings as llm_settings
@@ -198,6 +200,9 @@ async def classify_ids(
         source = read_source(conn, raw_job_id)
         # 제목은 `job_role` 의 출처다. 본문만 보내면 그 칸이 영원히 빈다
         title = read_title(conn, raw_job_id)
+        # company·deadline·start_date 중 수집이 이미 채운 값. 무엇이 채워져 있는지 몰라서는
+        # 분류가 원문과 "다르다" 를 말할 수 없다
+        current_values = read_current_values(conn, raw_job_id)
 
         def counted(usage: Usage) -> None:
             # 호출 하나가 행 하나다. 깨진 응답으로 한 번 더 물었으면 두 행이 남는다
@@ -208,6 +213,7 @@ async def classify_ids(
             result = await classify_body(
                 source,
                 title=title,
+                current_values=current_values,
                 settings=resolved,
                 client=resolved_client,
                 on_call=counted,
@@ -226,6 +232,9 @@ async def classify_ids(
             evidence=result.evidence,
         )
         progress.dropped += len(result.dropped)
+        # 같은 호출의 다른 갈래다. 값이 있는 칸에 원문이 다른 값을 낸 것은 여기로 간다 —
+        # `normalize/engine.py` 는 이 표를 읽지 않는다 (PRD 6절)
+        save_suggestions(conn, raw_job_id, result.suggestions, result.suggestion_reasons)
         try:
             # 분류가 채운 칸이 `normalized_jobs` 까지 가야 소비 측이 본다. 규칙 -> 분류 ->
             # 사람 보정 순서는 정규화 경로 하나가 정한다 (`app/normalize/engine.py`)

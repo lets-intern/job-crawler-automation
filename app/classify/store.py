@@ -1,4 +1,4 @@
-"""분류 결과를 읽고 쓴다. `job_classifications` 하나만 건드린다.
+"""분류 결과를 읽고 쓴다. `job_classifications` 와 `job_field_suggestions` 둘을 건드린다.
 
 `raw_jobs` 는 읽기만 한다 (`.claude/rules/data-safety.md`). 분류는 본문을 읽어 만든 값이라
 출처를 고칠 이유가 없고, 고치면 분류가 틀렸을 때 되돌릴 원본이 사라진다.
@@ -8,6 +8,14 @@
 
 분류하지 못한 공고는 행이 없다. 빈 행을 넣으면 "분류했는데 아무것도 안 나왔다" 와 "아직
 분류하지 않았다" 가 같은 모양이 되고, 다음 실행이 어느 쪽을 다시 돌아야 할지 모른다.
+
+## 채우기와 제안이 가는 곳이 다르다
+
+한 번의 호출 응답이 두 갈래로 나간다 (`.claude/tasks/todo/prd-side-workflows.md` 6절).
+비어 있던 칸을 채운 아홉 칸은 지금까지처럼 `save_classification` 이 `job_classifications` 에
+쓰고, 값이 있는 칸(`company`·`deadline`·`start_date`)에 원문이 다른 값을 낸 것은
+`save_suggestions` 가 `job_field_suggestions` 에 쓴다. 이 표는 `app/normalize/engine.py` 의
+어느 경로도 읽지 않는다 — 사람이 검수 화면에서 수락해야 `job_field_overrides` 로 옮겨 간다.
 """
 
 from __future__ import annotations
@@ -303,3 +311,51 @@ def save_classification(
         """,
         (raw_job_id, *values),
     )
+
+
+def save_suggestions(
+    conn: sqlite3.Connection,
+    raw_job_id: int,
+    suggestions: Mapping[str, str],
+    reasons: Mapping[str, str] | None = None,
+) -> None:
+    """값이 있는 칸에 원문이 다르다고 낸 값을 `job_field_suggestions` 에 넣거나 덮는다.
+
+    `suggestions` 에 없는 칸은 건드리지 않는다 — 이번 호출이 그 칸을 다시 말하지 않았다고
+    해서 옛 제안이 틀렸다고 볼 근거는 없다. 사람이 검수 화면에서 수락하거나 거절해야 그 행이
+    사라진다.
+
+    같은 칸에 제안이 둘이면 어느 것을 보고 있는지 알 수 없어(`(raw_job_id, field_name)`
+    UNIQUE), 새 제안이 옛 제안을 덮는다.
+    """
+    reasons = reasons or {}
+    for field_name, value in suggestions.items():
+        if not value.strip():
+            continue
+        conn.execute(
+            """
+            INSERT INTO job_field_suggestions (raw_job_id, field_name, value, reason)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT (raw_job_id, field_name) DO UPDATE
+               SET value = excluded.value, reason = excluded.reason,
+                   created_at = datetime('now')
+            """,
+            (raw_job_id, field_name, value, reasons.get(field_name, "").strip()),
+        )
+
+
+def read_suggestions(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, dict[str, str]]:
+    """그 공고에 남아 있는 제안. 필드명이 키고, 값은 `value`·`reason` 이다. 읽기 전용이다.
+
+    검수 화면(11.6)이 "제안 있음" 을 보이는 자리다. 수락은 `job_field_overrides` 에 넣는
+    일이고, 거절은 이 표의 행만 지우는 일이다 — 둘 다 이 파일 밖(`app/api/review.py`)의
+    일이라 여기는 읽기만 한다.
+    """
+    rows = conn.execute(
+        "SELECT field_name, value, reason FROM job_field_suggestions WHERE raw_job_id = ?",
+        (raw_job_id,),
+    ).fetchall()
+    return {
+        str(row["field_name"]): {"value": str(row["value"]), "reason": str(row["reason"] or "")}
+        for row in rows
+    }
