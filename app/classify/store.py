@@ -18,9 +18,21 @@ from collections.abc import Mapping, Sequence
 
 from app.classify.schema import CLASSIFY_FIELDS
 
-# `raw_jobs.raw_data_json` 에서 본문과 제목을 꺼내는 자리. JSON 함수는 SQLite 3.38+ 에 있다
+# `raw_jobs.raw_data_json` 에서 원문·본문·제목을 꺼내는 자리. JSON 함수는 SQLite 3.38+ 에 있다
 _BODY = "json_extract(r.raw_data_json, '$.body')"
 _TITLE = "json_extract(r.raw_data_json, '$.title')"
+_SOURCE_TEXT = "json_extract(r.raw_data_json, '$.source_text')"
+
+# 분류에 보내는 글. **원문이 있으면 원문이고, 없으면 본문으로 떨어진다.**
+#
+# 폴백이 필수다. 원문은 2026-08-28 부터 수집한 건에만 있고, 그 전에 쌓인 건에는 키가 아예
+# 없다. 원문만 대상으로 삼으면 그 공고들이 분류에서 통째로 사라진다
+# (`.claude/tasks/todo/prd-side-workflows.md` 4절).
+#
+# 상세가 API 인 사이트는 앞으로 수집하는 건에도 원문이 없다. 응답 전체는 다른 공고 목록을
+# 담고 본문 경로의 부모 객체도 하나로 정해지지 않아 원문을 뽑지 않기로 했다
+# (`.claude/site-recipes/source-text-container.md`). 그 넷은 계속 본문으로 돈다
+_CLASSIFY_TEXT = f"coalesce(nullif({_SOURCE_TEXT}, ''), {_BODY}, '')"
 
 
 def pending_ids(conn: sqlite3.Connection, limit: int | None = None) -> list[int]:
@@ -64,13 +76,20 @@ def pending_count(conn: sqlite3.Connection) -> int:
     return int(row["n"])
 
 
-def read_body(conn: sqlite3.Connection, raw_job_id: int) -> str:
-    """그 공고의 본문. 없으면 빈 문자열이다. 읽기 전용이다."""
+def read_source(conn: sqlite3.Connection, raw_job_id: int) -> str:
+    """분류에 보낼 글. 원문이 있으면 원문이고 없으면 본문이다. 읽기 전용이다.
+
+    본문만 읽던 자리다. 원문은 본문에 더해 그 공고의 이름표 값(회사·마감·근무지·경력)을
+    담고 있어, 본문만 보내면 그 값들이 어느 칸에도 들어가지 못했다
+    (`.claude/site-recipes/source-text-container.md`).
+
+    둘 다 없으면 빈 문자열이고, 부르는 쪽이 그것을 `empty_body` 로 끝낸다.
+    """
     row = conn.execute(
-        f"SELECT coalesce({_BODY}, '') AS body FROM raw_jobs r WHERE r.id = ?",
+        f"SELECT {_CLASSIFY_TEXT} AS source FROM raw_jobs r WHERE r.id = ?",
         (raw_job_id,),
     ).fetchone()
-    return "" if row is None else str(row["body"])
+    return "" if row is None else str(row["source"])
 
 
 def read_title(conn: sqlite3.Connection, raw_job_id: int) -> str:

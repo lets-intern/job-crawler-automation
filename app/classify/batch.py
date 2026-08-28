@@ -29,7 +29,7 @@ from app.classify.classifier import ClassifyError, chosen, classify_body
 from app.classify.store import (
     pending_count,
     pending_ids,
-    read_body,
+    read_source,
     read_title,
     save_classification,
 )
@@ -194,7 +194,8 @@ async def classify_ids(
         return progress
 
     for raw_job_id in raw_job_ids:
-        body = read_body(conn, raw_job_id)
+        # 원문이 있으면 원문, 없으면 본문이다. 옛 건에는 원문이 없다 (`app/classify/store.py`)
+        source = read_source(conn, raw_job_id)
         # 제목은 `job_role` 의 출처다. 본문만 보내면 그 칸이 영원히 빈다
         title = read_title(conn, raw_job_id)
 
@@ -205,7 +206,7 @@ async def classify_ids(
 
         try:
             result = await classify_body(
-                body,
+                source,
                 title=title,
                 settings=resolved,
                 client=resolved_client,
