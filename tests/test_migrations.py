@@ -84,6 +84,8 @@ EXPECTED_COLUMNS = {
         "etc_info",
         # 0017 이 더한 직무. 제목에서 뽑는 자유 텍스트다
         "job_role",
+        # 0018 이 더한 모회사. 크롤러가 아는 값을 옮기는 칸이라 규칙도 보정도 걸리지 않는다
+        "parent_company",
     },
     "normalization_rules": {
         "id",
@@ -146,6 +148,7 @@ ALL_VERSIONS = [
     "0015",
     "0016",
     "0017",
+    "0018",
 ]
 
 
@@ -1096,3 +1099,82 @@ def test_the_job_role_down_keeps_the_corrections_of_the_dropped_columns(
 
     rows = conn.execute("SELECT field_name FROM job_field_overrides").fetchall()
     assert [row["field_name"] for row in rows] == ["department"]
+
+
+def _at_0017(connection: sqlite3.Connection) -> None:
+    """0018 직전 상태로 만든다. 회사명이 아직 한 칸인 스키마다."""
+    db.migrate_up(connection)
+    db.migrate_down(connection, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0018"))
+
+
+def test_parent_company_is_added_to_normalized_jobs(conn: sqlite3.Connection) -> None:
+    _at_0017(conn)
+    assert "parent_company" not in _columns(conn, "normalized_jobs")
+
+    db.migrate_up(conn)
+
+    assert "parent_company" in _columns(conn, "normalized_jobs")
+    assert "company" in _columns(conn, "normalized_jobs")
+
+
+def test_parent_company_starts_empty_and_leaves_the_other_values_alone(
+    conn: sqlite3.Connection,
+) -> None:
+    """칸만 더한다. 값은 재정규화가 넣는다 — 이 마이그레이션에 UPDATE 가 없다."""
+    _at_0017(conn)
+    _seed_raw_job(conn)
+    conn.execute(
+        """
+        INSERT INTO normalized_jobs
+               (raw_job_id, company, title, deadline, body, requirements, source_url)
+        VALUES (1, '삼성SDS', '백엔드 개발자', '2026-08-25', '본문', '자격요건',
+                'https://example.test/1')
+        """
+    )
+    before = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
+
+    db.migrate_up(conn)
+
+    after = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
+    assert [tuple(row) for row in after] == [tuple(row) for row in before]
+    row = conn.execute("SELECT parent_company FROM normalized_jobs").fetchone()
+    assert row["parent_company"] is None
+
+
+def test_the_parent_company_migration_leaves_the_two_neighbour_tables_alone(
+    conn: sqlite3.Connection,
+) -> None:
+    """분류가 내는 값도 아니고 공고 한 건씩 고칠 값도 아니다. 두 표는 그대로여야 한다."""
+    _at_0017(conn)
+    before_classifications = _columns(conn, "job_classifications")
+    before_overrides = _columns(conn, "job_field_overrides")
+
+    db.migrate_up(conn)
+
+    assert _columns(conn, "job_classifications") == before_classifications
+    assert _columns(conn, "job_field_overrides") == before_overrides
+    _seed_raw_job(conn)
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO job_field_overrides (raw_job_id, field_name, value) VALUES (1, ?, ?)",
+            ("parent_company", "삼성"),
+        )
+
+
+def test_the_parent_company_down_drops_only_that_column(conn: sqlite3.Connection) -> None:
+    """되돌리면 모회사 값만 사라진다. 그 값은 `crawlers` 에 그대로 있어 재정규화로 돌아온다."""
+    db.migrate_up(conn)
+    _seed_raw_job(conn)
+    conn.execute(
+        """
+        INSERT INTO normalized_jobs (raw_job_id, company, parent_company, title, source_url)
+        VALUES (1, '삼성SDS', '삼성', '백엔드 개발자', 'https://example.test/1')
+        """
+    )
+
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0018"))
+
+    assert "parent_company" not in _columns(conn, "normalized_jobs")
+    row = conn.execute("SELECT company, title FROM normalized_jobs").fetchone()
+    assert (row["company"], row["title"]) == ("삼성SDS", "백엔드 개발자")
+    assert conn.execute("SELECT count(*) AS n FROM raw_jobs").fetchone()["n"] == 1
