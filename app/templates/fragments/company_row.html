@@ -3,7 +3,7 @@
    저장이 목록을 통째로 다시 부르지 않는 이유는 두 가지다. 방금 적은 문장이 사라지고,
    걸어 둔 조회 조건(`로고 없음`)에 따라 그 회사가 목록에서 빠져 무엇이 저장됐는지 확인할
    자리가 없어진다. #}
-{% from "macros.html" import blank, wait %}
+{% from "macros.html" import badge, blank, wait %}
 <tr>
   <td class="cell-text font-medium text-slate-900">{{ row.name }}</td>
   <td class="cell-text">{{ row.parent_name if row.parent_name else blank() }}</td>
@@ -13,7 +13,14 @@
     <p class="text-sm font-medium text-slate-900">{{ message }}</p>
     {% endif %}
     {% if row.logo_url %}
-    <p><a href="{{ row.logo_url }}" target="_blank" rel="noreferrer">{{ row.logo_url }}</a></p>
+    <p>
+      <a href="{{ row.logo_url }}" target="_blank" rel="noreferrer">{{ row.logo_url }}</a>
+      {# 지금 설정의 공개 주소로 시작하지 않는 주소다. 엔드포인트를 바꾸면 이미 올린 파일은
+         따라가지 않고 주소만 옛 저장소를 가리킨 채 남는다 #}
+      {% if public_base and not row.logo_url.startswith(public_base) %}
+      {{ badge("옛 저장소", "warn") }}
+      {% endif %}
+    </p>
     {% else %}
     <p>{{ blank("로고 없음") }}</p>
     {% endif %}

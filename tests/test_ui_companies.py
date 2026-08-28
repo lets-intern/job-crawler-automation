@@ -1,4 +1,4 @@
-"""회사 화면 (6.1.V, 6.2.V, 6.3.V, 6.4.V).
+"""회사 화면 (6.1.V ~ 6.5.V).
 
 보는 것은 넷이다. 네비게이션에 자리가 생겼는지, 그 주소가 열리면서 목록 조각을 부르는지,
 행이 없을 때 화면이 "없음" 으로 끝내지 않고 언제 생기는지 말하는지, 그리고 공고 수가
@@ -10,6 +10,9 @@
 로고를 저장하면 그 회사명을 가진 공고 전부에 붙는다. 붙는 건수를 문장으로 알리는지, 그리고
 그 숫자가 실제 공고 수와 같은지를 본다 — 공고마다 넣는 자리가 없으므로 그 문장이 운영자가
 방금 한 일의 크기를 아는 유일한 자리다.
+
+저장소 공개 주소를 바꾸면 이미 올린 파일은 따라가지 않는다. 그 사실이 행에 `옛 저장소` 로
+보이는지도 본다.
 
 공고는 정규화를 지나 넣는다. 화면이 세는 값과 로고가 실제로 붙는 경로가 같은 이름이라야
 숫자가 뜻을 갖는다.
@@ -31,6 +34,7 @@ from app.api.settings import get_connection
 from app.api.ui import NAV
 from app.main import app
 from app.normalize.engine import insert_normalized
+from app.storage import settings as store
 
 
 def add_job(conn: sqlite3.Connection, company: str, seq: int, parent: str = "") -> None:
@@ -351,3 +355,76 @@ def test_목록에_로고_저장_폼이_있다(client: TestClient, conn: sqlite3
 
     assert 'hx-put="/ui/companies/logo"' in body
     assert 'name="logo_url"' in body
+
+
+def save_storage(conn: sqlite3.Connection, public_base: str) -> None:
+    """저장소 설정 한 벌. 공개 주소만 이 테스트의 관심사다."""
+    store.write_config(
+        conn,
+        store.StorageConfig(
+            endpoint="http://minio:9000",
+            region="us-east-1",
+            bucket="logos",
+            access_key="minioadmin",
+            secret_key="minioadmin",
+            public_base=public_base,
+        ),
+    )
+
+
+def test_지금_저장소로_시작하는_주소에는_표시가_없다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    save_storage(conn, "http://localhost:9000/logos")
+    companies.ensure(conn, "토스")
+    companies.set_logo_url(conn, "토스", "http://localhost:9000/logos/toss.png")
+    conn.commit()
+
+    assert "옛 저장소" not in client.get("/ui/companies").text
+
+
+def test_공개_주소를_바꾸면_기존_행에_옛_저장소가_뜬다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """엔드포인트를 바꿔도 이미 올린 파일은 따라가지 않는다. 무엇을 다시 올릴지가 보여야 한다."""
+    save_storage(conn, "http://localhost:9000/logos")
+    companies.ensure(conn, "토스")
+    companies.set_logo_url(conn, "토스", "http://localhost:9000/logos/toss.png")
+    conn.commit()
+    assert "옛 저장소" not in client.get("/ui/companies").text
+
+    save_storage(conn, "https://cdn.example.com/logos")
+    conn.commit()
+
+    assert "옛 저장소" in client.get("/ui/companies").text
+
+
+def test_로고가_없는_행에는_표시가_붙지_않는다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    save_storage(conn, "https://cdn.example.com/logos")
+    companies.ensure(conn, "토스")
+    conn.commit()
+
+    assert "옛 저장소" not in client.get("/ui/companies").text
+
+
+def test_저장_직후의_줄에도_같은_표시가_붙는다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    save_storage(conn, "https://cdn.example.com/logos")
+    companies.ensure(conn, "토스")
+    conn.commit()
+
+    body = client.put(
+        "/ui/companies/logo", data={"name": "토스", "logo_url": "https://elsewhere.test/t.png"}
+    ).text
+
+    assert "옛 저장소" in body
+
+
+def test_화면이_옛_저장소가_무슨_뜻인지_적는다(client: TestClient) -> None:
+    """붙여넣은 외부 주소도 같은 표시를 받는다. 그 사실을 적지 않으면 없는 문제를 고치게 된다."""
+    body = client.get("/companies").text
+
+    assert "밖에 올려 둔 주소를 붙여넣은 것이면 그대로 두어도 된다" in body

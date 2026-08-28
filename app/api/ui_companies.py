@@ -36,6 +36,7 @@ from fastapi.responses import HTMLResponse
 from app import companies
 from app.api.settings import get_connection
 from app.api.ui import render, render_error
+from app.storage import settings as store
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +109,20 @@ def read_row(conn: sqlite3.Connection, name: str) -> CompanyRow | None:
     return found[0] if found else None
 
 
+def storage_base(conn: sqlite3.Connection) -> str:
+    """지금 설정의 공개 주소. 끝 슬래시는 뗀다.
+
+    이 주소로 시작하지 않는 로고는 화면에 `옛 저장소` 로 적힌다. 엔드포인트를 바꾸면 이미
+    올린 파일은 따라가지 않고 주소만 옛 저장소를 가리킨 채 남는데
+    (`.claude/tasks/todo/prd-fields-and-logo.md` 5장), 표시가 없으면 무엇을 다시 올려야
+    하는지 알 방법이 없다.
+
+    밖에 올려 둔 주소를 붙여넣은 행도 같은 표시를 받는다. 어디서 온 주소인지는 저장하지
+    않으므로 둘을 가릴 수 없다 — 그 사실을 화면에 적는다.
+    """
+    return store.read_config(conn).public_base.rstrip("/")
+
+
 @router.get("/ui/companies", response_class=HTMLResponse)
 def company_list_fragment(
     request: Request,
@@ -131,6 +146,7 @@ def company_list_fragment(
         rows=matched,
         total_jobs=sum(row.job_count for row in matched),
         filtered=bool(no_logo) or threshold > 0,
+        public_base=storage_base(conn),
     )
 
 
@@ -184,4 +200,5 @@ def save_logo_fragment(
         "fragments/company_row.html",
         row=row,
         message=attach_note(row, cleared=not cleaned),
+        public_base=storage_base(conn),
     )
