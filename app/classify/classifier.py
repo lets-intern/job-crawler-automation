@@ -29,6 +29,13 @@
 
 **깨진 응답만 1회 다시 묻는다.** 스키마에 없는 칸을 지어낸 응답은 다시 물어도 같은 답이 온다.
 
+**이미 값이 있는 칸은 채우지 않고 제안한다.** 수집이 채우는 여섯 칸 중 `company`·`deadline`·
+`start_date` 셋은 값이 있으면 아무리 근거가 있어도 그 자리에서 덮지 않는다 — `deadline` 은
+마감 지난 공고를 거르고 `company` 는 계열사를 가르는 값이라 모델 판단 하나로 바뀌면 안 된다
+(`.claude/tasks/todo/prd-side-workflows.md` 6절). 대신 `ClassificationResult.suggestions` 로
+나가고, 저장은 `job_field_suggestions` 하나뿐이다 — 사람이 검수 화면에서 수락해야 값이
+바뀐다.
+
 호출 자체와 비용 기록은 고른 제공자 항목이 한다 (`app/llm/`). 셀렉터 생성과 같은 경로이고,
 **이 파일은 어느 제공자인지 모른다** — 그 선택은 설정이 정한다 (`app/llm/providers.py`).
 """
@@ -36,18 +43,22 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.classify.grounding import ground
+from app.classify.grounding import ground, loose, missing_lines
 from app.classify.schema import (
     CLASSIFY_FIELDS,
+    COLLECTED_REVIEW_FIELDS,
+    COLLECTED_REVIEW_LABELS,
     JUDGE_CHOICES,
     UNDECIDED,
     Classification,
     ClassifySchemaError,
     parse_classification,
+    suggestion_field,
+    suggestion_reason_field,
 )
 from app.config import Settings, get_settings
 from app.llm.base import LlmCallError, Provider, Usage
@@ -117,9 +128,9 @@ _PROMPT = """아래는 채용공고의 제목과 본문이다. 이것을 정해�
 - 고른 칸마다 `employment_type_evidence` 처럼 `_evidence` 가 붙은 자리에 **그렇게 판단한
   근거가 되는 본문 문장을 그대로 옮겨 적는다.** 한 문장이면 된다. 본문에 없는 문장을 적지
   않는다. 근거를 적을 수 없으면 그 칸을 판단불가 로 둔다.
-- 회사명·모집 시작일·마감일은 어느 칸에도 넣지 않는다. 그 셋은 따로 수집한다. 제목도
-  `job_role` 말고는 어느 칸에도 넣지 않는다.
-
+- 회사명·모집 시작일·마감일은 위 칸 어디에도 넣지 않는다. 그 셋을 원문과 견주는 자리는
+  값이 이미 있을 때만 아래에 따로 나온다. 제목도 `job_role` 말고는 어느 칸에도 넣지 않는다.
+{current_values_block}
 [제목]
 {title}
 
@@ -165,6 +176,11 @@ class ClassificationResult:
     # 버린 칸마다 왜 버렸는지. 고칠 자리가 이유마다 다르다
     reasons: dict[str, str] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
+    # 이미 값이 있는 칸(`company`·`deadline`·`start_date`)에 원문이 다르다고 낸 값. 근거
+    # 검사를 통과하고 지금 값과 실제로 다른 것만 남는다 — 저장은 `job_field_suggestions` 뿐이고
+    # 여기 값이 `normalized_jobs` 를 자동으로 덮는 경로는 없다
+    suggestions: dict[str, str] = field(default_factory=dict)
+    suggestion_reasons: dict[str, str] = field(default_factory=dict)
 
     @property
     def filled(self) -> list[str]:
@@ -194,7 +210,35 @@ def chosen(settings: Settings) -> tuple[Provider, str]:
         raise ClassifyError(exc.reason, str(exc)) from exc
 
 
-def build_prompt(body: str, title: str = "") -> tuple[str, list[str]]:
+def _current_values_block(current_values: Mapping[str, str]) -> str:
+    """ "이미 있는 값" 구역. 값이 하나도 없으면 빈 문자열이라 프롬프트에 아무것도 남지 않는다.
+
+    보낸 칸만 적는다. `COLLECTED_REVIEW_FIELDS` 셋 중 값이 없는 칸까지 나열하면 "빈 칸도
+    비교 대상이다" 로 읽혀 모델이 근거 없이 값을 지어낼 자리가 생긴다.
+    """
+    present = {
+        name: current_values[name].strip()
+        for name in COLLECTED_REVIEW_FIELDS
+        if current_values.get(name, "").strip()
+    }
+    if not present:
+        return ""
+    lines = "\n".join(
+        f"- {COLLECTED_REVIEW_LABELS[name]} ({name}): {value}" for name, value in present.items()
+    )
+    return (
+        "\n# 이미 있는 값 — 원문과 다르면 고쳐 제안한다\n\n"
+        "아래 칸에는 이미 값이 있다. 원문을 읽고 같은 값이면 그 칸의 `_suggestion` 과\n"
+        "`_suggestion_reason` 을 비워 둔다. 값이 다르면 `_suggestion` 에 원문이 말하는 값을,\n"
+        "`_suggestion_reason` 에 왜 다른지 원문에 있는 근거를 한 줄로 적는다. 원문에 없는\n"
+        "근거로 고치지 않는다 — 짐작이 아니라 읽고 판단해야 한다.\n\n"
+        f"{lines}\n"
+    )
+
+
+def build_prompt(
+    body: str, title: str = "", current_values: Mapping[str, str] | None = None
+) -> tuple[str, list[str]]:
     """보낼 프롬프트와 남길 메모. 상한을 넘긴 글은 자르고 그 사실을 적는다.
 
     `body` 는 상세 원문이거나, 원문이 없는 건에서 본문이다 (`app/classify/store.py`).
@@ -206,6 +250,11 @@ def build_prompt(body: str, title: str = "") -> tuple[str, list[str]]:
     판정 칸의 목록을 프롬프트에도 적는다. 스키마의 enum 이 이미 강제하지만, 무엇 중에서
     고르는지 모르는 채로 고르면 목록에서 가장 가까운 값이 아니라 첫 값이 나온다. 목록의
     출처는 스키마 하나다 — 여기에 손으로 적으면 두 목록이 갈린다.
+
+    `current_values` 는 `company`·`deadline`·`start_date` 중 이미 채워진 값이다
+    (`app/classify/store.py` 의 `read_current_values`). 무엇이 이미 채워져 있는지 모르면
+    "원문과 다르다" 를 모델이 말할 수 없다 — 값이 없으면 그 칸은 프롬프트에 아예 나오지 않고,
+    나오지 않은 칸을 모델이 지어내 제안하면 근거 검사가 버린다.
     """
     notes: list[str] = []
     text = body
@@ -213,13 +262,46 @@ def build_prompt(body: str, title: str = "") -> tuple[str, list[str]]:
         notes.append(f"보낸 글이 {len(text)}자라 앞 {MAX_BODY_CHARS}자만 보냈다")
         text = text[:MAX_BODY_CHARS]
     choices = {name: " / ".join((*values, UNDECIDED)) for name, values in JUDGE_CHOICES.items()}
-    return _PROMPT.format(body=text, title=title.strip(), **choices), notes
+    block = _current_values_block(current_values or {})
+    return (
+        _PROMPT.format(body=text, title=title.strip(), current_values_block=block, **choices),
+        notes,
+    )
+
+
+def _extract_suggestions(
+    fields: Mapping[str, str], current_values: Mapping[str, str], source: str
+) -> tuple[dict[str, str], dict[str, str]]:
+    """이미 값이 있는 칸의 제안만 추린다. 근거가 없거나 지금 값과 다르지 않으면 버린다.
+
+    `source` 는 근거 검사가 도는 것과 같은 값이다 — 제목과 모델에게 보낸 그 글을 합친 것.
+    """
+    suggestions: dict[str, str] = {}
+    reasons: dict[str, str] = {}
+    for name in COLLECTED_REVIEW_FIELDS:
+        current = current_values.get(name, "").strip()
+        if not current:
+            # 지금 값이 없으면 제안할 것도 없다. 이 셋은 채우기 대상이 아니다 — 값이 있을
+            # 때만 "다르다" 를 말할 수 있다
+            continue
+        value = fields.get(suggestion_field(name), "").strip()
+        if not value or loose(value) == loose(current):
+            # 값이 없거나 지금 값과 같다. 모델이 지시를 지켰든 어겼든 바뀐 것이 없다
+            continue
+        if missing_lines(value, source):
+            # 근거 검사를 제안에도 그대로 건다. 원문에서 찾지 못한 값은 제안이 되지 않는다
+            # (`.claude/rules/llm.md`)
+            continue
+        suggestions[name] = value
+        reasons[name] = fields.get(suggestion_reason_field(name), "").strip()
+    return suggestions, reasons
 
 
 async def classify_body(
     body: str,
     *,
     title: str = "",
+    current_values: Mapping[str, str] | None = None,
     settings: Settings | None = None,
     client: Any | None = None,
     on_call: Callable[[Usage], None] | None = None,
@@ -228,6 +310,10 @@ async def classify_body(
 
     `title` 은 `job_role` 의 출처다. 비어 있어도 나머지 여덟 칸은 그대로 나오므로 분류가
     실패하지 않는다 — 나눌 것이 없는 것은 본문이 빈 경우뿐이다.
+
+    `current_values` 는 `company`·`deadline`·`start_date` 중 이미 채워진 값이다. 값이 있는
+    칸에 원문이 다른 값을 말하면 `ClassificationResult.suggestions` 로 나가고, `fields` 의
+    아홉 칸은 건드리지 않는다 — 이 셋은 애초에 `CLASSIFY_FIELDS` 에 없다.
 
     `on_call` 은 모델을 부를 때마다 그 호출의 비용으로 불린다. 깨진 응답으로 한 번 더 물으면
     두 번 불린다 — 부르는 쪽이 그것을 `llm_calls` 에 그대로 남겨야 토큰 합이 실제와 맞는다
@@ -239,7 +325,7 @@ async def classify_body(
     resolved = settings or get_settings()
     provider, model = chosen(resolved)
     resolved_client = client or build_client(resolved)
-    prompt, notes = build_prompt(body, title)
+    prompt, notes = build_prompt(body, title, current_values)
 
     last_error: ClassifySchemaError | None = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
@@ -276,6 +362,10 @@ async def classify_body(
                 model,
                 ", ".join(f"{name}({grounded.reasons[name]})" for name in grounded.dropped),
             )
+        # 같은 응답에서 제안도 같이 추린다. 두 번째 호출을 만들면 토큰이 두 배다
+        suggestions, suggestion_reasons = _extract_suggestions(
+            fields, current_values or {}, f"{title}\n{body}"
+        )
         return ClassificationResult(
             fields=grounded.fields,
             usage=usage,
@@ -283,6 +373,8 @@ async def classify_body(
             evidence=grounded.evidence,
             dropped=grounded.dropped,
             reasons=grounded.reasons,
+            suggestions=suggestions,
+            suggestion_reasons=suggestion_reasons,
             notes=[
                 *notes,
                 *(

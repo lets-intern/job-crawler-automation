@@ -17,7 +17,7 @@ import sqlite3
 from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
-from app.classify.schema import CLASSIFY_FIELDS
+from app.classify.schema import CLASSIFY_FIELDS, COLLECTED_REVIEW_FIELDS
 
 # `raw_jobs.raw_data_json` 에서 원문·본문·제목을 꺼내는 자리. JSON 함수는 SQLite 3.38+ 에 있다
 _BODY = "json_extract(r.raw_data_json, '$.body')"
@@ -213,6 +213,33 @@ def read_title(conn: sqlite3.Connection, raw_job_id: int) -> str:
         (raw_job_id,),
     ).fetchone()
     return "" if row is None else str(row["title"])
+
+
+# `COLLECTED_REVIEW_FIELDS` 셋을 `raw_data_json` 에서 꺼내는 자리. 이름이 그 칸 이름과 같다
+_REVIEW_EXTRACTORS = {
+    name: f"json_extract(r.raw_data_json, '$.{name}')" for name in COLLECTED_REVIEW_FIELDS
+}
+
+
+def read_current_values(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, str]:
+    """`company`·`deadline`·`start_date` 중 수집이 이미 채운 값. 읽기 전용이다.
+
+    무엇이 이미 채워져 있는지 모르면 분류가 "원문과 다르다" 를 말할 수 없다 — 프롬프트에
+    이 값을 실어 보내는 것이 `app/classify/classifier.py` 의 `build_prompt` 다.
+
+    빈 문자열인 칸은 결과에 없다. 값이 없다는 것은 비교할 것이 없다는 뜻이지, 빈 문자열과
+    다른 값을 제안하라는 뜻이 아니다 — 이 셋은 채우기 대상이 아니라 있는 값을 검사하는
+    대상이다 (`.claude/tasks/todo/prd-side-workflows.md` 6절).
+    """
+    columns = ", ".join(f"{sql} AS {name}" for name, sql in _REVIEW_EXTRACTORS.items())
+    row = conn.execute(f"SELECT {columns} FROM raw_jobs r WHERE r.id = ?", (raw_job_id,)).fetchone()
+    if row is None:
+        return {}
+    return {
+        name: str(row[name])
+        for name in COLLECTED_REVIEW_FIELDS
+        if row[name] is not None and str(row[name]).strip()
+    }
 
 
 def read_classification(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, str]:

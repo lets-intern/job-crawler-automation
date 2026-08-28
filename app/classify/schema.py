@@ -92,9 +92,47 @@ class Classification(BaseModel):
     requirements: str = ""
     etc_info: str = ""
 
+    # 수집이 이미 채운 칸을 원문과 견줘 다르면 낸다 (Push 11, PRD 6절). 값이 같거나 판단할
+    # 근거가 없으면 둘 다 빈 문자열이다 — 이 칸이 채워진다고 그 값이 그대로 저장되지 않는다.
+    # 근거 검사(`app/classify/grounding.py`)를 통과한 것만 `job_field_suggestions` 로 가고,
+    # 정규화의 어느 경로도 이 제안을 읽지 않는다(`app/normalize/engine.py` 는 그대로 둔다).
+    company_suggestion: str = ""
+    company_suggestion_reason: str = ""
+    deadline_suggestion: str = ""
+    deadline_suggestion_reason: str = ""
+    start_date_suggestion: str = ""
+    start_date_suggestion_reason: str = ""
+
 
 # 본문을 읽고 정해진 값 중에서 고르는 칸
 JUDGE_FIELDS: tuple[str, ...] = ("employment_type", "career_level")
+
+# 수집이 채우는 여섯 칸 중, 원문을 읽어 다른 값을 낼 수 있는 셋. `title` 은 이미 `job_role` 의
+# 출처로 프롬프트에 그대로 들어가 있어 다시 비교할 이유가 없고, `body` 는 모델에게 보내는
+# 원문 그 자체라 비교할 대상이 없다. `source_url` 은 공고의 신원이라 애초에 후보가 아니다.
+#
+# `deadline` 은 마감 지난 공고를 거르는 데 쓰이고 `company` 는 계열사를 가르는 값이라, 이
+# 셋은 값이 있으면 아무리 근거가 있어도 자동으로 덮지 않고 제안으로만 낸다
+# (`.claude/tasks/todo/prd-side-workflows.md` 6절).
+COLLECTED_REVIEW_FIELDS: tuple[str, ...] = ("company", "deadline", "start_date")
+
+# 화면에 보일 이름. 프롬프트에 값을 적을 때도 같은 이름을 쓴다
+COLLECTED_REVIEW_LABELS: dict[str, str] = {
+    "company": "회사명",
+    "deadline": "마감일",
+    "start_date": "모집 시작일",
+}
+
+
+def suggestion_field(name: str) -> str:
+    """그 칸의 제안 값이 담기는 응답 필드 이름."""
+    return f"{name}_suggestion"
+
+
+def suggestion_reason_field(name: str) -> str:
+    """그 칸의 제안 이유가 담기는 응답 필드 이름."""
+    return f"{name}_suggestion_reason"
+
 
 # 판정 칸마다 따라오는 근거 문장. 컬럼이 아니라 검증과 보고를 위한 값이다
 EVIDENCE_FIELDS: tuple[str, ...] = tuple(f"{name}_evidence" for name in JUDGE_FIELDS)
