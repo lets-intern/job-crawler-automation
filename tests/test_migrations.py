@@ -154,6 +154,15 @@ EXPECTED_COLUMNS = {
         "note",
         "error_message",
     },
+    # 0023 이 만든 제안 표. 값이 있는 칸에 모델이 낸 다른 값이다. 정규화는 이 표를 읽지 않는다
+    "job_field_suggestions": {
+        "id",
+        "raw_job_id",
+        "field_name",
+        "value",
+        "reason",
+        "created_at",
+    },
 }
 
 # 사람이 고칠 수 있는 필드. `source_url` 과 `delivered_at` 은 여기에 없다
@@ -189,6 +198,7 @@ ALL_VERSIONS = [
     "0020",
     "0021",
     "0022",
+    "0023",
 ]
 
 
@@ -1483,3 +1493,99 @@ def test_side_tables_down_removes_only_its_own_two_tables(conn: sqlite3.Connecti
     assert {"workflows", "crawl_runs", "raw_jobs", "normalized_jobs"} <= tables
     assert conn.execute("SELECT count(*) AS n FROM crawl_runs").fetchone()["n"] == 1
     assert conn.execute("SELECT count(*) AS n FROM raw_jobs").fetchone()["n"] == 1
+
+
+# 0023 이 대상으로 받는 필드. `app/normalize/rules.py` 의 `NORMALIZED_FIELDS` 와 같은 값이다
+def test_job_field_suggestions_accepts_every_normalized_field(conn: sqlite3.Connection) -> None:
+    """분류가 채우는 아홉 칸과 수집이 채우는 다섯 칸 전부가 제안 대상이다 (11.1.V)."""
+    db.migrate_up(conn)
+    _seed_raw_job(conn)
+
+    for field_name in NORMALIZED_FIELDS:
+        conn.execute(
+            """
+            INSERT INTO job_field_suggestions (raw_job_id, field_name, value, reason)
+            VALUES (1, ?, '제안 값', '원문과 다르다')
+            """,
+            (field_name,),
+        )
+
+    stored = conn.execute("SELECT count(*) AS n FROM job_field_suggestions").fetchone()
+    assert stored["n"] == len(NORMALIZED_FIELDS)
+
+
+def test_job_field_suggestions_rejects_a_field_outside_the_list(conn: sqlite3.Connection) -> None:
+    """`source_url` 은 공고의 신원이라 제안 대상이 아니다 (11.1.V)."""
+    db.migrate_up(conn)
+    _seed_raw_job(conn)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            """
+            INSERT INTO job_field_suggestions (raw_job_id, field_name, value, reason)
+            VALUES (1, 'source_url', 'https://example.test/other', '다르다')
+            """
+        )
+
+
+def test_a_new_suggestion_on_the_same_column_overwrites_the_old_one(
+    conn: sqlite3.Connection,
+) -> None:
+    """같은 칸에 제안이 둘이면 어느 것을 보고 있는지 알 수 없다 (11.1.V)."""
+    db.migrate_up(conn)
+    _seed_raw_job(conn)
+
+    for value in ("첫 제안", "다음 제안"):
+        conn.execute(
+            """
+            INSERT INTO job_field_suggestions (raw_job_id, field_name, value, reason)
+            VALUES (1, 'deadline', ?, '원문과 다르다')
+            ON CONFLICT (raw_job_id, field_name) DO UPDATE
+               SET value = excluded.value, reason = excluded.reason,
+                   created_at = datetime('now')
+            """,
+            (value,),
+        )
+
+    rows = conn.execute("SELECT value FROM job_field_suggestions").fetchall()
+    assert [row["value"] for row in rows] == ["다음 제안"]
+
+
+def test_job_field_suggestions_needs_an_existing_raw_job(conn: sqlite3.Connection) -> None:
+    db.migrate_up(conn)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            """
+            INSERT INTO job_field_suggestions (raw_job_id, field_name, value, reason)
+            VALUES (99, 'deadline', '2026-09-30', '다르다')
+            """
+        )
+
+
+def test_job_field_suggestions_down_drops_only_its_own_table(conn: sqlite3.Connection) -> None:
+    """역적용은 0023 이 만든 표만 지운다. 수집·정규화 데이터는 그대로다 (11.1.V)."""
+    db.migrate_up(conn)
+    _seed_raw_job(conn)
+    conn.execute(
+        """
+        INSERT INTO job_field_suggestions (raw_job_id, field_name, value, reason)
+        VALUES (1, 'deadline', '2026-09-30', '원문과 다르다')
+        """
+    )
+
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0023"))
+
+    assert "job_field_suggestions" not in _names(conn, "table")
+    assert conn.execute("SELECT count(*) AS n FROM raw_jobs").fetchone()["n"] == 1
+
+
+def test_job_field_suggestions_up_after_down_restores_the_table(conn: sqlite3.Connection) -> None:
+    """적용·역적용·재적용이 같은 스키마로 돌아오는지 (11.1.V)."""
+    db.migrate_up(conn)
+
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0023"))
+    assert "job_field_suggestions" not in _names(conn, "table")
+
+    db.migrate_up(conn)
+    assert _columns(conn, "job_field_suggestions") == EXPECTED_COLUMNS["job_field_suggestions"]
