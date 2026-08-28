@@ -24,6 +24,8 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass
 
+from app.classify.batch import MAX_LIMIT
+
 CLASSIFY = "classify"
 DELIVER = "deliver"
 KINDS: tuple[str, ...] = (CLASSIFY, DELIVER)
@@ -54,6 +56,10 @@ _COLUMNS = (
 
 class SideWorkflowNotFoundError(LookupError):
     """그 id 의 부가 워크플로우가 없다. 쓰기는 있는 행에만 한다."""
+
+
+class SideWorkflowError(ValueError):
+    """저장할 수 없는 값. 거절 사유를 화면이 그대로 옮긴다."""
 
 
 @dataclass(frozen=True)
@@ -124,13 +130,23 @@ def create(
     `target_scope` 를 주지 않으면 그 종류의 기본값이다.
     """
     scope = default_scope(kind) if target_scope is None else target_scope
+    cleaned = _validated(
+        kind=kind,
+        name=name,
+        status=status,
+        trigger_kind=trigger_kind,
+        interval_minutes=interval_minutes,
+        target_scope=scope,
+        target_days=target_days,
+        batch_limit=batch_limit,
+    )
     cursor = conn.execute(
         """
         INSERT INTO side_workflows (kind, name, status, trigger_kind, interval_minutes,
                                     target_scope, target_days, batch_limit)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (kind, name, status, trigger_kind, interval_minutes, scope, target_days, batch_limit),
+        (kind, cleaned, status, trigger_kind, interval_minutes, scope, target_days, batch_limit),
     )
     created = read(conn, int(cursor.lastrowid or 0))
     if created is None:  # pragma: no cover - 방금 넣은 행이 사라지는 경로는 없다
@@ -158,8 +174,25 @@ def update(
 
     `kind` 와 `last_run_at` 은 받지 않는다. 종류는 만들 때 정해지고, 마지막 실행 시각은
     실행 기록이 적는다.
+
+    대상 범위는 **저장된 종류**로 본다. 폼이 종류를 함께 보내더라도 그것을 믿지 않는다 —
+    믿으면 분류 워크플로우를 전달로 적어 보내는 것만으로 `unclassified` 가 아닌 범위가
+    들어간다.
     """
-    cursor = conn.execute(
+    existing = read(conn, side_workflow_id)
+    if existing is None:
+        raise SideWorkflowNotFoundError(f"부가 워크플로우가 없다: {side_workflow_id}")
+    cleaned = _validated(
+        kind=existing.kind,
+        name=name,
+        status=status,
+        trigger_kind=trigger_kind,
+        interval_minutes=interval_minutes,
+        target_scope=target_scope,
+        target_days=target_days,
+        batch_limit=batch_limit,
+    )
+    conn.execute(
         """
         UPDATE side_workflows
            SET name = ?, status = ?, trigger_kind = ?, interval_minutes = ?,
@@ -167,7 +200,7 @@ def update(
          WHERE id = ?
         """,
         (
-            name,
+            cleaned,
             status,
             trigger_kind,
             interval_minutes,
@@ -177,8 +210,6 @@ def update(
             side_workflow_id,
         ),
     )
-    if cursor.rowcount == 0:
-        raise SideWorkflowNotFoundError(f"부가 워크플로우가 없다: {side_workflow_id}")
     updated = read(conn, side_workflow_id)
     if updated is None:  # pragma: no cover - 방금 고친 행이 사라지는 경로는 없다
         raise SideWorkflowNotFoundError(f"부가 워크플로우가 없다: {side_workflow_id}")
@@ -205,6 +236,63 @@ def delete(conn: sqlite3.Connection, side_workflow_id: int) -> None:
     except BaseException:
         conn.execute("ROLLBACK")
         raise
+
+
+def _validated(
+    *,
+    kind: str,
+    name: str,
+    status: str,
+    trigger_kind: str,
+    interval_minutes: int,
+    target_scope: str,
+    target_days: int | None,
+    batch_limit: int,
+) -> str:
+    """저장하기 전에 본다. 하나라도 걸리면 아무것도 저장하지 않는다. 다듬은 이름을 돌려준다.
+
+    표의 CHECK 가 같은 것을 대부분 막지만, `sqlite3.IntegrityError` 는 운영자에게 어느 칸이
+    왜 틀렸는지 말해 주지 않는다. 여기서 먼저 걸러 사유를 낱말로 만든다. CHECK 를 빼지 않는
+    것은 화면이 아닌 길로 들어오는 값도 있기 때문이다.
+
+    `batch_limit` 의 상한만은 여기에만 있다. `MAX_LIMIT` 은 `app/classify/batch.py` 의 값이고,
+    그것을 표에 적으면 상한을 고치는 일이 마이그레이션이 된다.
+    """
+    if kind not in KINDS:
+        raise SideWorkflowError(
+            f"부가 워크플로우 종류가 아니다: {kind!r}. {' 또는 '.join(KINDS)} 다"
+        )
+    cleaned = name.strip()
+    if not cleaned:
+        raise SideWorkflowError("이름이 비어 있다")
+    if status not in STATUSES:
+        raise SideWorkflowError(f"상태는 {' 또는 '.join(STATUSES)} 다: {status!r}")
+    if trigger_kind not in TRIGGER_KINDS:
+        raise SideWorkflowError(
+            f"실행 시점이 아니다: {trigger_kind!r}. {', '.join(TRIGGER_KINDS)} 중 하나다"
+        )
+    if interval_minutes < 1:
+        raise SideWorkflowError(f"주기는 1분 이상이어야 한다: {interval_minutes}")
+
+    scopes = SCOPES[kind]
+    if target_scope not in scopes:
+        raise SideWorkflowError(
+            f"{kind} 가 받는 대상 범위가 아니다: {target_scope!r}. {', '.join(scopes)} 중 하나다"
+        )
+    if target_scope == RECENT:
+        if target_days is None or target_days < 1:
+            raise SideWorkflowError(
+                f"대상 범위가 {RECENT} 면 최근 며칠을 볼지 1 이상으로 적어야 한다: {target_days}"
+            )
+    elif target_days is not None:
+        raise SideWorkflowError(
+            f"대상 범위가 {target_scope} 면 일수를 두지 않는다: {target_days}."
+            f" 일수는 {RECENT} 에만 쓴다"
+        )
+
+    if not 1 <= batch_limit <= MAX_LIMIT:
+        raise SideWorkflowError(f"1회 상한 건수는 1 이상 {MAX_LIMIT} 이하여야 한다: {batch_limit}")
+    return cleaned
 
 
 def _from_row(row: sqlite3.Row) -> SideWorkflow:
