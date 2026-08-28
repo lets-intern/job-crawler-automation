@@ -13,6 +13,18 @@ server, where a robots check asks a question nobody answers and a politeness del
 It uses `httpx` directly and that is the only place allowed to. Anything we did not deploy — a
 third-party API included — goes through the client.
 
+`app/storage/` is the second such place, added 2026-08-28 with the MinIO decision in
+`.claude/rules/core.md`. It talks to the object storage through the S3 SDK, and the same reasoning
+holds: no robots.txt, no shared host budget, and a delay would only slow a logo upload the operator
+is waiting on.
+
+The endpoint is operator-configured, so it can be pointed at a bucket we did not deploy. That does
+not make it a crawl target: the module only ever reads and writes objects it put there itself, never
+a page someone else published. That is the line. A module that fetches something it did not upload
+is a crawler, whatever it is called and wherever the URL came from.
+
+These two are the whole list.
+
 A second call path is not a shortcut, it is a site getting hammered at an unthrottled rate under our
 name. Once one module bypasses the client, no rate limit in the repository is true any more.
 
