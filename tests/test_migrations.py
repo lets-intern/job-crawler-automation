@@ -126,6 +126,34 @@ EXPECTED_COLUMNS = {
         "message",
         "created_at",
     },
+    # 0021 이 만든 부가 워크플로우 표. 크롤 `workflows` 와 합치지 않는다
+    "side_workflows": {
+        "id",
+        "kind",
+        "name",
+        "status",
+        "trigger_kind",
+        "interval_minutes",
+        "target_scope",
+        "target_days",
+        "batch_limit",
+        "last_run_at",
+        "created_at",
+    },
+    # 0021 이 만든 부가 실행 기록. 토큰 수는 `llm_calls` 가 세므로 여기 없다
+    "side_runs": {
+        "id",
+        "side_workflow_id",
+        "trigger",
+        "started_at",
+        "finished_at",
+        "status",
+        "target_count",
+        "processed_count",
+        "failed_count",
+        "note",
+        "error_message",
+    },
 }
 
 # 사람이 고칠 수 있는 필드. `source_url` 과 `delivered_at` 은 여기에 없다
@@ -159,6 +187,7 @@ ALL_VERSIONS = [
     "0018",
     "0019",
     "0020",
+    "0021",
 ]
 
 
@@ -1289,3 +1318,167 @@ def test_the_company_source_down_restores_the_column_empty_with_its_check(
     assert (row["company"], row["company_source"]) == ("삼성SDS", None)
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute("UPDATE normalized_jobs SET company_source = '운영자'")
+
+
+def _seed_side_workflow(connection: sqlite3.Connection, **overrides: object) -> int:
+    """부가 워크플로우 한 행. 값을 주지 않은 칸은 표의 기본값이 채운다."""
+    values: dict[str, object] = {
+        "kind": "classify",
+        "name": "분류",
+        "target_scope": "unclassified",
+    }
+    values.update(overrides)
+    columns = ", ".join(values)
+    marks = ", ".join("?" * len(values))
+    cursor = connection.execute(
+        f"INSERT INTO side_workflows ({columns}) VALUES ({marks})", tuple(values.values())
+    )
+    return int(cursor.lastrowid or 0)
+
+
+def test_a_new_side_workflow_starts_paused(conn: sqlite3.Connection) -> None:
+    """만들자마자 도는 일이 없다. `all` 은 640건이면 약 285만 토큰이다."""
+    db.migrate_up(conn)
+
+    _seed_side_workflow(conn)
+
+    row = conn.execute("SELECT * FROM side_workflows WHERE id = 1").fetchone()
+    assert row["status"] == "paused"
+    assert row["trigger_kind"] == "manual"
+    assert (row["batch_limit"], row["target_days"], row["last_run_at"]) == (50, None, None)
+    assert row["created_at"]
+
+
+def test_side_workflows_has_no_token_columns(conn: sqlite3.Connection) -> None:
+    """토큰은 `llm_calls` 가 호출마다 센다. 같은 숫자를 두 곳에서 세지 않는다."""
+    db.migrate_up(conn)
+
+    assert not [name for name in _columns(conn, "side_workflows") if "token" in name]
+    assert not [name for name in _columns(conn, "side_runs") if "token" in name]
+
+
+@pytest.mark.parametrize(
+    ("kind", "scope"),
+    [
+        ("classify", "unclassified"),
+        ("classify", "empty_fields"),
+        ("classify", "all"),
+        ("deliver", "undelivered"),
+        ("deliver", "all"),
+    ],
+)
+def test_each_kind_accepts_its_own_scopes(conn: sqlite3.Connection, kind: str, scope: str) -> None:
+    db.migrate_up(conn)
+
+    _seed_side_workflow(conn, kind=kind, target_scope=scope)
+
+    assert conn.execute("SELECT count(*) AS n FROM side_workflows").fetchone()["n"] == 1
+
+
+@pytest.mark.parametrize(
+    ("kind", "scope"),
+    [
+        # 전달에는 분류할 것이 없고, 분류에는 전달 여부라는 것이 없다
+        ("deliver", "unclassified"),
+        ("deliver", "empty_fields"),
+        ("classify", "undelivered"),
+        ("classify", "없는범위"),
+    ],
+)
+def test_a_scope_the_kind_does_not_take_is_rejected(
+    conn: sqlite3.Connection, kind: str, scope: str
+) -> None:
+    """저장할 때 막지 않으면 실행할 때 대상을 못 찾는 것으로 드러난다."""
+    db.migrate_up(conn)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        _seed_side_workflow(conn, kind=kind, target_scope=scope)
+
+
+def test_target_days_belongs_to_recent_and_only_to_recent(conn: sqlite3.Connection) -> None:
+    """`recent` 에는 일수가 반드시 있고, 그 밖에는 없어야 한다."""
+    db.migrate_up(conn)
+
+    _seed_side_workflow(conn, target_scope="recent", target_days=7)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        _seed_side_workflow(conn, target_scope="recent")
+    with pytest.raises(sqlite3.IntegrityError):
+        _seed_side_workflow(conn, target_scope="unclassified", target_days=7)
+    with pytest.raises(sqlite3.IntegrityError):
+        _seed_side_workflow(conn, target_scope="recent", target_days=0)
+
+    assert conn.execute("SELECT count(*) AS n FROM side_workflows").fetchone()["n"] == 1
+
+
+def test_side_workflow_rejects_a_batch_limit_below_one(conn: sqlite3.Connection) -> None:
+    """위쪽 상한은 `app/classify/batch.py` 의 `MAX_LIMIT` 이 정한다. DB 는 아래만 막는다."""
+    db.migrate_up(conn)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        _seed_side_workflow(conn, batch_limit=0)
+
+    _seed_side_workflow(conn, batch_limit=1000)
+    assert conn.execute("SELECT batch_limit FROM side_workflows").fetchone()["batch_limit"] == 1000
+
+
+def test_a_side_run_starts_without_a_status(conn: sqlite3.Connection) -> None:
+    """시작할 때 행이 생기고 종료 상태는 그때 없다. 기록 없는 실행이 없어야 한다."""
+    db.migrate_up(conn)
+    _seed_side_workflow(conn)
+
+    conn.execute("INSERT INTO side_runs (side_workflow_id, trigger) VALUES (1, 'manual')")
+
+    row = conn.execute("SELECT * FROM side_runs WHERE id = 1").fetchone()
+    assert (row["status"], row["finished_at"]) == (None, None)
+    assert (row["target_count"], row["processed_count"], row["failed_count"]) == (0, 0, 0)
+    assert row["started_at"]
+
+
+@pytest.mark.parametrize("status", ["success", "failed", "skipped", "timeout"])
+def test_a_side_run_takes_the_four_end_states(conn: sqlite3.Connection, status: str) -> None:
+    """`skipped` 는 앞 실행이 돌고 있어 건너뛴 것, `timeout` 은 종료를 적지 못한 것이다."""
+    db.migrate_up(conn)
+    _seed_side_workflow(conn)
+    conn.execute("INSERT INTO side_runs (side_workflow_id, trigger) VALUES (1, 'schedule')")
+
+    conn.execute("UPDATE side_runs SET status = ? WHERE id = 1", (status,))
+
+    assert conn.execute("SELECT status FROM side_runs").fetchone()["status"] == status
+
+
+def test_side_run_rejects_an_unknown_status_or_trigger(conn: sqlite3.Connection) -> None:
+    db.migrate_up(conn)
+    _seed_side_workflow(conn)
+    conn.execute("INSERT INTO side_runs (side_workflow_id, trigger) VALUES (1, 'after_crawl')")
+
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("UPDATE side_runs SET status = '끝남' WHERE id = 1")
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("INSERT INTO side_runs (side_workflow_id, trigger) VALUES (1, 'test')")
+
+
+def test_a_side_run_needs_an_existing_side_workflow(conn: sqlite3.Connection) -> None:
+    """어디에도 안 걸린 실행 기록은 누구의 것인지 알 수 없다."""
+    db.migrate_up(conn)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("INSERT INTO side_runs (side_workflow_id, trigger) VALUES (99, 'manual')")
+
+
+def test_side_tables_down_removes_only_its_own_two_tables(conn: sqlite3.Connection) -> None:
+    """역적용은 0021 이 만든 두 표만 지운다. 크롤 쪽 기록은 그대로다."""
+    db.migrate_up(conn)
+    _seed_raw_job(conn)
+    conn.execute("INSERT INTO crawl_runs (workflow_id) VALUES (1)")
+    _seed_side_workflow(conn)
+    conn.execute("INSERT INTO side_runs (side_workflow_id, trigger) VALUES (1, 'manual')")
+
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0021"))
+
+    tables = _names(conn, "table")
+    assert "side_workflows" not in tables
+    assert "side_runs" not in tables
+    assert {"workflows", "crawl_runs", "raw_jobs", "normalized_jobs"} <= tables
+    assert conn.execute("SELECT count(*) AS n FROM crawl_runs").fetchone()["n"] == 1
+    assert conn.execute("SELECT count(*) AS n FROM raw_jobs").fetchone()["n"] == 1
