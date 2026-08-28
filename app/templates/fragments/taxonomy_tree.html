@@ -1,7 +1,11 @@
 {# 직무 분류 트리. 대분류 아래 그 소분류가 바로 이어진다.
 
-   빈 표는 "없음" 으로 끝내지 않는다 — 완전히 비어 있을 때만 나오는 씨앗 넣기 버튼이
-   무엇을 하면 채워지는지 그 자리에서 말한다 (`.claude/rules/writing.md`). #}
+   빈 표는 "없음" 으로 끝내지 않는다 — 완전히 비어 있을 때만 나오는 기본 분류 불러오기
+   버튼이 무엇을 하면 채워지는지 그 자리에서 말한다 (`.claude/rules/writing.md`).
+
+   이름을 고치는 칸 옆에 지금 공고 수를 늘 적어 둔다 — 저장하기 전에 그 이름으로 이미
+   분류된 공고가 몇 건인지 보여야 한다(PRD 3절). 저장한 뒤 이름이 실제로 바뀌었으면 그
+   문장도 서버가 함께 돌려준다(`app/api/ui_taxonomy.py`). #}
 {% from "macros.html" import state, empty_row, wait, failure %}
 {% if error %}
 {{ failure(error.reason, error.message, title="저장하지 못했다") }}
@@ -18,33 +22,24 @@
       <th scope="col">이름</th>
       <th scope="col">구분</th>
       <th scope="col">순서</th>
+      <th scope="col">메모</th>
       <th scope="col">상태</th>
       <th scope="col" class="num">공고 수</th>
-      <th scope="col">메모</th>
+      <th scope="col">동작</th>
     </tr>
   </thead>
   <tbody>
     {% for major_row, minor_rows in tree %}
-    <tr>
-      <td class="cell-text font-semibold text-slate-900">{{ major_row.node.name }}</td>
-      <td>대분류</td>
-      <td class="num">{{ major_row.node.sort_order }}</td>
-      <td>{% if major_row.node.enabled %}{{ state("켜짐") }}{% else %}{{ state("꺼짐") }}{% endif %}</td>
-      <td class="num">{{ major_row.job_count }}건</td>
-      <td class="cell-text">{{ major_row.node.note }}</td>
-    </tr>
+    {% set row = major_row %}
+    {% set indent = false %}
+    {% include "fragments/taxonomy_row.html" with context %}
     {% for minor_row in minor_rows %}
-    <tr>
-      <td class="cell-text pl-6 text-slate-700">{{ minor_row.node.name }}</td>
-      <td>소분류</td>
-      <td class="num">{{ minor_row.node.sort_order }}</td>
-      <td>{% if minor_row.node.enabled %}{{ state("켜짐") }}{% else %}{{ state("꺼짐") }}{% endif %}</td>
-      <td class="num">{{ minor_row.job_count }}건</td>
-      <td class="cell-text">{{ minor_row.node.note }}</td>
-    </tr>
+    {% set row = minor_row %}
+    {% set indent = true %}
+    {% include "fragments/taxonomy_row.html" with context %}
     {% endfor %}
     {% else %}
-    {{ empty_row(6, "직무 분류가 아직 없다. 아래 씨앗 넣기로 대분류 25개·소분류 296개를 한 번에 채우거나, 손으로 하나씩 만든다") }}
+    {{ empty_row(7, "직무 분류가 아직 없다. 아래 기본 분류 불러오기로 대분류 25개·소분류 296개를 한 번에 채우거나, 손으로 하나씩 만든다") }}
     {% endfor %}
   </tbody>
 </table>
@@ -54,10 +49,46 @@
 <form hx-post="/ui/taxonomy/seed" hx-target="#taxonomy-tree" hx-swap="innerHTML"
       hx-disabled-elt="find button"
       hx-confirm="seeds/job-taxonomy-zighang-20260828.json 의 대분류·소분류를 한 번에 넣는다. 계속할까">
-  <button type="submit">씨앗 넣기</button>
-  {{ wait("씨앗을 넣는 중") }}
+  <button type="submit">기본 분류 불러오기</button>
+  {{ wait("불러오는 중") }}
   <span class="block text-xs text-slate-500">
-    표가 완전히 비어 있을 때만 보인다. 넣고 나면 이 버튼은 사라진다
+    표가 완전히 비어 있을 때만 보인다. 불러오면 이 버튼은 사라진다
   </span>
+</form>
+{% else %}
+<h4>직무 분류 추가</h4>
+<form hx-post="/ui/taxonomy" hx-target="#taxonomy-tree" hx-swap="innerHTML"
+      hx-disabled-elt="find button">
+  <fieldset>
+    <legend>부모를 고르지 않으면 대분류로 등록한다</legend>
+    <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
+      <span>
+        <label for="new-taxonomy-parent" class="block">부모(소분류일 때만)</label>
+        <select id="new-taxonomy-parent" name="parent_id">
+          <option value="">(대분류로 등록)</option>
+          {% for major in majors %}
+          <option value="{{ major.id }}">{{ major.name }}</option>
+          {% endfor %}
+        </select>
+      </span>
+      <span>
+        <label for="new-taxonomy-name" class="block">이름</label>
+        <input id="new-taxonomy-name" name="name" type="text" required>
+      </span>
+      <span>
+        <label for="new-taxonomy-order" class="block">순서</label>
+        <input id="new-taxonomy-order" name="sort_order" type="number" value="0" size="4">
+      </span>
+    </p>
+    <p>
+      <label for="new-taxonomy-note">메모</label>
+      <br>
+      <textarea id="new-taxonomy-note" name="note" rows="2" class="w-full max-w-2xl"></textarea>
+    </p>
+    <p>
+      <button type="submit">추가</button>
+      {{ wait("추가하는 중") }}
+    </p>
+  </fieldset>
 </form>
 {% endif %}

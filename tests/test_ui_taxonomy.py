@@ -6,6 +6,7 @@ CRUD 조각 라우트. 공고 수는 `normalized_jobs.job_major`/`job_minor` 를
 
 from __future__ import annotations
 
+import html
 import json
 import pathlib
 import sqlite3
@@ -90,11 +91,12 @@ def test_화면이_열리고_네비게이션이_켜진다(client: TestClient) ->
     assert '<a href="/taxonomy" aria-current="page"' in response.text
 
 
-def test_표가_비어있으면_씨앗_넣기_버튼만_보인다(client: TestClient) -> None:
+def test_표가_비어있으면_기본_분류_불러오기_버튼만_보인다(client: TestClient) -> None:
     body = client.get("/ui/taxonomy").text
 
-    assert "씨앗 넣기" in body
+    assert "기본 분류 불러오기" in body
     assert "직무 분류가 아직 없다" in body
+    assert "직무 분류 추가" not in body
 
 
 def test_대분류와_소분류가_트리로_보인다(client: TestClient, conn: sqlite3.Connection) -> None:
@@ -106,7 +108,7 @@ def test_대분류와_소분류가_트리로_보인다(client: TestClient, conn:
     body = client.get("/ui/taxonomy").text
 
     assert body.index("IT·개발") < body.index("서버·백엔드") < body.index("AI·데이터")
-    assert "씨앗 넣기" not in body
+    assert "기본 분류 불러오기" not in body
 
 
 def test_공고_수가_그_이름으로_분류된_건수와_같다(
@@ -135,3 +137,108 @@ def test_켜짐_꺼짐_상태가_보인다(client: TestClient, conn: sqlite3.Con
 
     assert "꺼짐" in body
     assert "켜짐" in body
+
+
+def test_대분류를_화면에서_더한다(client: TestClient) -> None:
+    response = client.post("/ui/taxonomy", data={"name": "IT·개발", "parent_id": ""})
+
+    assert response.status_code == 200
+    body = html.unescape(response.text)
+    assert "대분류 'IT·개발' 를 더했다" in body
+    assert "IT·개발" in body
+
+
+def test_소분류를_부모를_골라_더한다(client: TestClient, conn: sqlite3.Connection) -> None:
+    major = taxonomy.create(conn, parent_id=None, name="IT·개발")
+    conn.commit()
+
+    response = client.post("/ui/taxonomy", data={"name": "서버·백엔드", "parent_id": str(major.id)})
+
+    assert response.status_code == 200
+    body = html.unescape(response.text)
+    assert "소분류 '서버·백엔드' 를 더했다" in body
+    assert "서버·백엔드" in body
+
+
+def test_더하기_폼에서_부모로_고를_대분류가_보인다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    taxonomy.create(conn, parent_id=None, name="IT·개발")
+    conn.commit()
+
+    body = client.get("/ui/taxonomy").text
+
+    assert '<option value="1">IT·개발</option>' in body
+
+
+def test_이름_순서_메모를_고치면_목록에_반영된다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    major = taxonomy.create(conn, parent_id=None, name="IT 개발")
+    conn.commit()
+
+    response = client.put(
+        f"/ui/taxonomy/{major.id}",
+        data={"name": "IT·개발", "sort_order": "3", "note": "씨앗 기준"},
+    )
+
+    assert response.status_code == 200
+    assert "IT·개발" in response.text
+    assert "씨앗 기준" in response.text
+
+
+def test_이름을_고치면_저장_전에_공고_수가_보인다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """`row.job_count` 가 이름 입력 칸 옆에 늘 붙어 있다 — 고치기 전에 보인다."""
+    taxonomy.create(conn, parent_id=None, name="IT·개발")
+    add_classified_job(conn, 1, job_major="IT·개발", job_minor=None)
+    add_classified_job(conn, 2, job_major="IT·개발", job_minor=None)
+    conn.commit()
+
+    body = client.get("/ui/taxonomy").text
+
+    assert "공고 2건이 지금 이 이름으로 분류돼 있다" in body
+
+
+def test_이름을_고치면_그_건수만큼_어긋난다는_경고가_뜬다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    major = taxonomy.create(conn, parent_id=None, name="IT 개발")
+    add_classified_job(conn, 1, job_major="IT 개발", job_minor=None)
+    add_classified_job(conn, 2, job_major="IT 개발", job_minor=None)
+    conn.commit()
+
+    response = client.put(
+        f"/ui/taxonomy/{major.id}", data={"name": "IT·개발", "sort_order": "0", "note": ""}
+    )
+
+    assert "'IT 개발' 으로 이미 분류된 공고 2건은 새 이름과 어긋난다" in html.unescape(
+        response.text
+    )
+
+
+def test_이름을_안_바꾸면_건수_경고가_없다(client: TestClient, conn: sqlite3.Connection) -> None:
+    major = taxonomy.create(conn, parent_id=None, name="IT·개발")
+    add_classified_job(conn, 1, job_major="IT·개발", job_minor=None)
+    conn.commit()
+
+    response = client.put(
+        f"/ui/taxonomy/{major.id}", data={"name": "IT·개발", "sort_order": "1", "note": ""}
+    )
+
+    body = html.unescape(response.text)
+    assert "어긋난다는" not in body
+    assert "'IT·개발' 를 저장했다" in body
+
+
+def test_같은_부모_아래_이름이_중복되면_거절_사유가_보인다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    taxonomy.create(conn, parent_id=None, name="IT·개발")
+    conn.commit()
+
+    response = client.post("/ui/taxonomy", data={"name": "IT·개발", "parent_id": ""})
+
+    assert "저장하지 못했다" in response.text
+    assert "duplicate_name" in response.text

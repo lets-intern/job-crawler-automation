@@ -21,7 +21,7 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 
 from app import taxonomy
@@ -96,3 +96,62 @@ def taxonomy_tree_fragment(
     conn: Annotated[sqlite3.Connection, Depends(get_connection)],
 ) -> HTMLResponse:
     return _tree(request, conn)
+
+
+@router.post("/ui/taxonomy", response_class=HTMLResponse)
+def create_node_fragment(
+    request: Request,
+    conn: Annotated[sqlite3.Connection, Depends(get_connection)],
+    name: Annotated[str, Form()],
+    parent_id: Annotated[str, Form()] = "",
+    sort_order: Annotated[int, Form()] = 0,
+    note: Annotated[str, Form()] = "",
+) -> HTMLResponse:
+    """대분류(`parent_id` 없음) 또는 소분류를 더한다."""
+    parsed_parent = int(parent_id) if parent_id.strip() else None
+    try:
+        created = taxonomy.create(
+            conn, parent_id=parsed_parent, name=name, sort_order=sort_order, note=note
+        )
+    except taxonomy.TaxonomyError as exc:
+        return _tree(request, conn, error={"reason": exc.reason, "message": str(exc)})
+
+    kind = "대분류" if created.parent_id is None else "소분류"
+    return _tree(request, conn, message=f"{kind} '{created.name}' 를 더했다")
+
+
+@router.put("/ui/taxonomy/{node_id}", response_class=HTMLResponse)
+def update_node_fragment(
+    request: Request,
+    node_id: int,
+    conn: Annotated[sqlite3.Connection, Depends(get_connection)],
+    name: Annotated[str, Form()],
+    sort_order: Annotated[int, Form()] = 0,
+    note: Annotated[str, Form()] = "",
+) -> HTMLResponse:
+    """이름·순서·메모를 저장한다. 이름이 바뀌면 옛 이름으로 이미 분류된 공고 수를 함께
+    알린다 — 저장 순간 그 건들의 값과 목록의 이름이 어긋난다(PRD 3절).
+    """
+    existing = taxonomy.read(conn, node_id)
+    if existing is None:
+        return _tree(
+            request, conn, error={"reason": "not_found", "message": f"id {node_id} 가 없다"}
+        )
+
+    column = "job_major" if existing.parent_id is None else "job_minor"
+    old_name = existing.name
+    old_count = _name_count(conn, column, old_name)
+
+    try:
+        updated = taxonomy.update(conn, node_id, name=name, sort_order=sort_order, note=note)
+    except taxonomy.TaxonomyError as exc:
+        return _tree(request, conn, error={"reason": exc.reason, "message": str(exc)})
+
+    if updated.name != old_name and old_count > 0:
+        message = (
+            f"'{old_name}' 를 '{updated.name}' 로 고쳤다. "
+            f"'{old_name}' 으로 이미 분류된 공고 {old_count}건은 새 이름과 어긋난다"
+        )
+    else:
+        message = f"'{updated.name}' 를 저장했다"
+    return _tree(request, conn, message=message)
