@@ -565,8 +565,17 @@ def empty_counts(conn: sqlite3.Connection, picked: JobFilter) -> list[dict[str, 
             "field": EMPTY_ANY,
             "label": EMPTY_LABELS[EMPTY_ANY],
             "count": counted("any_empty"),
-            "note": "여섯 필드 중 하나라도 빈 공고",
-            "normal": "",
+            # 몇 칸을 보는지는 세어서 적는다. 0011 이 여섯을 열여섯으로 늘리고 0016 이 셋을
+            # 지우고 0017 이 하나를 더하는 동안 이 문장만 `여섯` 으로 남아 있었다. 칸이
+            # 열넷이면 이 조건은 거의 전부를 잡으므로, 그 사실을 함께 적지 않으면 걸린
+            # 건수를 보고 수집이 통째로 망가진 줄 안다
+            "note": (
+                f"위 {len(OVERRIDABLE_FIELDS)}칸 중 하나라도 빈 공고."
+                " 칸이 많아 대부분이 걸린다 — 고칠 자리는 위 줄에서 하나씩 고른다"
+            ),
+            # 칸마다 답이 달라서 한 낱말로 답할 수 없다. 빈 칸으로 두지 않는다
+            # (`.claude/rules/writing.md`)
+            "normal": "칸마다 다름",
         }
     )
     return found

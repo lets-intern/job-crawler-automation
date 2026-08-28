@@ -13,12 +13,14 @@
 | 필드별 빈 건수가 직접 센 수와 같다 | 그 숫자를 보고 엉뚱한 셀렉터를 고친다 |
 | NULL·빈 문자열·공백뿐인 값이 모두 빈 값이다 | 빈 태그를 잡은 셀렉터가 정상으로 보인다 |
 | 고른 필드가 빈 공고만 걸린다 | 조건이 아무것도 좁히지 못한다 |
-| `아무 필드나` 가 하나라도 빈 것을 전부 잡는다 | 여섯 번 걸러 봐야 한다 |
+| `아무 필드나` 가 하나라도 빈 것을 전부 잡는다 | 칸 수만큼 걸러 봐야 한다 |
 | 보정으로 채운 필드는 빈 것이 아니다 | 검수한 건이 검수 대상에 계속 남는다 |
 | 보정으로 비운 필드는 빈 것이다 | 사람이 비운 판단이 화면에서 사라진다 |
 | 건수는 빈 값 조건을 빼고 센다 | 한 필드를 고른 순간 나머지가 0이 되어 아무 말도 못 한다 |
 | 나머지 조건은 건수에 걸린다 | 워크플로우를 좁혔는데 전체 건수가 나온다 |
 | 빈 값이 정상일 수 있는 필드는 그렇다고 적는다 | 상시채용을 셀렉터 실패로 읽는다 |
+| 새로 생긴 직무·자회사에도 그 메모가 붙는다 | 정상적으로 빈 건수를 셀렉터 실패로 읽는다 |
+| `아무 필드나` 메모가 실제로 보는 칸 수를 적는다 | 여섯이라고 적힌 조건이 열넷을 본다 |
 """
 
 from __future__ import annotations
@@ -33,7 +35,7 @@ from fastapi.testclient import TestClient
 
 from app import db
 from app.api import crawlers as crawlers_api
-from app.api.review_filter import FIELD_LABELS
+from app.api.review_filter import EMPTY_NOTES, FIELD_LABELS
 from app.main import app
 from app.normalize.rules import NORMALIZED_FIELDS
 
@@ -239,6 +241,28 @@ def test_빈_값이_정상일_수_있는_필드는_그렇다고_적는다(client
     # 구분이 되는 필드는 놓친 것이라고 적는다
     assert "비어 있으면 셀렉터가 놓친 것이다" in html
     assert "있을 수 있음" in html and "아니오" in html
+
+
+def test_새로_생긴_두_칸도_빈_것이_정상일_수_있다고_적는다(client: TestClient) -> None:
+    """0017 의 직무와 0018 의 자회사다.
+
+    둘 다 정상적으로 빈다. 직무는 `전 직군 채용` 처럼 제목이 직무를 말하지 않는 공고에서
+    비고, 자회사는 계열사를 말하지 않는 사이트에서 통째로 빈다. 메모가 없으면 그 건수가
+    전부 셀렉터가 놓친 것으로 읽히고, 멀쩡한 셀렉터를 고치러 간다.
+    """
+    html = client.get("/ui/review").text
+
+    assert EMPTY_NOTES["job_role"] in html
+    assert EMPTY_NOTES["company"] in html
+
+
+def test_아무_필드나_메모가_실제로_보는_칸_수를_적는다(client: TestClient) -> None:
+    """`여섯` 으로 굳어 있으면 0011·0016·0017 을 지나며 조용히 틀린 말이 된다."""
+    html = client.get("/ui/review").text
+
+    assert f"위 {len(NORMALIZED_FIELDS)}칸 중 하나라도 빈 공고" in html
+    # 판정 칸을 빈 칸으로 두지 않는다 (`.claude/rules/writing.md`)
+    assert "칸마다 다름" in html
 
 
 def test_조회_조건에_빈_값_칸이_있다(client: TestClient) -> None:
