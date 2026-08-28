@@ -48,13 +48,18 @@
   <p class="mb-0 flex flex-wrap items-center gap-4 text-xs font-medium text-slate-500">
     <span><span class="inline-block h-2.5 w-2.5 rounded-full bg-slate-400 align-middle"></span> 추가</span>
     <span><span class="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500 align-middle"></span> 완성(근사)</span>
-    <span><span class="inline-block h-2.5 w-2.5 rounded-full bg-indigo-500 align-middle"></span> AI 토큰(그 날 최댓값 기준)</span>
+    <span><span class="inline-block h-2.5 w-2.5 rounded-full bg-indigo-500 align-middle"></span> AI 토큰(이 기간 중 최댓값 기준, 추가·완성과 축이 다르다)</span>
   </p>
-  <div class="mt-3 flex items-end gap-2 overflow-x-auto border-t border-slate-100 pt-3" style="height: 9rem">
+  {# 각 날짜 칸이 이 줄의 높이(9rem)를 실제로 물려받아야 안의 막대가 쓰는 퍼센트 높이가
+     계산된다 — 부모가 `items-end` 로 아래 정렬만 되면 칸 자체의 높이가 정해지지 않고,
+     정해지지 않은 높이에 붙는 퍼센트는 0으로 계산돼 막대가 전부 안 보인다. 그래서 이
+     줄은 늘려 맞추고(`items-stretch`, 기본값), 막대 자리는 `flex-1` 로 라벨을 뺀 나머지
+     높이를 실제로 차지하게 한다 #}
+  <div class="mt-3 flex gap-2 overflow-x-auto border-t border-slate-100 pt-3" style="height: 9rem">
     {% for day in trend_days %}
-    <div class="flex min-w-[2.5rem] flex-1 flex-col items-center justify-end gap-1"
+    <div class="flex min-w-[2.5rem] flex-1 flex-col items-center"
          title="{{ day.label }} — 추가 {{ day.added }}건, 완성 {{ day.completed }}건, 토큰 {{ "{:,}".format(day.tokens) }}">
-      <div class="flex h-full w-full items-end justify-center gap-1">
+      <div class="flex w-full flex-1 items-end justify-center gap-1">
         <div class="w-2 rounded-full bg-gradient-to-t from-slate-300 to-slate-200"
              style="height: {{ day.added_pct }}%"></div>
         <div class="w-2 rounded-full bg-gradient-to-t from-emerald-500 to-emerald-300"
@@ -62,7 +67,7 @@
         <div class="w-2 rounded-full bg-gradient-to-t from-indigo-500 to-indigo-300"
              style="height: {{ day.tokens_pct }}%"></div>
       </div>
-      <span class="text-[10px] text-slate-400">{{ day.label }}</span>
+      <span class="mt-1 shrink-0 text-[10px] text-slate-400">{{ day.label }}</span>
     </div>
     {% endfor %}
   </div>

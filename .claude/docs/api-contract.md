@@ -51,6 +51,8 @@ GET /api/jobs?updated_after=<ISO8601>&limit=100&cursor=<opaque>
       "company": "삼성SDS",
       "title": "공고 제목",
       "job_role": "백엔드 개발",
+      "job_major": "IT·개발",
+      "job_minor": "서버·백엔드",
       "deadline": "2026-09-30",
       "body": "본문",
       "requirements": "자격요건",
@@ -87,11 +89,30 @@ GET /api/jobs?updated_after=<ISO8601>&limit=100&cursor=<opaque>
 제목이 직무를 말하지 않는 통합 공고(`전 직군 채용`)에서는 `null` 이다. 열한 사이트 중 둘이
 그런 공고를 올린다 (`tests/test_job_role_source.py`).
 
+**2026-08-29 에 `job_major`·`job_minor` 를 더했다.** 둘 다 직무 분류 결과이고, `job_role` 과
+근본적으로 다르다 — `job_role` 은 공고 제목에서 그대로 옮긴 자유 텍스트라 어떤 값이 나올지
+정해져 있지 않지만, `job_major`·`job_minor` 는 매번 `job_taxonomy` 표(운영자가 화면에서
+이름을 만들고 켜고 끄는 표, `.claude/tasks/todo/prd-job-taxonomy.md`)에 있는 이름 중 하나를
+고른 값이다.
+
+그래서 **이 순간에는 닫힌 목록이지만, `employment_type`·`career_level` 처럼 이 문서가 그
+목록을 고정하지 않는다.** 운영자가 어드민 화면에서 대분류·소분류 이름을 새로 만들거나 끄면
+다음 분류부터 나오는 값이 그만큼 바뀐다. 소비 측이 이 필드로 거르거나 화면에 매핑표를 만들어
+쓸 수는 있지만, 그 매핑표를 하드코딩하면 운영자가 표를 고친 날 어긋난다 — 값 자체를 그대로
+쓰고, 목록이 궁금하면 그때그때 물어야 한다.
+
+`job_major` 가 `null` 이면 아직 분류를 돌리지 않았거나 본문만으로 대분류를 정할 근거가 없다는
+뜻이고, 그때 `job_minor` 도 항상 `null` 이다. `job_major` 는 정해졌는데 `job_minor` 만 `null`
+인 것은 정상이다 — 대분류는 분명한데 소분류가 본문으로 갈리지 않는 공고가 그렇다(예: `IT·개발`
+인 것은 분명해도 `서버·백엔드`인지 `웹풀스택`인지 본문이 말하지 않는 경우).
+
 값이 정해진 필드의 목록은 아래 표 하나에만 적는다.
 
 | 필드 | 뜻 |
 |---|---|
 | job_role | 직무. 제목에서 옮긴 자유 텍스트 |
+| job_major | 직무 대분류. `job_taxonomy` 에서 고른 이름. 운영자가 바꿀 수 있어 이 문서가 목록을 고정하지 않는다 |
+| job_minor | 직무 소분류. 대분류가 정해지지 않으면 항상 `null` 이다 |
 | start_date | 모집 시작일 |
 | employment_type | 고용형태 |
 | career_level | 경력 구분 |

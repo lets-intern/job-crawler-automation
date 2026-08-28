@@ -2,7 +2,7 @@
 
 > PRD: `.claude/tasks/todo/prd-job-taxonomy.md`
 > Push 범위: 검수 화면과 제공 API에 `job_major`/`job_minor` 두 칸을 내보낸다
-> 상태: 진행 중
+> 상태: 완료
 
 ## 관련 파일
 
@@ -20,7 +20,7 @@
 
 ## 작업
 
-- [ ] 5.0 검수 화면과 제공 API
+- [x] 5.0 검수 화면과 제공 API
     - [x] 5.1 검수 화면 표에 `직무 대분류`, `직무 소분류` 두 칸을 더한다. `job_role`(제목에서
           뽑은 자유 텍스트) 칸 옆에 둔다 — 이름이 비슷해 혼동하지 않도록 라벨을 분명히
           가른다("직무"(자유 텍스트) vs "직무 대분류/소분류"(닫힌 목록))
@@ -47,8 +47,10 @@
               (limit=2 로 4건을 두 페이지로 나눠 받아 id 집합·필드 존재를 확인),
               `test_job_major_minor_go_out_filled_or_null` (채워진 값과 `null` 구분),
               `test_item_shape_matches_contract` 에 두 키를 추가
-    - [ ] 5.4 `.claude/docs/api-contract.md`에 두 필드를 더한다. 뜻, 나올 수 있는 값이
+    - [x] 5.4 `.claude/docs/api-contract.md`에 두 필드를 더한다. 뜻, 나올 수 있는 값이
           닫힌 목록이 아니라 운영자가 어드민에서 바꾸는 표라는 것, `job_role`과 다른 점을
           적는다
-        - [ ] 5.4.V 검증(제공 API): 문서에 적은 필드 이름이 5.3의 응답 키와 정확히 같은지
-              대조
+        - [x] 5.4.V 검증(제공 API): 문서에 적은 필드 이름이 5.3의 응답 키와 정확히 같은지
+              대조 — `tests/test_api_contract_doc.py`가 문서의 응답 예시 JSON 블록을 파싱해
+              실제 `/api/jobs` 응답 키 집합과 대조한다(고의로 `job_minor`를 지워 실패하는
+              것도 확인했다)

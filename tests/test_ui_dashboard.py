@@ -345,7 +345,7 @@ def test_일별_추이에_토큰_사용량도_들어간다(client: TestClient, c
 
     body = client.get("/ui/dashboard").text
 
-    assert "AI 토큰(그 날 최댓값 기준)" in body
+    assert "AI 토큰(이 기간 중 최댓값 기준, 추가·완성과 축이 다르다)" in body
     assert "토큰 1,000" in body  # 오늘 칸의 title 속성에 오늘 쓴 토큰 수가 그대로 적힌다
 
 
