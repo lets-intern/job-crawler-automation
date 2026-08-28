@@ -2,7 +2,7 @@
 
 > PRD: `.claude/tasks/todo/prd-fields-and-logo.md`
 > Push 범위: 남은 화면과 문서를 새 칸 구성에 맞춘다
-> 상태: 진행 중
+> 상태: 완료
 
 ## 관련 파일
 
@@ -18,7 +18,7 @@
 
 ## 작업
 
-- [ ] 7.0 마무리
+- [x] 7.0 마무리
     - [x] 7.1 검수 표의 열을 정리한다. 셋이 빠지고 둘이 늘어 **스물셋**이다. `empty_row` 의
           colspan 도 같이 맞춘다 — 안 맞으면 빈 표의 안내 문구가 칸 하나에 갇힌다
         - 열 자체는 Push 1~3 이 이미 옮겼다(`a81ae5f`, `1f8c009`, `c586125`). 남아 있던 것은
@@ -66,5 +66,29 @@
             - 폼 아래 한 줄은 실사로 못 봤다. 운영 DB 의 `companies` 가 0행이라 화면에 행이
               그려지지 않는다 (그 표는 재정규화가 채운다). 행이 있을 때의 문구는
               `tests/test_ui_companies.py` 가 같은 템플릿으로 확인한다
-    - [ ] 7.4 `.claude/docs/data-model.md` 의 칸 목록을 실제와 맞춘다
-        - [ ] 7.4.V 검증(제공 API): 문서의 칸 이름과 `normalized_jobs` 컬럼이 같은지 확인
+    - [x] 7.4 `.claude/docs/data-model.md` 의 칸 목록을 실제와 맞춘다
+        - 문서가 여섯 Push 를 지나며 0015 에 멈춰 있었다. 칸 하나가 아니라 표 셋이 빠져
+          있었으므로 실제 스키마를 읽고 전부 맞췄다. 고친 것:
+            - `normalized_jobs`: 지운 셋(0016)을 빼고 `job_role`(0017)과
+              `parent_company`(0018)를 넣어 스무 칸으로. `company_source`(0019)를 지우고
+              회사명이 두 칸인 이유를 절로 옮겼다
+            - `companies` 표(0020)와 `side_workflows`·`side_runs` 표(0021) 절을 새로 썼다
+            - `job_field_overrides`: `field_name` 이 받는 값이 DB CHECK 17 과 코드 14 로
+              갈려 있다는 사실과 그 이유를 적었다. 옛 문서는 여섯이라고 적고 있었다
+            - `job_classifications`: 판정 칸 둘·뽑는 칸 일곱으로. 쓰지 않게 된 컬럼 셋이
+              왜 남아 있는지 적었다
+            - `normalization_rules`: 빠져 있던 `note` 를 넣었다
+            - `app_settings`: 묶음이 둘에서 넷으로 늘었다 (`first_run_limit`, `llm_*`,
+              `s3_*`). 가져오기가 제공자 설정만 옮긴다는 것도 표에 넣었다
+            - `llm_calls.provider`: `지금은 gemini 하나` 를 다섯 제공자로
+        - 곁들여 `.claude/docs/api-contract.md` 의 센 수 셋을 고쳤다 (`일곱` -> `여덟`,
+          `여덟 칸` -> `아홉 칸`). 필드 표와 예시는 이미 맞아서 그대로 두었다
+        - [x] 7.4.V 검증(제공 API): 문서의 칸 이름과 `normalized_jobs` 컬럼이 같은지 확인
+            - 마이그레이션을 임시 DB 에 전부 적용하고 문서의 절마다 칸 표를 긁어 대조했다.
+              열네 표 전부 문서와 스키마의 차집합이 양쪽 다 비었다
+            - `tests/test_migrations.py` 의 `EXPECTED_COLUMNS` 에 있는 표가 전부 문서에
+              절을 갖는다. 그 머리말(`data-model.md 의 컬럼`)이 다시 사실이다
+            - 제공 API: `JobOut` 의 열여덟 필드가 `normalized_jobs` 컬럼 안에 있고,
+              계약 문서 예시의 키 순서와도 같다. 내보내지 않는 것은 `raw_job_id` 와
+              `delivered_at` 둘뿐이다. **실서버의 제공 API 는 부르지 않았다** — 그 경로가
+              `delivered_at` 을 찍는다 (`.claude/rules/data-safety.md`)

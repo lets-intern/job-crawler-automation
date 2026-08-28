@@ -71,7 +71,7 @@ GET /api/jobs?updated_after=<ISO8601>&limit=100&cursor=<opaque>
 }
 ```
 
-`start_date` 부터 `etc_info` 까지 일곱은 나중에 더한 필드다. `deadline` 은 모집 마감일
+`start_date` 부터 `etc_info` 까지 여덟은 나중에 더한 필드다. `deadline` 은 모집 마감일
 그대로이고 `start_date` 가 그 짝이다. `deadline` 의 뜻은 바뀌지 않았다.
 
 **2026-08-28 에 `department`·`job_category`·`headcount` 셋을 뺐다.** 값이 자리에 맞게 들어오지
@@ -104,8 +104,8 @@ GET /api/jobs?updated_after=<ISO8601>&limit=100&cursor=<opaque>
 **근거가 없으면 `null` 이다.** 없는 값을 다른 값으로 채우지 않는다. 빈 값은 "이 공고에는 그
 값이 없다" 는 사실이고, 소비 측은 그 필드를 그리지 않으면 된다.
 
-이 일곱 필드와 `requirements` 는 2026-08-26 부터 **수집이 아니라 본문을 나눠서**
-채운다. 사이트마다 칸 매핑을 적는 방식이 640건에서 절반도 채우지 못했기 때문이다
+위 표에서 `start_date` 를 뺀 여덟 필드와 `requirements` 는 2026-08-26 부터 **수집이 아니라
+본문을 나눠서** 채운다. 사이트마다 칸 매핑을 적는 방식이 640건에서 절반도 채우지 못했기 때문이다
 (`.claude/tasks/memos/보류/llm-classify/prd-llm-classify.md`). 소비 측이 보는 필드 이름과 뜻은 그대로다 —
 바뀐 것은 값이 어디서 오는가뿐이다.
 
@@ -122,7 +122,7 @@ GET /api/jobs?updated_after=<ISO8601>&limit=100&cursor=<opaque>
 
 **예외는 없다. 2026-08-26 이전에 수집된 행에도 같은 목록이 성립한다.** 그때는 이 두 값을
 사이트에서 그대로 받아 적었고 `raw_jobs` 는 append-only 라 그 값이 남아 있지만, 정규화가
-여덟 칸을 분류 결과로 덮어 `Permanent` 같은 사이트 표기는 `normalized_jobs` 에 남지 않는다.
+아홉 칸을 분류 결과로 덮어 `Permanent` 같은 사이트 표기는 `normalized_jobs` 에 남지 않는다.
 소비 측은 수집 시점을 따질 필요가 없다.
 
 **2026-08-28 에 회사명을 두 칸으로 갈랐다.** 한 칸에 "그 채용 사이트를 운영하는 기업" 과
