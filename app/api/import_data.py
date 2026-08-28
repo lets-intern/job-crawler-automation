@@ -21,8 +21,12 @@ SSH 와 `docker cp` 로 파일을 밀어 넣게 되고, 그것은 이 서비스�
 
 규칙 자체는 가져온다. 화면에서 한 줄씩 만든 것이라 안 가져오면 새 서버에서 전부 다시 만들어야
 한다. 다만 들여오는 방식은 다른 테이블과 같다 — 없는 것만 더하고, 있는 규칙은 건드리지
-않는다. 같은 규칙인지는 `field_name`, `rule_type`, `rule_config_json`, `priority` 넷으로
-가른다. `note` 는 사람이 읽는 이름표라 판정에 넣지 않는다 — 넣으면 메모만 다른 같은 규칙이
+않는다. **지워진 칸에 걸린 규칙은 들이지 않는다.** 0016 이전에 뜬 파일에는 `department`
+규칙이 들어 있고, 그것이 들어오면 `load_rules` 가 터져 그 뒤의 정규화가 한 건도 되지 않는다
+(`migrations/0016_drop_department_category_headcount.sql`).
+
+같은 규칙인지는 `field_name`, `rule_type`, `rule_config_json`, `priority` 넷으로 가른다.
+`note` 는 사람이 읽는 이름표라 판정에 넣지 않는다 — 넣으면 메모만 다른 같은 규칙이
 두 벌 쌓이고, 정규화는 그 둘을 차례로 태운다.
 
 순서는 규칙이 먼저, 정규화가 나중이다. 그래야 방금 들여온 규칙이 방금 들여온 공고에 적용된다.
@@ -66,6 +70,7 @@ from app.normalize.engine import (
     insert_normalized,
     load_rules,
 )
+from app.normalize.rules import NORMALIZED_FIELDS
 
 logger = logging.getLogger(__name__)
 
@@ -430,6 +435,10 @@ def _merge_rules(conn: sqlite3.Connection, source: sqlite3.Connection) -> tuple[
     같은 규칙인지는 `field_name`, `rule_type`, `rule_config_json`, `priority` 넷으로 가른다.
     `note` 는 사람이 읽는 이름표라 판정에 넣지 않는다 — 넣으면 메모만 다른 같은 규칙이 두 벌
     쌓이고, 정규화는 그 둘을 차례로 태운다.
+
+    `NORMALIZED_FIELDS` 에 없는 칸의 규칙은 건너뛴 것으로 센다. 화면으로는 저장할 수 없는
+    규칙이라 (`app/normalize/rules.py` 의 `build_rule`) 파일로 들어오는 길만 열어 둘 이유가
+    없고, 들어오면 `load_rules` 가 그 파일의 공고 전부를 정규화하지 못한다.
     """
     columns = "field_name, rule_type, rule_config_json, priority"
     known = {
@@ -446,7 +455,7 @@ def _merge_rules(conn: sqlite3.Connection, source: sqlite3.Connection) -> tuple[
             str(row["rule_config_json"]),
             int(row["priority"]),
         )
-        if key in known:
+        if key in known or row["field_name"] not in NORMALIZED_FIELDS:
             skipped += 1
             continue
         conn.execute(

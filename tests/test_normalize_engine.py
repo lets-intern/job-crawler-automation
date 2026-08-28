@@ -93,19 +93,23 @@ def raw_snapshot(conn: sqlite3.Connection) -> str:
 
 
 def test_trim_collapses_whitespace() -> None:
-    """값이 있는 필드만 채워진다. 나머지는 규칙을 태우지 않고 None 이다."""
+    """값이 있는 필드만 채워진다. `deadline` 만 예외로 "상시모집" 기본값을 갖는다."""
     rule = build_rule("title", "trim", {})
 
     fields = normalize_fields({"title": "  파이썬  \n  백엔드 개발자 "}, [rule])
 
-    assert set(fields) == {*NORMALIZED_FIELDS, "company_source"}
+    assert set(fields) == {*NORMALIZED_FIELDS, "parent_company"}
     assert fields["title"] == "파이썬 백엔드 개발자"
-    assert [name for name, value in fields.items() if value is not None] == ["title"]
+    assert fields["deadline"] == "상시모집"
+    assert [name for name, value in fields.items() if value is not None] == [
+        "title",
+        "deadline",
+    ]
 
 
 def test_trim_with_strip_chars() -> None:
-    rule = build_rule("department", "trim", {"collapse_whitespace": False, "strip_chars": "-· "})
-    assert normalize_fields({"department": "-· 개발 ·-"}, [rule])["department"] == "개발"
+    rule = build_rule("work_location", "trim", {"collapse_whitespace": False, "strip_chars": "-· "})
+    assert normalize_fields({"work_location": "-· 판교 ·-"}, [rule])["work_location"] == "판교"
 
 
 def test_regex_removes_matched_text() -> None:
@@ -114,18 +118,18 @@ def test_regex_removes_matched_text() -> None:
 
 
 def test_mapping_replaces_exact_value() -> None:
-    rule = build_rule("department", "mapping", {"map": {"Engineering": "개발"}})
-    assert normalize_fields({"department": "Engineering"}, [rule])["department"] == "개발"
+    rule = build_rule("work_location", "mapping", {"map": {"Pangyo": "판교"}})
+    assert normalize_fields({"work_location": "Pangyo"}, [rule])["work_location"] == "판교"
 
 
 def test_mapping_keeps_value_without_default() -> None:
-    rule = build_rule("department", "mapping", {"map": {"Engineering": "개발"}})
-    assert normalize_fields({"department": "Design"}, [rule])["department"] == "Design"
+    rule = build_rule("work_location", "mapping", {"map": {"Pangyo": "판교"}})
+    assert normalize_fields({"work_location": "Seoul"}, [rule])["work_location"] == "Seoul"
 
 
 def test_mapping_uses_default_when_missing() -> None:
-    rule = build_rule("department", "mapping", {"map": {"Engineering": "개발"}, "default": "기타"})
-    assert normalize_fields({"department": "Design"}, [rule])["department"] == "기타"
+    rule = build_rule("work_location", "mapping", {"map": {"Pangyo": "판교"}, "default": "기타"})
+    assert normalize_fields({"work_location": "Seoul"}, [rule])["work_location"] == "기타"
 
 
 def test_date_parse_reformats() -> None:
@@ -176,10 +180,14 @@ def test_disabled_rule_is_skipped() -> None:
 
 
 def test_empty_value_skips_rules() -> None:
-    """값이 없는 필드에 규칙을 태우지 않는다. 없는 값이 규칙 실패로 둔갑하지 않는다."""
-    rule = build_rule("deadline", "date_parse", {"formats": ["%Y.%m.%d"]})
-    assert normalize_fields({"deadline": ""}, [rule])["deadline"] is None
-    assert normalize_fields({}, [rule])["deadline"] is None
+    """값이 없는 필드에 규칙을 태우지 않는다. 없는 값이 규칙 실패로 둔갑하지 않는다.
+
+    `deadline` 만 예외로, 규칙을 다 태워도 비면 "상시모집" 기본값이 대신 채워진다.
+    """
+    rule = build_rule("work_location", "date_parse", {"formats": ["%Y.%m.%d"]})
+    assert normalize_fields({"work_location": ""}, [rule])["work_location"] is None
+    assert normalize_fields({}, [rule])["work_location"] is None
+    assert normalize_fields({}, [rule])["deadline"] == "상시모집"
 
 
 def test_no_rules_passes_values_through() -> None:
@@ -189,7 +197,88 @@ def test_no_rules_passes_values_through() -> None:
     assert fields["body"] == record["body"]
     # 픽스처의 셀렉터가 뽑지 않는 필드는 NULL 이다
     assert fields["company"] is None
-    assert fields["deadline"] is None
+    # `deadline` 만 예외로 "상시모집" 기본값이 채워진다(2026-08-29 결정)
+    assert fields["deadline"] == "상시모집"
+
+
+def test_마감을_못_뽑으면_상시모집으로_채워진다() -> None:
+    """2026-08-29 결정. 셀렉터가 마감을 못 뽑거나 규칙이 비웠으면 "상시모집" 을 채운다."""
+    record = fixture_record()
+    assert "deadline" not in record or not record.get("deadline")
+
+    fields = normalize_fields(record, [])
+
+    assert fields["deadline"] == "상시모집"
+
+
+def test_마감이_있으면_상시모집으로_덮지_않는다() -> None:
+    record = {**fixture_record(), "deadline": "2026.09.30"}
+    rule = build_rule("deadline", "date_parse", {"formats": ["%Y.%m.%d"]})
+
+    fields = normalize_fields(record, [rule])
+
+    assert fields["deadline"] == "2026-09-30"
+
+
+def test_규칙이_마감을_비워도_상시모집으로_채워진다() -> None:
+    """`상시채용` 을 빈 값으로 매핑하는 규칙(운영 규칙)과 같은 경로다."""
+    record = {**fixture_record(), "deadline": "상시채용"}
+    rule = build_rule("deadline", "mapping", {"map": {"상시채용": ""}})
+
+    fields = normalize_fields(record, [rule])
+
+    assert fields["deadline"] == "상시모집"
+
+
+def test_판단_못한_경력_구분은_무관으로_채워진다() -> None:
+    """2026-08-28 결정. 분류가 `career_level` 을 비웠으면 "무관" 을 대신 넣는다.
+
+    사이트가 경력을 아예 언급하지 않은 공고 대부분이 실제로 경력무관이라, 근거 없어 판단
+    못한 것과 결과적으로 같은 값이 되는 편이 검수 화면에서 유용하다. 다른 여덟 칸은 이
+    규칙을 타지 않는다 — 빈 칸이 그대로 있어야 못 뽑은 것을 구분할 수 있다.
+    """
+    record = fixture_record()
+    fields = normalize_fields(record, [], classification={"career_level": ""})
+    assert fields["career_level"] == "무관"
+    assert fields["employment_type"] is None
+
+
+def test_경력_구분이_있으면_무관으로_덮지_않는다() -> None:
+    record = fixture_record()
+    fields = normalize_fields(record, [], classification={"career_level": "경력"})
+    assert fields["career_level"] == "경력"
+
+
+def test_분류가_없으면_경력_구분도_채우지_않는다() -> None:
+    """분류가 아직 안 돈 건은 규칙이 만든 값(대개 비어 있음) 그대로다."""
+    record = fixture_record()
+    fields = normalize_fields(record, [], classification=None)
+    assert fields["career_level"] is None
+
+
+def test_직무_대분류_소분류가_분류_결과로_채워진다() -> None:
+    """`job_major`/`job_minor` 도 다른 아홉 칸과 같은 경로(`CLASSIFY_FIELDS`)를 탄다."""
+    record = fixture_record()
+    fields = normalize_fields(
+        record, [], classification={"job_major": "IT·개발", "job_minor": "서버·백엔드"}
+    )
+    assert fields["job_major"] == "IT·개발"
+    assert fields["job_minor"] == "서버·백엔드"
+
+
+def test_대분류만_있고_소분류가_비면_소분류는_None이다() -> None:
+    """본문으로 소분류가 갈리지 않는 공고. 찍어서 채우지 않는다(PRD 2절)."""
+    record = fixture_record()
+    fields = normalize_fields(record, [], classification={"job_major": "IT·개발"})
+    assert fields["job_major"] == "IT·개발"
+    assert fields["job_minor"] is None
+
+
+def test_분류가_없으면_직무_분류도_비어있다() -> None:
+    record = fixture_record()
+    fields = normalize_fields(record, [], classification=None)
+    assert fields["job_major"] is None
+    assert fields["job_minor"] is None
 
 
 def test_load_rules_reads_stored_rows(conn: sqlite3.Connection) -> None:
@@ -282,7 +371,9 @@ def test_rule_that_empties_a_value_stops_the_chain() -> None:
     """규칙이 값을 비우면 뒤 규칙에 넘기지 않는다.
 
     "상시채용" 을 mapping 으로 비운 뒤 date_parse 가 그 빈 값을 읽으려 하면 실패가 나고,
-    그 공고가 통째로 `normalized_jobs` 에서 빠진다. deadline 만 NULL 이 되고 공고는 남아야 한다.
+    그 공고가 통째로 `normalized_jobs` 에서 빠진다. `deadline` 은 규칙이 비운 자리를
+    "상시모집" 기본값이 채운다(2026-08-29) — 그래서 이 체인이 여기서 멈춘 것과, 멈추지
+    않고 date_parse 까지 갔다면 났을 실패가 다르다는 것은 별도로 확인해야 한다.
     """
     rules = [
         build_rule(
@@ -303,7 +394,7 @@ def test_rule_that_empties_a_value_stops_the_chain() -> None:
 
     out = normalize_fields({"title": "개발자", "deadline": "상시채용"}, rules)
 
-    assert out["deadline"] is None
+    assert out["deadline"] == "상시모집"
     assert out["title"] == "개발자"
 
 

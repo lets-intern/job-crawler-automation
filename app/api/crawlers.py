@@ -26,9 +26,21 @@
 사이트에 없는 주소를 지어내 가져오지 않는다. 비우면 목록 페이지만 보고 생성하며, 상세
 셀렉터는 확인하지 않은 가설로 남는다 — 실패가 아니라 건너뛴 것이라 응답에서 갈라 적는다.
 
-`default_company` 는 회사명이 페이지에 없는 사이트를 위한 운영자 입력이고 선택이다. 운영자가
-타이핑한 값이라 추출 결과가 아니고, 그래서 `crawlers` 에만 있고 `raw_jobs` 에는 가지 않는다
-(`.claude/rules/data-safety.md`). 어느 회사명이 쓰일지는 정규화 단계가 정한다.
+`default_company` 는 **모회사 이름이다** (2026-08-29 결정 전에는 "회사명이 페이지에 없는
+사이트를 위한 선택 입력"이었다). 운영자가 타이핑한 값이라 추출 결과가 아니고, 그래서
+`crawlers` 에만 있고 `raw_jobs` 에는 가지 않는다 (`.claude/rules/data-safety.md`). 정규화의
+`parent_company` 가 이 값을 그대로 옮긴다(`app/normalize/engine.py` 의 `read_parent_company`) —
+비어 있으면 크롤러 이름을 대신 쓰던 옛 동작은 더 이상 없다.
+
+**등록 화면은 이 칸을 필수로 받는다.** `app/api/ui_crawlers.py` 의 `create_crawler_fragment`
+가 폼 제출을 걸러낸다 — 모회사가 운영자가 적은 값인지 시스템이 짐작한 값인지 화면에서 갈리지
+않게 하려는 것이다. 사이트가 계열사를 하나만 갖고 있으면(토스·우아한형제들처럼) 그 크롤러
+이름을 그대로 적으면 되고, 그것도 운영자가 정한 값이다.
+
+**이 파일의 `create_crawler`/`update_company` 자체는 막지 않는다.** 막으면 이 함수를 그대로
+쓰는 기존 테스트·가져오기 경로가 전부 깨진다. 필수 검사는 사람이 마주치는 등록 화면 한 곳에
+있다. 이 결정 전에 등록돼 비어 있던 행은 `migrations/0022_backfill_default_company.sql` 이
+한 번 채웠다.
 """
 
 from __future__ import annotations
@@ -114,7 +126,8 @@ class CrawlerCreate(BaseModel):
     # 선택이다. 상세를 JS 로 그려 주소가 따로 없는 사이트가 있다
     detail_url: str = ""
     name: str = ""
-    # 회사명이 페이지에 없는 사이트를 위한 운영자 입력. 없으면 비운다
+    # 모회사 이름. 등록 화면이 필수로 받지만 이 필드 자체는 비울 수 있다 — 화면 밖 호출부
+    # (테스트, 가져오기)까지 막으면 파급이 너무 크다
     default_company: str = ""
     # 비우는 것이 기본이고, 그때는 등록이 스스로 정한다 — 정적으로 목록이 나오면 정적,
     # 안 나오면 렌더다. 값을 주면 그 모드로만 만들고 판정이 그것을 덮어쓰지 않는다.
@@ -142,7 +155,7 @@ class NameUpdate(BaseModel):
 
 
 class CompanyUpdate(BaseModel):
-    """운영자가 적어 둔 회사명만 바꾼다. 빈 문자열은 지운다는 뜻이다."""
+    """모회사 이름만 바꾼다. 빈 문자열은 지운다는 뜻이다."""
 
     default_company: str = ""
 
@@ -931,10 +944,14 @@ def update_company(
     payload: CompanyUpdate,
     conn: Annotated[sqlite3.Connection, Depends(get_connection)],
 ) -> CompanyOut:
-    """운영자가 적어 둔 회사명을 고친다.
+    """모회사 이름을 고친다. 빈 문자열은 지운다는 뜻이다.
 
-    이 값은 `normalized_jobs` 에 즉시 반영되지 않는다. 고친 뒤 재정규화를 돌려야 `operator`
-    로 확정된 행이 새 값을 받는다 (`.claude/tasks/done/job-crawler/tasks-job-crawler-push7.md`).
+    등록 화면(`POST /ui/crawlers`)은 이 칸을 필수로 받지만, 이 API 자체는 막지 않는다 —
+    비우는 것을 막으면 이미 등록된 크롤러의 모회사를 지웠다가 다시 정하는 정상적인 편집
+    흐름까지 막는다 (`app/api/ui_crawlers.py` 가 등록 시점에 이미 걸러낸다).
+
+    이 값은 `normalized_jobs` 에 즉시 반영되지 않는다. 고친 뒤 재정규화를 돌려야 새 값이
+    반영된 행이 나온다 (`.claude/tasks/done/job-crawler/tasks-job-crawler-push7.md`).
     """
     row = conn.execute("SELECT id FROM crawlers WHERE id = ?", (crawler_id,)).fetchone()
     if row is None:

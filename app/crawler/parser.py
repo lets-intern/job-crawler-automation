@@ -105,10 +105,16 @@ class ListParseResult:
 
 @dataclass(frozen=True)
 class DetailParseResult:
-    """`fields` 는 상세 셀렉터 이름 그대로다. `missing` 은 셀렉터는 있는데 0개 매칭인 선택 필드."""
+    """`fields` 는 상세 셀렉터 이름 그대로다. `missing` 은 셀렉터는 있는데 0개 매칭인 선택 필드.
+
+    `source_text` 는 상세 컨테이너를 가공 없이 편 글자다. 뽑지 못하면 빈 문자열이고, 그 건은
+    지금까지와 같은 모양으로 적재된다 (`app/crawler/runner.py` 의 `_record`). API 상세는
+    이 값을 만들지 않는다 (`.claude/site-recipes/source-text-container.md`).
+    """
 
     fields: dict[str, str]
     missing: list[str]
+    source_text: str = ""
 
 
 def list_only(selectors: ListSelectors) -> bool:
@@ -214,7 +220,9 @@ def parse_detail(html: str, selectors: DetailSelectors) -> DetailParseResult:
     if unreadable:
         raise FieldParseError(f"상세에서 필수 필드를 읽지 못했다: {', '.join(unreadable)}")
 
-    return DetailParseResult(fields=fields, missing=missing)
+    return DetailParseResult(
+        fields=fields, missing=missing, source_text=source_text(soup, selectors.body)
+    )
 
 
 def select_nodes(scope: BeautifulSoup | Tag, selector: str, name: str) -> list[Tag]:
@@ -283,13 +291,60 @@ def field_text(scope: BeautifulSoup | Tag, selector: str, name: str) -> str:
     nodes = select_nodes(scope, selector, name)
     if not nodes:
         return ""
+    return block_text(nodes[0])
 
-    # 원본을 복사해서 손댄다. 같은 트리에서 다른 필드도 뽑으므로 트리를 바꾸면 안 된다.
-    node = copy.copy(nodes[0])
-    for tag in node.find_all(BLOCK_TAGS):
+
+def block_text(node: Tag) -> str:
+    """블록 태그 경계에 줄바꿈을 넣고 뽑은 텍스트.
+
+    원본을 복사해서 손댄다. 같은 트리에서 다른 필드도 뽑으므로 트리를 바꾸면 안 된다.
+    """
+    copied = copy.copy(node)
+    for tag in copied.find_all(BLOCK_TAGS):
         tag.insert_before("\n")
         tag.insert_after("\n")
-    return node.get_text()
+    return copied.get_text()
+
+
+# 상세 컨테이너 안에 남아 있어도 이 공고의 내용이 아닌 것. 카카오 상세의 `div.aside_board`
+# 가 같은 직군의 다른 공고 열한 건을 담고 있었고, 그것이 열한 픽스처에서 이 목록이 걸린
+# 유일한 자리다 (`.claude/site-recipes/source-text-container.md`).
+PAGE_FURNITURE: str = "header, nav, footer, aside, [class*=aside], [class*=footer], [class*=gnb]"
+
+
+def source_text(soup: BeautifulSoup, body_selector: str) -> str:
+    """상세 원문. 본문 셀렉터가 잡은 노드의 **부모**를 가공 없이 편 글자다.
+
+    본문만 담으면 이름표로 붙은 값(회사·마감·근무지·경력)이 원문 밖에 남고, 조상을 더
+    올리면 목록 화면의 필터와 다른 공고가 섞인다 — 네이버는 조상 3단계에서 3,880자가
+    6,797자가 됐다. 열한 픽스처를 재고 부모 한 단계로 정했다
+    (`.claude/site-recipes/source-text-container.md`).
+
+    페이지 부속은 뺀다. 원문은 근거 검사가 "이 글자가 있나" 로 읽는 값이라, 푸터의 회사
+    주소나 옆에 붙은 다른 공고의 근무지가 이 공고의 값으로 통과하면 안 된다
+    (`.claude/tasks/todo/prd-side-workflows.md` 4절).
+
+    부모가 `body` 나 `html` 이면 본문 노드를 그대로 쓴다. 페이지 전체가 원문이 되면 GNB 와
+    푸터가 통째로 들어온다 — 잰 일곱 곳에서 그 글자가 730자에서 5,456자였다.
+
+    뽑지 못하면 빈 문자열이다. 원문이 없다고 공고를 버리지 않는다.
+    """
+    if not body_selector.strip():
+        return ""
+
+    nodes = select_nodes(soup, body_selector, "detail.body")
+    if not nodes:
+        return ""
+
+    body = nodes[0]
+    parent = body.parent
+    if parent is None or parent.name in ("body", "html", "[document]"):
+        return block_text(body)
+
+    container = copy.copy(parent)
+    for tag in container.select(PAGE_FURNITURE):
+        tag.decompose()
+    return block_text(container)
 
 
 def _link(node: Tag, selectors: ListSelectors, index: int) -> LinkResult:

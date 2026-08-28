@@ -10,13 +10,23 @@
 
 `raw_jobs` 는 읽기만 한다. `delivered_at` 도 그대로 둔다 — 소비 측이 이미 가져간 표시를
 지우면 같은 데이터가 다시 넘어간다 (`.claude/rules/data-safety.md`). 아래 UPDATE 문이
-규칙이 만드는 컬럼과 `company_source`, `normalized_at` 만 적는 것이 그 보장이다.
+규칙이 만드는 컬럼과 `parent_company`, `normalized_at` 만 적는 것이 그 보장이다.
 
 `job_field_overrides` 도 읽기만 한다. 재정규화는 규칙을 다시 태우는 동작이지 사람이 검수한
 값을 지우는 동작이 아니다. 규칙 위에 보정을 덮는 순서는 `app/normalize/engine.py` 가 정한다.
 
 `crawl_runs` 에도 쓰지 않는다. 재정규화는 크롤링 실행이 아니고, 섞어 쓰면 워크플로우의
 성공·실패 통계가 크롤링과 무관한 이유로 움직인다.
+
+## 회사 행은 여기서도 생긴다
+
+이미 쌓인 공고에는 이 경로가 유일한 등록 길이다. 아래 UPDATE 는 `insert_normalized` 를 지나지
+않으므로 회사 등록을 여기서 한 번 더 부른다 (`app/companies.py`). 부르지 않으면 규칙으로
+회사명을 고쳐 재정규화한 뒤에도 새 이름의 행이 없고, 운영자는 로고를 붙일 회사를 화면에서
+찾지 못한다.
+
+있는 행은 덮지 않으므로 몇 번을 돌려도 로고와 모회사 이름은 그대로다. 옛 이름의 행은 남는다 —
+지우는 것은 운영자가 한다.
 
 ## 진행 상황
 
@@ -37,8 +47,9 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+from app import companies
 from app.normalize.engine import (
-    COMPANY_SOURCE,
+    PARENT_COMPANY,
     NormalizeError,
     RawJobMissingError,
     insert_normalized,
@@ -175,7 +186,7 @@ def renormalize(conn: sqlite3.Connection, progress: BackfillProgress) -> Backfil
 def rewrite_one(conn: sqlite3.Connection, raw_job_id: int, rules: list[Rule]) -> None:
     """한 건을 다시 정규화한다. 행이 없으면 새로 넣는다.
 
-    UPDATE 가 적는 컬럼은 `NORMALIZED_FIELDS` 와 `company_source`, `normalized_at` 뿐이다.
+    UPDATE 가 적는 컬럼은 `NORMALIZED_FIELDS` 와 `parent_company`, `normalized_at` 뿐이다.
     `delivered_at` 은 목록에 없고, 그래서 소비 측이 가져간 표시는 재정규화를 몇 번 돌려도
     그대로다.
 
@@ -183,15 +194,20 @@ def rewrite_one(conn: sqlite3.Connection, raw_job_id: int, rules: list[Rule]) ->
     재정규화가 같은 칸을 쓴다 — 0011 이 더한 열 칸이 여기 없어서, 재정규화로는 그 칸이
     영원히 NULL 로 남고 있었다.
 
-    운영자가 `crawlers.default_company` 를 고쳤으면 그 값이 이 경로로 반영된다. 회사명을
-    파싱값으로 확정한 행은 운영자값을 고쳐도 같은 파싱값이 다시 이겨서 바뀌지 않는다.
+    회사 행도 여기서 보장한다. 이 경로는 UPDATE 라 `insert_normalized` 의 등록을 지나지
+    않는데, 이미 쌓인 공고에는 재정규화가 유일한 등록 길이다.
+
+    운영자가 `crawlers.default_company` 를 고쳤으면 그 값이 이 경로로 `parent_company` 에
+    반영된다. 공고에서 뽑은 `company` 는 그 영향을 받지 않는다 — 두 칸이 갈린 뒤로 한쪽을
+    고치는 일이 다른 쪽을 건드리지 않는다.
 
     사람이 고친 필드는 규칙을 다시 태워도 사람 값으로 남는다. 규칙이 좋아지는 것은 보정하지
     않은 필드뿐이고, 그것이 검수가 살아남는 유일한 순서다.
     """
     _, fields = normalized_values(conn, raw_job_id, rules)
+    companies.register(conn, fields["company"], fields[PARENT_COMPANY])
     # 컬럼 이름은 이 모듈이 임포트한 상수에서만 온다. 밖에서 오는 값이 들어오지 않는다
-    columns = (*NORMALIZED_FIELDS, COMPANY_SOURCE)
+    columns = (*NORMALIZED_FIELDS, PARENT_COMPANY)
     cursor = conn.execute(
         f"""
         UPDATE normalized_jobs

@@ -1,13 +1,16 @@
-"""본문 하나를 열한 칸으로 나눈다.
+"""공고 하나를 아홉 칸으로 나눈다.
 
-수집은 어느 사이트나 확실히 주는 여섯 칸만 한다. 나머지를 나누는 것은 본문을 읽는 이쪽 일이다
+수집은 어느 사이트나 확실히 주는 여섯 칸만 한다. 나머지를 나누는 것은 공고를 읽는 이쪽 일이다
 (`.claude/tasks/memos/보류/llm-classify/prd-llm-classify.md`).
 
 ## 칸이 두 가지다
 
-**뽑는 칸** 여덟은 본문 글자를 그대로 옮긴다. 옮긴 값은 본문에서 그대로 찾을 수 있어야 한다.
+**뽑는 칸** 일곱은 원문 글자를 그대로 옮긴다. 옮긴 값은 원문에서 그대로 찾을 수 있어야 한다.
+여섯은 본문에서 오고 `job_role` 하나만 **제목**에서 온다 — 열한 사이트에서 제목이 직무를
+말하는 곳이 아홉이고 그중 본문이 같은 글자를 되풀이하는 곳은 셋뿐이었다
+(`tests/test_job_role_source.py`).
 
-**판정하는 칸** 셋(직군·고용형태·경력 구분)은 본문을 읽고 닫힌 목록에서 고른다. 목록은
+**판정하는 칸** 둘(고용형태·경력 구분)은 본문을 읽고 닫힌 목록에서 고른다. 목록은
 응답 스키마의 enum 으로 강제하고, 고른 값에는 근거 문장이 따라온다. 그 문장이 본문에 없으면
 판정을 버린다 — 읽고 고른 것인지 지어낸 것인지 가를 방법이 그것뿐이다.
 
@@ -16,14 +19,22 @@
 ## 지키는 것
 
 **근거가 없는 것은 빈 칸이다.** 모델이 그럴듯하게 채우면 소비 측이 그것을 사실로 노출한다.
-받은 값은 `app/classify/grounding.py` 가 그 자리에서 본문에 돌려 보고, 근거를 못 찾은 칸은
-버리고 `dropped` 에 이름을 남긴다 (`.claude/rules/llm.md`).
+받은 값은 `app/classify/grounding.py` 가 그 자리에서 제목과 본문에 돌려 보고, 근거를 못 찾은
+칸은 버리고 `dropped` 에 이름을 남긴다 (`.claude/rules/llm.md`).
 
-**보내는 것은 본문뿐이고 상한이 있다.** 원본 HTML 도 페이지도 보내지 않는다. 본문이 상한을
-넘으면 잘라 보내고 그 사실을 `notes` 에 남긴다. 자른 것으로 무엇을 놓쳤는지는 응답을 보는
-사람이 알아야 한다.
+**보내는 것은 제목과 상세 원문뿐이고 상한이 있다.** 원본 HTML 도 페이지도 보내지 않는다.
+원문이 없는 건은 본문으로 떨어진다 (`app/classify/store.py`). 상한을 넘으면 잘라 보내고 그
+사실을 `notes` 에 남긴다. 자른 것으로 무엇을 놓쳤는지는 응답을 보는 사람이 알아야 한다.
+제목은 자르지 않는다 — 한 줄이고, 그 한 줄이 `job_role` 의 출처다.
 
 **깨진 응답만 1회 다시 묻는다.** 스키마에 없는 칸을 지어낸 응답은 다시 물어도 같은 답이 온다.
+
+**이미 값이 있는 칸은 채우지 않고 제안한다.** 수집이 채우는 여섯 칸 중 `company`·`deadline`·
+`start_date` 셋은 값이 있으면 아무리 근거가 있어도 그 자리에서 덮지 않는다 — `deadline` 은
+마감 지난 공고를 거르고 `company` 는 계열사를 가르는 값이라 모델 판단 하나로 바뀌면 안 된다
+(`.claude/tasks/todo/prd-side-workflows.md` 6절). 대신 `ClassificationResult.suggestions` 로
+나가고, 저장은 `job_field_suggestions` 하나뿐이다 — 사람이 검수 화면에서 수락해야 값이
+바뀐다.
 
 호출 자체와 비용 기록은 고른 제공자 항목이 한다 (`app/llm/`). 셀렉터 생성과 같은 경로이고,
 **이 파일은 어느 제공자인지 모른다** — 그 선택은 설정이 정한다 (`app/llm/providers.py`).
@@ -32,18 +43,24 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.classify.grounding import ground
+from app.classify.grounding import ground, loose, missing_lines
 from app.classify.schema import (
     CLASSIFY_FIELDS,
+    COLLECTED_REVIEW_FIELDS,
+    COLLECTED_REVIEW_LABELS,
+    JOB_MAJOR,
+    JOB_MINOR,
     JUDGE_CHOICES,
     UNDECIDED,
     Classification,
     ClassifySchemaError,
     parse_classification,
+    suggestion_field,
+    suggestion_reason_field,
 )
 from app.config import Settings, get_settings
 from app.llm.base import LlmCallError, Provider, Usage
@@ -58,54 +75,71 @@ FEATURE = "classify"
 # 깨진 응답에 한해 한 번 더. 2회를 넘기지 않는다 (`.claude/rules/llm.md`).
 MAX_ATTEMPTS = 2
 
-# 한 번에 보내는 본문의 상한. 2026-08-26 기준 저장된 640건의 최대 본문이 11,584자라 지금은
-# 아무것도 잘리지 않는다. 그래도 상한을 두는 것은, 상한이 없으면 사이트 하나가 본문에 페이지
-# 전체를 담기 시작한 날 그것이 그대로 나가기 때문이다
+# 한 번에 보내는 글의 상한. 상한이 없으면 사이트 하나가 페이지 전체를 담기 시작한 날 그것이
+# 그대로 나간다.
+#
+# 보내는 값이 본문에서 상세 원문으로 바뀌어(Push 9) 2026-08-28 에 다시 쟀고, **그대로 둔다.**
+# 열한 픽스처에서 원문이 가장 긴 곳이 토스 10,312자이고 그다음이 네이버 3,872자다. 일곱 곳
+# 전부 지금 상한 안이라 원문 때문에 잘리는 건이 없다 — 올릴 근거가 측정에 없다
+# (`.claude/site-recipes/source-text-container.md`).
+#
+# 상한을 넘는 것은 원문이 아니라 LG 의 본문 38,019자다. LG 는 상세가 API 라 원문을 뽑지
+# 않아 이 값은 Push 9 로 달라지지 않았고, 그 하나를 위해 상한을 세 배로 올리는 것은 그 뒤가
+# 무엇인지 재 본 뒤의 일이다. 지금은 잘리고 잘린 사실이 `notes` 에 남는다
 MAX_BODY_CHARS = 12000
 
 _SYSTEM_INSTRUCTION = (
-    "너는 채용공고 본문을 정해진 칸으로 나눈다. "
-    "뽑는 칸에는 본문에 있는 글자만 그대로 옮기고, 판정하는 칸은 본문을 읽고 주어진 목록에서 "
+    "너는 채용공고를 정해진 칸으로 나눈다. "
+    "뽑는 칸에는 공고에 있는 글자만 그대로 옮기고, 판정하는 칸은 본문을 읽고 주어진 목록에서 "
     "고른 뒤 그렇게 고른 근거 문장을 본문에서 그대로 옮겨 적는다. "
     "요약하지 않고, 다듬지 않고, 없는 것을 지어내지 않는다."
 )
 
-_PROMPT = """아래는 채용공고 본문이다. 이것을 정해진 칸으로 나눈다.
+_PROMPT = """아래는 채용공고의 제목과 본문이다. 이것을 정해진 칸으로 나눈다.
 
-# 뽑는 칸 — 본문에 있는 글자를 그대로 옮긴다
+# 뽑는 칸 — 있는 글자를 그대로 옮긴다
 
+- job_role: 직무. **제목에서만 옮긴다.** 그 공고가 어떤 일을 할 사람을 뽑는지 제목이 말하는
+  부분이다. 회사명·연도·`경력사원 채용`·`영입` 같은 말은 빼고 직무를 가리키는 부분만 남긴다.
+  제목이 직무를 말하지 않으면(`전 직군 채용`, `신입사원 채용`) 빈 문자열로 둔다
 - duties: 주요 업무·담당 업무
 - requirements: 자격요건·지원자격
 - preferred: 우대사항
 - hiring_process: 전형 절차
 - work_location: 근무지
-- headcount: 모집 인원
-- department: 조직·부서
-- etc_info: 위 어디에도 맞지 않는 나머지
+- etc_info: 위 어디에도 맞지 않는, **이 공고만의** 안내(전형 유의사항, 제출 서류, 보훈·장애인
+  우대 문구 등)
 
 규칙:
-- **본문에 있는 글자를 그대로 옮긴다.** 말을 바꾸거나 요약하거나 정리하지 않는다. 옮긴 값은
-  본문에서 그대로 찾을 수 있어야 한다.
-- **본문에 없는 칸은 빈 문자열로 둔다.** 짐작해서 채우지 않는다.
+- **있는 글자를 그대로 옮긴다.** 말을 바꾸거나 요약하거나 정리하지 않는다. 옮긴 값은
+  원문에서 그대로 찾을 수 있어야 한다 — `job_role` 은 제목에서, 나머지 여섯은 본문에서.
+- **원문에 없는 칸은 빈 문자열로 둔다.** 짐작해서 채우지 않는다.
 - 여러 줄이면 본문의 줄 그대로 줄바꿈으로 잇는다. 한 칸에 들어갈 내용이 본문 여러 곳에
   흩어져 있으면 그 조각들을 줄바꿈으로 잇되, 없는 연결 문장을 지어내 붙이지 않는다.
 - 어느 칸에도 맞지 않는 내용만 etc_info 에 모은다. 본문 전체를 etc_info 에 넣지 않는다.
+- **회사 소개 문구·슬로건·화면 UI 문구는 어느 칸에도 옮기지 않는다.** "간편하면서도 안전한
+  금융을 만든다" 같은 회사 소개, "N개 계열사·N개의 포지션이 열려 있어요"·"1개 포지션" 같은
+  화면 카운트 문구, 팀 전체 소개(회사가 무슨 일을 하는 팀인지 설명하는 문단)는 이 공고 하나만
+  말하는 정보가 아니라 옮기지 않는다. 공고 자체에 대한 안내만 etc_info 에 담는다.
 
 # 판정하는 칸 — 본문을 읽고 목록에서 고른다
 
-- job_category: 직군. {job_category}
 - employment_type: 고용형태. {employment_type}
 - career_level: 경력 구분. {career_level}
 
 규칙:
-- **이 셋은 글자가 본문에 그대로 없어도 된다.** 본문을 읽고 판단해서 고른다. `백엔드 개발자를
-  찾습니다` 이면 job_category 는 개발·IT 다. `5년 이상 경험` 이면 career_level 은 경력이다.
+- **이 둘은 글자가 본문에 그대로 없어도 된다.** 본문을 읽고 판단해서 고른다. `채용 후 정규직
+  전환` 이면 employment_type 은 인턴이다. `5년 이상 경험` 이면 career_level 은 경력이다.
 - **반드시 위 목록에 있는 값만 쓴다.** 목록에 없는 값을 새로 만들지 않는다. 어디에도 맞지
   않으면 목록의 기타를, 본문만으로는 판단할 수 없으면 판단불가 를 쓴다.
-- 고른 칸마다 `job_category_evidence` 처럼 `_evidence` 가 붙은 자리에 **그렇게 판단한
+- 고른 칸마다 `employment_type_evidence` 처럼 `_evidence` 가 붙은 자리에 **그렇게 판단한
   근거가 되는 본문 문장을 그대로 옮겨 적는다.** 한 문장이면 된다. 본문에 없는 문장을 적지
   않는다. 근거를 적을 수 없으면 그 칸을 판단불가 로 둔다.
-- 회사명·공고 제목·모집 시작일·마감일은 어느 칸에도 넣지 않는다. 그 넷은 따로 수집한다.
+- 회사명·모집 시작일·마감일은 위 칸 어디에도 넣지 않는다. 그 셋을 원문과 견주는 자리는
+  값이 이미 있을 때만 아래에 따로 나온다. 제목도 `job_role` 말고는 어느 칸에도 넣지 않는다.
+{taxonomy_block}{current_values_block}
+[제목]
+{title}
 
 [본문]
 {body}
@@ -136,7 +170,7 @@ class ClassifyError(RuntimeError):
 class ClassificationResult:
     """분류 한 건의 결과.
 
-    `fields` 는 열한 칸 전부를 갖는다. 채우지 못한 칸은 빈 문자열이고, 근거를 찾지 못해 버린
+    `fields` 는 아홉 칸 전부를 갖는다. 채우지 못한 칸은 빈 문자열이고, 근거를 찾지 못해 버린
     칸도 빈 문자열이다 — 버린 칸의 이름은 `dropped` 에, 이유는 `reasons` 에 있다.
     """
 
@@ -149,6 +183,11 @@ class ClassificationResult:
     # 버린 칸마다 왜 버렸는지. 고칠 자리가 이유마다 다르다
     reasons: dict[str, str] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
+    # 이미 값이 있는 칸(`company`·`deadline`·`start_date`)에 원문이 다르다고 낸 값. 근거
+    # 검사를 통과하고 지금 값과 실제로 다른 것만 남는다 — 저장은 `job_field_suggestions` 뿐이고
+    # 여기 값이 `normalized_jobs` 를 자동으로 덮는 경로는 없다
+    suggestions: dict[str, str] = field(default_factory=dict)
+    suggestion_reasons: dict[str, str] = field(default_factory=dict)
 
     @property
     def filled(self) -> list[str]:
@@ -178,30 +217,162 @@ def chosen(settings: Settings) -> tuple[Provider, str]:
         raise ClassifyError(exc.reason, str(exc)) from exc
 
 
-def build_prompt(body: str) -> tuple[str, list[str]]:
-    """보낼 프롬프트와 남길 메모. 상한을 넘긴 본문은 자르고 그 사실을 적는다.
+def _current_values_block(current_values: Mapping[str, str]) -> str:
+    """ "이미 있는 값" 구역. 값이 하나도 없으면 빈 문자열이라 프롬프트에 아무것도 남지 않는다.
+
+    보낸 칸만 적는다. `COLLECTED_REVIEW_FIELDS` 셋 중 값이 없는 칸까지 나열하면 "빈 칸도
+    비교 대상이다" 로 읽혀 모델이 근거 없이 값을 지어낼 자리가 생긴다.
+    """
+    present = {
+        name: current_values[name].strip()
+        for name in COLLECTED_REVIEW_FIELDS
+        if current_values.get(name, "").strip()
+    }
+    if not present:
+        return ""
+    lines = "\n".join(
+        f"- {COLLECTED_REVIEW_LABELS[name]} ({name}): {value}" for name, value in present.items()
+    )
+    return (
+        "\n# 이미 있는 값 — 원문과 다르면 고쳐 제안한다\n\n"
+        "아래 칸에는 이미 값이 있다. 원문을 읽고 같은 값이면 그 칸의 `_suggestion` 과\n"
+        "`_suggestion_reason` 을 비워 둔다. 값이 다르면 `_suggestion` 에 원문이 말하는 값을,\n"
+        "`_suggestion_reason` 에 왜 다른지 원문에 있는 근거를 한 줄로 적는다. 원문에 없는\n"
+        "근거로 고치지 않는다 — 짐작이 아니라 읽고 판단해야 한다.\n\n"
+        f"{lines}\n"
+    )
+
+
+def _taxonomy_block(tree: Sequence[tuple[str, tuple[str, ...]]]) -> str:
+    """직무 분류 구역. 표가 비어 있으면(씨앗 전이거나 전부 껐으면) 빈 문자열이다.
+
+    대분류·소분류를 두 단계로 나눠 묻지 않고 트리를 통째로 한 번에 보낸다(PRD
+    `job-taxonomy` 2절 "한 번에 부른다") — 어느 소분류가 어느 대분류 밑인지 모델이 알아야
+    엉뚱한 조합(다른 대분류의 소분류)을 고르지 않는다.
+    """
+    if not tree:
+        return ""
+    lines = "\n".join(
+        f"- {major}: {', '.join(minors)}" if minors else f"- {major}" for major, minors in tree
+    )
+    return (
+        "\n# 직무 분류 — 아래 목록에서만 고른다\n\n"
+        "job_major 는 대분류, job_minor 는 그 대분류 밑의 소분류다. 목록에 없는 이름을\n"
+        "새로 만들지 않는다.\n\n"
+        "**가능하면 항상 채운다.** 정확히 들어맞는 대분류가 없어도, 이 공고가 하는 일과\n"
+        "가장 가까운 대분류를 고른다 — 완벽히 맞는 것을 찾는 것이 아니라 다른 후보보다\n"
+        "조금이라도 더 가까운 것을 고르는 일이다. job_major 를 판단불가 로 두는 것은 본문에\n"
+        "무슨 일을 하는 사람을 뽑는지 알 만한 내용이 전혀 없을 때뿐이다.\n\n"
+        "대분류는 골랐는데 그 밑의 소분류 중 맞는 것이 없으면, 그 대분류 목록의 마지막에\n"
+        "있는 `기타`로 시작하는 소분류(예: 기타IT·개발)를 고른다 — job_minor 를 판단불가 로\n"
+        "두지 않는다. job_minor 는 반드시 그 job_major 줄에 적힌 소분류 중에서 고른다 —\n"
+        "다른 대분류의 소분류를 고르지 않는다.\n\n"
+        "고른 값마다 job_major_evidence / job_minor_evidence 에 그렇게 판단한 본문 근거\n"
+        "문장을 그대로 옮겨 적는다. `기타` 소분류를 골랐을 때도 이 공고가 그 대분류의 일을\n"
+        "한다고 볼 수 있는 본문 문장을 그대로 옮겨 적는다 — 근거 문장은 항상 원문에 있는\n"
+        "그대로여야 하고, 소분류 이름 자체를 짐작해 지어내지 않는다.\n\n"
+        f"{lines}\n"
+    )
+
+
+def build_prompt(
+    body: str,
+    title: str = "",
+    current_values: Mapping[str, str] | None = None,
+    taxonomy_tree: Sequence[tuple[str, tuple[str, ...]]] = (),
+) -> tuple[str, list[str]]:
+    """보낼 프롬프트와 남길 메모. 상한을 넘긴 글은 자르고 그 사실을 적는다.
+
+    `body` 는 상세 원문이거나, 원문이 없는 건에서 본문이다 (`app/classify/store.py`).
+
+    `title` 이 `job_role` 의 출처다. 제목을 보내지 않으면 그 칸은 영원히 빈다. 제목이 없는
+    공고는 빈 줄이 들어가고, 모델은 옮길 것이 없어 빈 문자열을 낸다 — 수집이 제목을 못 뽑는
+    것은 수집의 실패이지 여기서 메울 일이 아니다 (`app/crawler/parser.py`).
 
     판정 칸의 목록을 프롬프트에도 적는다. 스키마의 enum 이 이미 강제하지만, 무엇 중에서
     고르는지 모르는 채로 고르면 목록에서 가장 가까운 값이 아니라 첫 값이 나온다. 목록의
     출처는 스키마 하나다 — 여기에 손으로 적으면 두 목록이 갈린다.
+
+    `current_values` 는 `company`·`deadline`·`start_date` 중 이미 채워진 값이다
+    (`app/classify/store.py` 의 `read_current_values`). 무엇이 이미 채워져 있는지 모르면
+    "원문과 다르다" 를 모델이 말할 수 없다 — 값이 없으면 그 칸은 프롬프트에 아예 나오지 않고,
+    나오지 않은 칸을 모델이 지어내 제안하면 근거 검사가 버린다.
+
+    `taxonomy_tree` 는 `app.taxonomy.enabled_tree()` 가 만든 (대분류, 소분류들) 목록이다.
+    빈 목록이면(표가 비었거나 씨앗을 아직 안 넣었으면) 이 구역 자체가 프롬프트에 없다.
     """
     notes: list[str] = []
     text = body
     if len(text) > MAX_BODY_CHARS:
-        notes.append(f"본문이 {len(text)}자라 앞 {MAX_BODY_CHARS}자만 보냈다")
+        notes.append(f"보낸 글이 {len(text)}자라 앞 {MAX_BODY_CHARS}자만 보냈다")
         text = text[:MAX_BODY_CHARS]
     choices = {name: " / ".join((*values, UNDECIDED)) for name, values in JUDGE_CHOICES.items()}
-    return _PROMPT.format(body=text, **choices), notes
+    block = _current_values_block(current_values or {})
+    taxonomy = _taxonomy_block(taxonomy_tree)
+    return (
+        _PROMPT.format(
+            body=text,
+            title=title.strip(),
+            current_values_block=block,
+            taxonomy_block=taxonomy,
+            **choices,
+        ),
+        notes,
+    )
+
+
+def _extract_suggestions(
+    fields: Mapping[str, str], current_values: Mapping[str, str], source: str
+) -> tuple[dict[str, str], dict[str, str]]:
+    """이미 값이 있는 칸의 제안만 추린다. 근거가 없거나 지금 값과 다르지 않으면 버린다.
+
+    `source` 는 근거 검사가 도는 것과 같은 값이다 — 제목과 모델에게 보낸 그 글을 합친 것.
+    """
+    suggestions: dict[str, str] = {}
+    reasons: dict[str, str] = {}
+    for name in COLLECTED_REVIEW_FIELDS:
+        current = current_values.get(name, "").strip()
+        if not current:
+            # 지금 값이 없으면 제안할 것도 없다. 이 셋은 채우기 대상이 아니다 — 값이 있을
+            # 때만 "다르다" 를 말할 수 있다
+            continue
+        value = fields.get(suggestion_field(name), "").strip()
+        if not value or loose(value) == loose(current):
+            # 값이 없거나 지금 값과 같다. 모델이 지시를 지켰든 어겼든 바뀐 것이 없다
+            continue
+        if missing_lines(value, source):
+            # 근거 검사를 제안에도 그대로 건다. 원문에서 찾지 못한 값은 제안이 되지 않는다
+            # (`.claude/rules/llm.md`)
+            continue
+        suggestions[name] = value
+        reasons[name] = fields.get(suggestion_reason_field(name), "").strip()
+    return suggestions, reasons
 
 
 async def classify_body(
     body: str,
     *,
+    title: str = "",
+    current_values: Mapping[str, str] | None = None,
+    taxonomy_tree: Sequence[tuple[str, tuple[str, ...]]] = (),
+    response_model: type[Classification] = Classification,
     settings: Settings | None = None,
     client: Any | None = None,
     on_call: Callable[[Usage], None] | None = None,
 ) -> ClassificationResult:
-    """본문 하나를 나눈다. 받은 값은 본문에 있는지 확인한 뒤에만 남는다.
+    """공고 하나를 나눈다. 받은 값은 원문에 있는지 확인한 뒤에만 남는다.
+
+    `title` 은 `job_role` 의 출처다. 비어 있어도 나머지 여덟 칸은 그대로 나오므로 분류가
+    실패하지 않는다 — 나눌 것이 없는 것은 본문이 빈 경우뿐이다.
+
+    `current_values` 는 `company`·`deadline`·`start_date` 중 이미 채워진 값이다. 값이 있는
+    칸에 원문이 다른 값을 말하면 `ClassificationResult.suggestions` 로 나가고, `fields` 의
+    아홉 칸은 건드리지 않는다 — 이 셋은 애초에 `CLASSIFY_FIELDS` 에 없다.
+
+    `taxonomy_tree` 와 `response_model` 은 함께 온다 — 부르는 쪽(`app/classify/batch.py`)이
+    배치 시작 전에 `app.taxonomy.enabled_tree()` 와 `build_classification_model()` 로 한 번만
+    만들어 공고마다 그대로 넘긴다. 공고마다 표를 다시 읽을 이유가 없다. 빈 트리(기본값)는
+    "표가 비었다" 는 뜻이고, 그때 `response_model` 은 `Classification` 그대로다.
 
     `on_call` 은 모델을 부를 때마다 그 호출의 비용으로 불린다. 깨진 응답으로 한 번 더 물으면
     두 번 불린다 — 부르는 쪽이 그것을 `llm_calls` 에 그대로 남겨야 토큰 합이 실제와 맞는다
@@ -213,15 +384,23 @@ async def classify_body(
     resolved = settings or get_settings()
     provider, model = chosen(resolved)
     resolved_client = client or build_client(resolved)
-    prompt, notes = build_prompt(body)
+    prompt, notes = build_prompt(body, title, current_values, taxonomy_tree)
+    response_fields = tuple(response_model.model_fields)
+
+    taxonomy_choices: dict[str, tuple[str, ...]] | None = None
+    if taxonomy_tree:
+        taxonomy_choices = {JOB_MAJOR: tuple(major for major, _ in taxonomy_tree)}
+        minors = tuple(minor for _, minor_list in taxonomy_tree for minor in minor_list)
+        if minors:
+            taxonomy_choices[JOB_MINOR] = minors
 
     last_error: ClassifySchemaError | None = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
-        text, usage = await _call(resolved_client, model, prompt, attempt, provider)
+        text, usage = await _call(resolved_client, model, prompt, attempt, provider, response_model)
         if on_call is not None:
             on_call(usage)
         try:
-            fields = parse_classification(text)
+            fields = parse_classification(text, response_fields)
         except ClassifySchemaError as exc:
             logger.warning(
                 "분류 응답 거절 model=%s attempt=%d reason=%s message=%s",
@@ -236,14 +415,24 @@ async def classify_body(
             last_error = exc
             continue
 
-        # 받은 값을 그 자리에서 본문에 돌려 본다. 못 찾은 칸은 버린다
-        grounded = ground(fields, body)
+        # 받은 값을 그 자리에서 **보낸 그 글**에 돌려 본다. 못 찾은 칸은 버린다. 보낸 것과
+        # 다른 값에 돌려 보면 옳게 뽑은 칸이 버려진다 — 원문으로 물어 놓고 본문에 돌려 보면
+        # 본문 밖 이름표에서 온 근무지가 통째로 사라진다. 제목까지 보는 것은 `job_role` 이
+        # 거기서 오기 때문이다 (`app/classify/grounding.py`).
+        #
+        # 넘기는 것은 자르기 전 값이다. 모델이 본 것은 앞 `MAX_BODY_CHARS` 자뿐이라, 전체에
+        # 돌려 보면 검사가 넓어질 뿐 좁아지지 않는다
+        grounded = ground(fields, body, title, taxonomy_choices=taxonomy_choices)
         if grounded.dropped:
             logger.warning(
                 "분류가 근거 없는 값을 냈다 model=%s 버린 칸=%s",
                 model,
                 ", ".join(f"{name}({grounded.reasons[name]})" for name in grounded.dropped),
             )
+        # 같은 응답에서 제안도 같이 추린다. 두 번째 호출을 만들면 토큰이 두 배다
+        suggestions, suggestion_reasons = _extract_suggestions(
+            fields, current_values or {}, f"{title}\n{body}"
+        )
         return ClassificationResult(
             fields=grounded.fields,
             usage=usage,
@@ -251,6 +440,8 @@ async def classify_body(
             evidence=grounded.evidence,
             dropped=grounded.dropped,
             reasons=grounded.reasons,
+            suggestions=suggestions,
+            suggestion_reasons=suggestion_reasons,
             notes=[
                 *notes,
                 *(
@@ -273,7 +464,12 @@ async def classify_body(
 
 
 async def _call(
-    client: Any, model: str, prompt: str, attempt: int, provider: Provider
+    client: Any,
+    model: str,
+    prompt: str,
+    attempt: int,
+    provider: Provider,
+    response_model: type[Classification] = Classification,
 ) -> tuple[str, Usage]:
     try:
         return await provider.call_model(
@@ -282,7 +478,7 @@ async def _call(
             prompt,
             attempt,
             "본문 분류",
-            response_schema=Classification,
+            response_schema=response_model,
             system_instruction=_SYSTEM_INSTRUCTION,
         )
     except LlmCallError as exc:

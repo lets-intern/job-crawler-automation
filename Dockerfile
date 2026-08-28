@@ -29,6 +29,9 @@ RUN playwright install --with-deps chromium \
 # app/db.py 가 migrations/ 를 app/ 의 형제 디렉터리로 찾는다. 배치를 그대로 유지한다.
 COPY app ./app
 COPY migrations ./migrations
+# app/api/ui_taxonomy.py::SEED_PATH 가 app/ 의 형제 디렉터리로 찾는다. 같은 이유로 빠지면
+# 안 된다 — 씨앗 파일 없이는 빈 표에서 기본 분류를 불러오는 길이 없다.
+COPY seeds ./seeds
 
 # 비루트 실행. /data 를 미리 만들어 두면 named volume 이 이 소유권을 물려받는다.
 RUN useradd --create-home --uid 1000 appuser \

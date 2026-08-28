@@ -216,8 +216,8 @@ async def test_a_blank_classification_clears_the_old_collected_value(
 ) -> None:
     """분류가 빈 칸을 내면 옛 값도 남지 않는다.
 
-    남겨 두면 `IT - 구축/운영/최적화` 같은 사이트 표기가 계속 나가고, 판정 칸 셋의 닫힌
-    목록이 640건에 대해 성립하지 않는다 (`.claude/docs/api-contract.md`).
+    남겨 두면 사이트가 준 옛 값이 계속 나간다. 칸의 출처가 하나여야 소비 측이 한 가지
+    규칙으로 읽는다 (`app/normalize/engine.py`).
     """
     conn.execute(
         "UPDATE raw_jobs SET raw_data_json = ? WHERE id = 1",
@@ -227,18 +227,18 @@ async def test_a_blank_classification_clears_the_old_collected_value(
                     "source_url": "https://x/1",
                     "title": "공고 1",
                     "body": BODY,
-                    "job_category": "IT - 구축/운영/최적화",
+                    "work_location": "본사 (서울)",
                 },
                 ensure_ascii=False,
             ),
         ),
     )
 
-    # GOOD 응답은 job_category 를 비워 둔다
+    # GOOD 응답은 work_location 을 비워 둔다
     await run(conn, GOOD)
 
-    row = conn.execute("SELECT job_category FROM normalized_jobs WHERE raw_job_id = 1").fetchone()
-    assert row["job_category"] is None
+    row = conn.execute("SELECT work_location FROM normalized_jobs WHERE raw_job_id = 1").fetchone()
+    assert row["work_location"] is None
 
 
 async def test_the_six_collected_columns_are_untouched_by_the_classification(
@@ -378,3 +378,44 @@ def test_a_human_correction_still_wins_over_the_classification(
 
     row = conn.execute("SELECT work_location FROM normalized_jobs WHERE raw_job_id = 1").fetchone()
     assert row["work_location"] == "사람이 고친 근무지"
+
+
+async def test_the_run_sends_the_stored_title(conn: sqlite3.Connection) -> None:
+    """제목이 `job_role` 의 출처다. 실행이 본문만 보내면 그 칸은 영원히 빈다 (2.3.V)."""
+    client = FakeClient(GOOD, GOOD, GOOD)
+
+    await classify_pending(
+        conn, ClassifyProgress(), limit=10, client=client, settings=settings_with_key()
+    )
+
+    assert "공고 3" in client.calls[0]["contents"]
+
+
+async def test_a_role_from_the_title_alone_is_stored(conn: sqlite3.Connection) -> None:
+    """제목에만 있는 직무가 실행 끝까지 살아 `job_classifications` 에 남는지 (2.4.V)."""
+    conn.execute(
+        """
+        INSERT INTO raw_jobs (workflow_id, source_url, raw_data_json, content_hash)
+        VALUES (1, 'https://x/8', ?, 'hash8')
+        """,
+        (
+            json.dumps(
+                {
+                    "source_url": "https://x/8",
+                    "title": "카카오비즈니스 파트너 플랫폼 PM (경력)",
+                    "body": BODY,
+                },
+                ensure_ascii=False,
+            ),
+        ),
+    )
+
+    await classify_ids(
+        conn,
+        [4],
+        ClassifyProgress(),
+        client=FakeClient(response(job_role="카카오비즈니스 파트너 플랫폼 PM")),
+        settings=settings_with_key(),
+    )
+
+    assert read_classification(conn, 4)["job_role"] == "카카오비즈니스 파트너 플랫폼 PM"

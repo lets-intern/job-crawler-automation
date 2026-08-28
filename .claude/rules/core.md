@@ -47,8 +47,14 @@ The PRD names its own non-goals: no multi-user auth, no distributed crawling, no
 bypass. Those are decisions, not gaps. Do not implement toward them.
 
 The stack is deliberately small — one FastAPI process, APScheduler in-process, SQLite in one file,
-HTMX over Jinja2 templates. Do not introduce Celery, Redis, Postgres, a SPA framework, a build step,
-or a second container. If a real limit is hit, report the measurement and let the user decide.
+HTMX over Jinja2 templates. Do not introduce Celery, Redis, Postgres, a SPA framework or a build
+step. If a real limit is hit, report the measurement and let the user decide.
+
+One second container is allowed, decided on 2026-08-28: MinIO, holding company logo files
+(`.claude/tasks/todo/prd-fields-and-logo.md`). The reason it is not refused like the rest — SQLite
+is one file and cannot hold uploaded images, and MinIO speaks the S3 API, so replacing it with a
+real S3 later is an endpoint setting and no code. It is the only one. A second container for work
+the single process can already do is still refused.
 
 No abstractions for single-use code. No plugin layer for one crawler. No error handling for
 impossible scenarios.
@@ -89,9 +95,10 @@ Every request to a crawl target goes through the one shared fetch client. No mod
 site directly — that is how rate limits, the User-Agent and retries get bypassed.
 `.claude/rules/crawling.md` states why.
 
-Requests to a service we operate ourselves are the one exception: the notification server has no
-robots.txt to honour and no per-host budget we could exceed. `app/notify/` is that exception and the
-only one. A third-party API we did not deploy is a crawl target, not ours.
+Requests to a service we operate ourselves are the exception: the notification server and the object
+storage have no robots.txt to honour and no per-host budget we could exceed. `app/notify/` and
+`app/storage/` are those exceptions and the only two (storage added 2026-08-28). A third-party API
+we did not deploy is a crawl target, not ours. `.claude/rules/crawling.md` states the shape.
 
 ## The other rule files
 

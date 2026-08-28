@@ -18,6 +18,7 @@ from app.api import classify as classify_api
 from app.api import rules as rules_api
 from app.classify.batch import ClassifyProgress, ClassifyRun
 from app.main import app
+from app.side import runs, store
 from tests.test_classify_run import _seed
 
 
@@ -116,3 +117,22 @@ def test_a_second_request_while_it_runs_is_refused(
 
     assert response.status_code == 409
     assert response.json()["detail"]["reason"] == "already_running"
+
+
+def test_it_refuses_while_a_side_workflow_is_classifying(
+    client: tuple[TestClient, StubRun], conn: sqlite3.Connection
+) -> None:
+    """두 진입점이 서로를 못 보면 같은 공고에 두 번 돈을 쓴다 (3.3).
+
+    이 경로는 `side_runs` 에 아무것도 남기지 않는다. 남길 워크플로우가 없기 때문이고,
+    운영자는 거절 사유를 응답에서 바로 본다.
+    """
+    workflow = store.create(conn, kind="classify", name="분류")
+    runs.start(conn, workflow.id, "schedule")
+
+    response = client[0].post("/api/classify")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["reason"] == "already_running"
+    assert str(workflow.id) in response.json()["detail"]["message"]
+    assert client[1].limits == []

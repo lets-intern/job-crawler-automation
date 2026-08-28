@@ -21,7 +21,14 @@ from fastapi.testclient import TestClient
 
 from app import db
 from app.llm.base import Usage
-from app.llm.log import CLASSIFY, SELECTOR_GENERATE, record_call, totals
+from app.llm.log import (
+    CLASSIFY,
+    SELECTOR_GENERATE,
+    SELECTOR_REPAIR,
+    by_feature,
+    record_call,
+    totals,
+)
 from tests.test_api_crawlers import (  # noqa: F401  (fixture 를 그대로 쓴다)
     DETAIL_URL,
     GENERATED,
@@ -108,6 +115,22 @@ def test_the_totals_add_up_to_what_was_recorded(logged: sqlite3.Connection) -> N
     assert only_classify["input_tokens"] == 4321 + 1000
     assert only_classify["output_tokens"] == 120 + 50
     assert only_classify["latency_ms"] == 5100 + 900
+
+
+def test_by_feature_lists_every_feature_even_with_no_calls(logged: sqlite3.Connection) -> None:
+    """대시보드 그래프에서 아예 빠지면 그 기능이 있는지도 알 수 없다."""
+    record_call(logged, feature=CLASSIFY, usage=USAGE_ONE)
+    record_call(logged, feature=CLASSIFY, usage=USAGE_TWO)
+    record_call(logged, feature=SELECTOR_GENERATE, usage=USAGE_TWO)
+
+    usage = {u.feature: u for u in by_feature(logged)}
+
+    assert set(usage) == {SELECTOR_GENERATE, SELECTOR_REPAIR, CLASSIFY}
+    assert usage[CLASSIFY].calls == 2
+    assert usage[CLASSIFY].total_tokens == 4441 + 1050
+    assert usage[SELECTOR_GENERATE].calls == 1
+    assert usage[SELECTOR_REPAIR].calls == 0
+    assert usage[SELECTOR_REPAIR].total_tokens == 0
 
 
 ON_QWEN = Usage(

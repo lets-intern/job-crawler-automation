@@ -19,6 +19,9 @@ dependencies = [
     "pydantic-settings",
     # JS 로 그려지는 사이트만 쓴다. 기본 경로는 정적이다 — .claude/rules/crawling.md
     "playwright",
+    # 로고 파일 저장소. MinIO 도 실제 S3 도 같은 API 라 붙는 코드가 하나다
+    # (.claude/rules/core.md 의 두 번째 컨테이너 예외, 2026-08-28)
+    "boto3",
 ]
 
 [project.optional-dependencies]
@@ -53,6 +56,11 @@ no_implicit_optional = true
 [[tool.mypy.overrides]]
 # APScheduler 는 타입 스텁을 배포하지 않는다
 module = "apscheduler.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# boto3/botocore 도 스텁이 패키지에 없다. 별도 스텁 패키지를 더하지 않는다
+module = ["boto3.*", "botocore.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

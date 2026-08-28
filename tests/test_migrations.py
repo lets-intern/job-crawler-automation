@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from app import db
+from app.normalize.engine import load_rules
 from app.normalize.rules import NORMALIZED_FIELDS
 
 # .claude/docs/data-model.md 의 컬럼. 문서에 없는 컬럼은 늘리지 않는다
@@ -64,26 +65,29 @@ EXPECTED_COLUMNS = {
         "id",
         "raw_job_id",
         "company",
-        "company_source",
         "title",
-        "department",
         "deadline",
         "body",
         "requirements",
         "source_url",
         "normalized_at",
         "delivered_at",
-        # 0011 이 더한 열 칸. 넷 이상의 사이트가 주는 것만 골랐다
+        # 0011 이 더한 열 칸에서 0016 이 셋을 뺀 나머지
         "start_date",
-        "job_category",
         "employment_type",
         "career_level",
         "work_location",
-        "headcount",
         "duties",
         "preferred",
         "hiring_process",
         "etc_info",
+        # 0017 이 더한 직무. 제목에서 뽑는 자유 텍스트다
+        "job_role",
+        # 0018 이 더한 모회사. 크롤러가 아는 값을 옮기는 칸이라 규칙도 보정도 걸리지 않는다
+        "parent_company",
+        # 0025 가 더한 직무 분류. job_taxonomy 의 이름을 그대로 옮겨 담는다
+        "job_major",
+        "job_minor",
     },
     "normalization_rules": {
         "id",
@@ -107,6 +111,15 @@ EXPECTED_COLUMNS = {
         "created_at",
         "updated_at",
     },
+    # 0020 이 만든 회사 표. 공고와 외래키로 잇지 않고 회사명으로 잇는다
+    "companies": {
+        "id",
+        "name",
+        "parent_name",
+        "logo_url",
+        "created_at",
+        "updated_at",
+    },
     "crawl_run_failures": {
         "id",
         "run_id",
@@ -115,6 +128,54 @@ EXPECTED_COLUMNS = {
         "source_url",
         "message",
         "created_at",
+    },
+    # 0021 이 만든 부가 워크플로우 표. 크롤 `workflows` 와 합치지 않는다
+    "side_workflows": {
+        "id",
+        "kind",
+        "name",
+        "status",
+        "trigger_kind",
+        "interval_minutes",
+        "target_scope",
+        "target_days",
+        "batch_limit",
+        "last_run_at",
+        "created_at",
+    },
+    # 0021 이 만든 부가 실행 기록. 토큰 수는 `llm_calls` 가 세므로 여기 없다
+    "side_runs": {
+        "id",
+        "side_workflow_id",
+        "trigger",
+        "started_at",
+        "finished_at",
+        "status",
+        "target_count",
+        "processed_count",
+        "failed_count",
+        "note",
+        "error_message",
+    },
+    # 0023 이 만든 제안 표. 값이 있는 칸에 모델이 낸 다른 값이다. 정규화는 이 표를 읽지 않는다
+    "job_field_suggestions": {
+        "id",
+        "raw_job_id",
+        "field_name",
+        "value",
+        "reason",
+        "created_at",
+    },
+    # 0024 가 만든 직무 분류 체계. parent_id 가 NULL 이면 대분류다
+    "job_taxonomy": {
+        "id",
+        "parent_id",
+        "name",
+        "sort_order",
+        "enabled",
+        "note",
+        "created_at",
+        "updated_at",
     },
 }
 
@@ -144,6 +205,17 @@ ALL_VERSIONS = [
     "0013",
     "0014",
     "0015",
+    "0016",
+    "0017",
+    "0018",
+    "0019",
+    "0020",
+    "0021",
+    "0022",
+    "0023",
+    "0024",
+    "0025",
+    "0026",
 ]
 
 
@@ -240,7 +312,8 @@ def test_company_columns_start_empty_and_hold_the_two_sources(conn: sqlite3.Conn
 
 
 def test_company_source_rejects_a_value_outside_the_two(conn: sqlite3.Connection) -> None:
-    db.migrate_up(conn)
+    """0019 가 지우기 전까지의 CHECK. 되살린 열도 같은 두 값만 받아야 한다."""
+    _at_0018(conn)
     conn.execute(
         "INSERT INTO crawlers (name, list_url) VALUES (?, ?)", ("테스트", "https://example.test")
     )
@@ -279,6 +352,43 @@ def test_company_down_removes_only_the_two_columns(conn: sqlite3.Connection) -> 
     assert "default_company" not in _columns(conn, "crawlers")
     assert "company_source" not in _columns(conn, "normalized_jobs")
     assert "company" in _columns(conn, "normalized_jobs")
+
+
+def test_a_new_company_row_starts_without_a_logo(conn: sqlite3.Connection) -> None:
+    """0020 이 만드는 행은 이름만 있다. 로고를 채우는 것은 운영자다."""
+    db.migrate_up(conn)
+
+    conn.execute("INSERT INTO companies (name) VALUES ('삼성SDS')")
+
+    row = conn.execute("SELECT * FROM companies WHERE name = '삼성SDS'").fetchone()
+    assert (row["parent_name"], row["logo_url"]) == (None, None)
+    assert row["created_at"] and row["updated_at"]
+
+
+def test_the_same_company_name_cannot_be_stored_twice(conn: sqlite3.Connection) -> None:
+    """로고를 공고에 잇는 값이 이름이다. 같은 이름이 두 행이면 어느 로고가 붙을지 정할 수 없다."""
+    db.migrate_up(conn)
+    conn.execute("INSERT INTO companies (name) VALUES ('삼성SDS')")
+
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO companies (name, logo_url) VALUES ('삼성SDS', 'https://cdn.test/a.png')"
+        )
+
+    conn.execute("INSERT INTO companies (name) VALUES ('삼성전기')")
+    assert conn.execute("SELECT count(*) AS n FROM companies").fetchone()["n"] == 2
+
+
+def test_companies_down_removes_only_its_own_table(conn: sqlite3.Connection) -> None:
+    """역적용은 0020 이 만든 표만 지운다. 수집 데이터는 그대로다."""
+    db.migrate_up(conn)
+    _seed_raw_job(conn)
+    conn.execute("INSERT INTO companies (name) VALUES ('삼성SDS')")
+
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0020"))
+
+    assert "companies" not in _names(conn, "table")
+    assert conn.execute("SELECT count(*) AS n FROM raw_jobs").fetchone()["n"] == 1
 
 
 def test_foreign_key_is_enforced(conn: sqlite3.Connection) -> None:
@@ -515,18 +625,26 @@ def test_html_text_rule_type_is_allowed(conn: sqlite3.Connection) -> None:
         _rule(conn, "uppercase")
 
 
+# 이 파일이 직접 넣은 규칙만 고르는 조건. 0016 의 역적용이 `department` 규칙 둘을 되살리므로
+# (`migrations/0016_drop_department_category_headcount.sql`), 0009 를 보는 검사는 자기가 넣은
+# 행만 세야 무엇을 보고 있는지가 흐려지지 않는다
+_OWN_RULES = "WHERE note = '메모'"
+
+
 def test_html_text_migration_keeps_the_rules_it_did_not_add(conn: sqlite3.Connection) -> None:
     """컬럼을 갈아 끼우는 동안 기존 규칙의 id 와 메모가 그대로 남는다."""
     db.migrate_up(conn)
     db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0009"))
     _rule(conn, "trim", priority=7)
     before = conn.execute(
-        "SELECT id, rule_type, priority, note FROM normalization_rules"
+        f"SELECT id, rule_type, priority, note FROM normalization_rules {_OWN_RULES}"
     ).fetchall()
 
     db.migrate_up(conn)
 
-    after = conn.execute("SELECT id, rule_type, priority, note FROM normalization_rules").fetchall()
+    after = conn.execute(
+        f"SELECT id, rule_type, priority, note FROM normalization_rules {_OWN_RULES}"
+    ).fetchall()
     assert [tuple(row) for row in after] == [tuple(row) for row in before]
 
 
@@ -538,7 +656,7 @@ def test_html_text_down_drops_only_its_own_rules(conn: sqlite3.Connection) -> No
 
     db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0009"))
 
-    rows = conn.execute("SELECT rule_type FROM normalization_rules").fetchall()
+    rows = conn.execute(f"SELECT rule_type FROM normalization_rules {_OWN_RULES}").fetchall()
     assert [row["rule_type"] for row in rows] == ["trim"]
 
 
@@ -745,8 +863,13 @@ SPLIT_BODY_COLUMNS = [
     "etc_info",
 ]
 
-# 0011 이 건드리지 않는 칸. 소비 측이 읽던 것이라 이름도 뜻도 그대로다
-KEPT_COLUMNS = "company, title, department, deadline, body, requirements, source_url"
+# 0011 이 더한 열 칸 중 0016 이 지운 둘. 전부 적용한 자리에서는 이 둘이 없으므로, 0011 이
+# 무엇을 더했는지 보는 검사는 살아남은 여덟만 센다
+SPLIT_BODY_KEPT = [name for name in SPLIT_BODY_COLUMNS if name not in ("job_category", "headcount")]
+
+# 0011 이 건드리지 않는 칸. 소비 측이 읽던 것이라 이름도 뜻도 그대로다.
+# `department` 는 0016 이 지웠다
+KEPT_COLUMNS = "company, title, deadline, body, requirements, source_url"
 
 
 def _at_0010(connection: sqlite3.Connection) -> None:
@@ -757,14 +880,13 @@ def _at_0010(connection: sqlite3.Connection) -> None:
 
 
 def _seed_normalized(connection: sqlite3.Connection) -> None:
-    """정규화된 공고 한 행. 여섯 칸에 값이 다 들어 있다."""
+    """정규화된 공고 한 행. 남은 칸에 값이 다 들어 있다."""
     _seed_raw_job(connection)
     connection.execute(
         """
         INSERT INTO normalized_jobs
-               (raw_job_id, company, title, department, deadline, body, requirements,
-                source_url)
-        VALUES (1, '한화생명', '마케팅 기획', '', '2026-08-25', '본문', '자격요건',
+               (raw_job_id, company, title, deadline, body, requirements, source_url)
+        VALUES (1, '한화생명', '마케팅 기획', '2026-08-25', '본문', '자격요건',
                 'https://example.test/1')
         """
     )
@@ -782,7 +904,7 @@ def test_split_body_only_adds_columns_and_keeps_the_existing_values(
 
     after = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
     assert [tuple(row) for row in after] == [tuple(row) for row in before]
-    assert set(SPLIT_BODY_COLUMNS) <= _columns(conn, "normalized_jobs")
+    assert set(SPLIT_BODY_KEPT) <= _columns(conn, "normalized_jobs")
 
 
 def test_split_body_leaves_the_new_columns_empty(conn: sqlite3.Connection) -> None:
@@ -792,15 +914,15 @@ def test_split_body_leaves_the_new_columns_empty(conn: sqlite3.Connection) -> No
 
     db.migrate_up(conn)
 
-    row = conn.execute(f"SELECT {', '.join(SPLIT_BODY_COLUMNS)} FROM normalized_jobs").fetchone()
-    assert [row[name] for name in SPLIT_BODY_COLUMNS] == [None] * len(SPLIT_BODY_COLUMNS)
+    row = conn.execute(f"SELECT {', '.join(SPLIT_BODY_KEPT)} FROM normalized_jobs").fetchone()
+    assert [row[name] for name in SPLIT_BODY_KEPT] == [None] * len(SPLIT_BODY_KEPT)
 
 
 def test_split_body_down_drops_only_the_ten_it_added(conn: sqlite3.Connection) -> None:
     """역적용은 더한 열 칸만 지운다. 공고와 여섯 칸의 값은 그대로다."""
     db.migrate_up(conn)
     _seed_normalized(conn)
-    conn.execute("UPDATE normalized_jobs SET work_location = '서울', headcount = '0명'")
+    conn.execute("UPDATE normalized_jobs SET work_location = '서울', duties = '기획'")
     before = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
 
     db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0011"))
@@ -878,3 +1000,614 @@ def test_the_override_down_drops_the_corrections_the_old_check_cannot_hold(
     rows = conn.execute("SELECT field_name FROM job_field_overrides").fetchall()
     assert [row["field_name"] for row in rows] == ["title"]
     assert conn.execute("SELECT count(*) AS n FROM raw_jobs").fetchone()["n"] == 1
+
+
+def _rules(connection: sqlite3.Connection) -> list[tuple[str, str, int]]:
+    rows = connection.execute(
+        "SELECT field_name, rule_type, priority FROM normalization_rules ORDER BY id"
+    ).fetchall()
+    return [(row["field_name"], row["rule_type"], row["priority"]) for row in rows]
+
+
+def _at_0015(connection: sqlite3.Connection) -> None:
+    """0016 직전 상태로 만든다. 지운 세 칸이 아직 있는 스키마다."""
+    db.migrate_up(connection)
+    db.migrate_down(connection, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0016"))
+    connection.execute("DELETE FROM normalization_rules")
+
+
+def test_dropped_field_rules_go_before_the_columns(conn: sqlite3.Connection) -> None:
+    """0016 은 지운 칸의 규칙을 먼저 지운다. 남기면 `load_rules` 가 정규화 전체를 세운다."""
+    _at_0015(conn)
+    conn.executemany(
+        """
+        INSERT INTO normalization_rules (field_name, rule_type, rule_config_json, priority)
+        VALUES (?, 'trim', '{}', 0)
+        """,
+        [("department",), ("job_category",), ("headcount",), ("title",)],
+    )
+
+    db.migrate_up(conn)
+
+    # 예외 없이 돌고, 남은 것은 지우지 않은 칸의 규칙뿐이다
+    assert [rule.field_name for rule in load_rules(conn)] == ["title"]
+    assert _rules(conn) == [("title", "trim", 0)]
+
+
+def test_dropped_field_rules_come_back_on_down(conn: sqlite3.Connection) -> None:
+    """되돌리면 `seeds/normalization-rules.json` 의 `department` 규칙 둘이 되살아난다."""
+    db.migrate_up(conn)
+    conn.execute("DELETE FROM normalization_rules")
+
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0016"))
+
+    assert _rules(conn) == [("department", "trim", 0), ("department", "regex", 10)]
+
+
+# 0016 이 지우는 세 칸
+DROPPED_COLUMNS = ["department", "job_category", "headcount"]
+
+
+def _seed_normalized_with_dropped(connection: sqlite3.Connection) -> None:
+    """0016 직전의 공고 한 행. 지워질 세 칸에도 값이 들어 있다."""
+    _seed_raw_job(connection)
+    connection.execute(
+        """
+        INSERT INTO normalized_jobs
+               (raw_job_id, company, title, deadline, body, requirements, source_url,
+                department, job_category, headcount)
+        VALUES (1, '한화생명', '마케팅 기획', '2026-08-25', '본문', '자격요건',
+                'https://example.test/1', '마케팅본부', '영업', '0명')
+        """
+    )
+
+
+def test_dropping_the_three_keeps_the_rows_and_the_other_values(
+    conn: sqlite3.Connection,
+) -> None:
+    """0016 은 칸만 지운다. 공고가 사라지거나 남은 칸의 값이 바뀌면 안 된다."""
+    _at_0015(conn)
+    _seed_normalized_with_dropped(conn)
+    before = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
+
+    db.migrate_up(conn)
+
+    after = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
+    assert [tuple(row) for row in after] == [tuple(row) for row in before]
+    assert not set(DROPPED_COLUMNS) & _columns(conn, "normalized_jobs")
+
+
+def test_the_three_come_back_empty_on_down(conn: sqlite3.Connection) -> None:
+    """되돌리면 칸은 돌아오지만 값은 돌아오지 않는다. 어디에도 옮겨 두지 않았다."""
+    _at_0015(conn)
+    _seed_normalized_with_dropped(conn)
+    db.migrate_up(conn)
+
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0016"))
+
+    assert set(DROPPED_COLUMNS) <= _columns(conn, "normalized_jobs")
+    row = conn.execute(f"SELECT {', '.join(DROPPED_COLUMNS)} FROM normalized_jobs").fetchone()
+    assert [row[name] for name in DROPPED_COLUMNS] == [None] * len(DROPPED_COLUMNS)
+    assert conn.execute("SELECT count(*) AS n FROM normalized_jobs").fetchone()["n"] == 1
+
+
+def _at_0016(connection: sqlite3.Connection) -> None:
+    """0017 직전 상태로 만든다. 직무 칸이 아직 없는 스키마다."""
+    db.migrate_up(connection)
+    db.migrate_down(connection, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0017"))
+
+
+def test_job_role_is_added_to_both_tables(conn: sqlite3.Connection) -> None:
+    """분류가 앉히는 자리와 소비 측이 읽는 자리 둘 다에 있어야 값이 끝까지 간다."""
+    _at_0016(conn)
+    assert "job_role" not in _columns(conn, "normalized_jobs")
+    assert "job_role" not in _columns(conn, "job_classifications")
+
+    db.migrate_up(conn)
+
+    assert "job_role" in _columns(conn, "normalized_jobs")
+    assert "job_role" in _columns(conn, "job_classifications")
+
+
+def test_job_role_starts_empty_and_leaves_the_other_values_alone(
+    conn: sqlite3.Connection,
+) -> None:
+    """칸만 더한다. 있던 공고가 사라지거나 남은 칸의 값이 바뀌면 안 된다."""
+    _at_0016(conn)
+    _seed_raw_job(conn)
+    conn.execute(
+        """
+        INSERT INTO normalized_jobs
+               (raw_job_id, company, title, deadline, body, requirements, source_url)
+        VALUES (1, '한화생명', '마케팅 기획', '2026-08-25', '본문', '자격요건',
+                'https://example.test/1')
+        """
+    )
+    before = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
+
+    db.migrate_up(conn)
+
+    after = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
+    assert [tuple(row) for row in after] == [tuple(row) for row in before]
+    assert conn.execute("SELECT job_role FROM normalized_jobs").fetchone()["job_role"] is None
+
+
+def test_job_role_can_be_corrected_by_hand(conn: sqlite3.Connection) -> None:
+    """자유 텍스트라 틀리게 뽑힐 여지가 가장 큰 칸이다. 고칠 길이 없으면 안 된다."""
+    db.migrate_up(conn)
+    _seed_raw_job(conn)
+
+    conn.execute(
+        "INSERT INTO job_field_overrides (raw_job_id, field_name, value) VALUES (1, ?, ?)",
+        ("job_role", "백엔드 개발"),
+    )
+
+    row = conn.execute("SELECT field_name, value FROM job_field_overrides").fetchone()
+    assert (row["field_name"], row["value"]) == ("job_role", "백엔드 개발")
+
+
+def test_the_job_role_migration_keeps_the_overrides_it_did_not_add(
+    conn: sqlite3.Connection,
+) -> None:
+    """표를 다시 만드는 마이그레이션이다. 있던 보정이 id 까지 그대로 넘어와야 한다."""
+    _at_0016(conn)
+    _seed_raw_job(conn)
+    conn.execute(
+        "INSERT INTO job_field_overrides (raw_job_id, field_name, value) VALUES (1, ?, ?)",
+        ("title", "사람이 고친 제목"),
+    )
+    before = conn.execute("SELECT id, created_at FROM job_field_overrides").fetchone()
+
+    db.migrate_up(conn)
+
+    after = conn.execute(
+        "SELECT id, field_name, value, created_at FROM job_field_overrides"
+    ).fetchall()
+    assert len(after) == 1
+    assert after[0]["id"] == before["id"]
+    assert after[0]["value"] == "사람이 고친 제목"
+    assert after[0]["created_at"] == before["created_at"]
+
+
+def test_the_job_role_down_drops_the_column_and_its_corrections(
+    conn: sqlite3.Connection,
+) -> None:
+    """되돌리면 직무 값과 직무에 걸린 보정만 사라진다. 나머지는 그대로다."""
+    db.migrate_up(conn)
+    _seed_raw_job(conn)
+    conn.executemany(
+        "INSERT INTO job_field_overrides (raw_job_id, field_name, value) VALUES (1, ?, ?)",
+        [("title", "사람이 고친 제목"), ("job_role", "백엔드 개발")],
+    )
+
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0017"))
+
+    assert "job_role" not in _columns(conn, "normalized_jobs")
+    assert "job_role" not in _columns(conn, "job_classifications")
+    rows = conn.execute("SELECT field_name FROM job_field_overrides").fetchall()
+    assert [row["field_name"] for row in rows] == ["title"]
+    assert conn.execute("SELECT count(*) AS n FROM raw_jobs").fetchone()["n"] == 1
+
+
+def test_the_job_role_down_keeps_the_corrections_of_the_dropped_columns(
+    conn: sqlite3.Connection,
+) -> None:
+    """0016 이 지운 셋의 보정 행은 되돌릴 때 필요하다. CHECK 를 좁히면 여기서 떨어진다."""
+    db.migrate_up(conn)
+    _seed_raw_job(conn)
+    conn.execute(
+        "INSERT INTO job_field_overrides (raw_job_id, field_name, value) VALUES (1, ?, ?)",
+        ("department", "사람이 고친 부서"),
+    )
+
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0017"))
+
+    rows = conn.execute("SELECT field_name FROM job_field_overrides").fetchall()
+    assert [row["field_name"] for row in rows] == ["department"]
+
+
+def _at_0017(connection: sqlite3.Connection) -> None:
+    """0018 직전 상태로 만든다. 회사명이 아직 한 칸인 스키마다."""
+    db.migrate_up(connection)
+    db.migrate_down(connection, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0018"))
+
+
+def test_parent_company_is_added_to_normalized_jobs(conn: sqlite3.Connection) -> None:
+    _at_0017(conn)
+    assert "parent_company" not in _columns(conn, "normalized_jobs")
+
+    db.migrate_up(conn)
+
+    assert "parent_company" in _columns(conn, "normalized_jobs")
+    assert "company" in _columns(conn, "normalized_jobs")
+
+
+def test_parent_company_starts_empty_and_leaves_the_other_values_alone(
+    conn: sqlite3.Connection,
+) -> None:
+    """칸만 더한다. 값은 재정규화가 넣는다 — 이 마이그레이션에 UPDATE 가 없다."""
+    _at_0017(conn)
+    _seed_raw_job(conn)
+    conn.execute(
+        """
+        INSERT INTO normalized_jobs
+               (raw_job_id, company, title, deadline, body, requirements, source_url)
+        VALUES (1, '삼성SDS', '백엔드 개발자', '2026-08-25', '본문', '자격요건',
+                'https://example.test/1')
+        """
+    )
+    before = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
+
+    db.migrate_up(conn)
+
+    after = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
+    assert [tuple(row) for row in after] == [tuple(row) for row in before]
+    row = conn.execute("SELECT parent_company FROM normalized_jobs").fetchone()
+    assert row["parent_company"] is None
+
+
+def test_the_parent_company_migration_leaves_the_two_neighbour_tables_alone(
+    conn: sqlite3.Connection,
+) -> None:
+    """분류가 내는 값도 아니고 공고 한 건씩 고칠 값도 아니다. 두 표는 그대로여야 한다.
+
+    0018 하나만 본다 — 끝까지(latest) 올리면 그 뒤의 무관한 마이그레이션(0025 등)이 이
+    두 표에 칸을 더한 것까지 0018 탓으로 걸리게 된다.
+    """
+    _at_0017(conn)
+    before_classifications = _columns(conn, "job_classifications")
+    before_overrides = _columns(conn, "job_field_overrides")
+
+    db.migrate_up(conn)
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0019"))
+
+    assert _columns(conn, "job_classifications") == before_classifications
+    assert _columns(conn, "job_field_overrides") == before_overrides
+    _seed_raw_job(conn)
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO job_field_overrides (raw_job_id, field_name, value) VALUES (1, ?, ?)",
+            ("parent_company", "삼성"),
+        )
+
+
+def test_the_parent_company_down_drops_only_that_column(conn: sqlite3.Connection) -> None:
+    """되돌리면 모회사 값만 사라진다. 그 값은 `crawlers` 에 그대로 있어 재정규화로 돌아온다."""
+    db.migrate_up(conn)
+    _seed_raw_job(conn)
+    conn.execute(
+        """
+        INSERT INTO normalized_jobs (raw_job_id, company, parent_company, title, source_url)
+        VALUES (1, '삼성SDS', '삼성', '백엔드 개발자', 'https://example.test/1')
+        """
+    )
+
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0018"))
+
+    assert "parent_company" not in _columns(conn, "normalized_jobs")
+    row = conn.execute("SELECT company, title FROM normalized_jobs").fetchone()
+    assert (row["company"], row["title"]) == ("삼성SDS", "백엔드 개발자")
+    assert conn.execute("SELECT count(*) AS n FROM raw_jobs").fetchone()["n"] == 1
+
+
+def _at_0018(connection: sqlite3.Connection) -> None:
+    """0019 직전 상태로 만든다. 회사명 출처 열이 아직 있는 스키마다."""
+    db.migrate_up(connection)
+    db.migrate_down(connection, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0019"))
+
+
+def test_company_source_is_dropped(conn: sqlite3.Connection) -> None:
+    """칸 이름이 출처를 말하게 된 뒤로 이 열은 답이 둘이 되게 할 뿐이다."""
+    _at_0018(conn)
+    assert "company_source" in _columns(conn, "normalized_jobs")
+
+    db.migrate_up(conn)
+
+    assert "company_source" not in _columns(conn, "normalized_jobs")
+    # 회사명 두 칸은 그대로다. 지운 것은 출처 열 하나뿐이다
+    assert {"company", "parent_company"} <= _columns(conn, "normalized_jobs")
+
+
+def test_dropping_company_source_keeps_the_rows_and_the_two_company_columns(
+    conn: sqlite3.Connection,
+) -> None:
+    _at_0018(conn)
+    _seed_raw_job(conn)
+    conn.execute(
+        """
+        INSERT INTO normalized_jobs
+               (raw_job_id, parent_company, company, company_source, title, source_url)
+        VALUES (1, '삼성전자', '삼성SDS', 'parsed', '백엔드 개발자', 'https://example.test/1')
+        """
+    )
+
+    db.migrate_up(conn)
+
+    row = conn.execute("SELECT parent_company, company, title FROM normalized_jobs").fetchone()
+    assert (row["parent_company"], row["company"], row["title"]) == (
+        "삼성전자",
+        "삼성SDS",
+        "백엔드 개발자",
+    )
+
+
+def test_the_company_source_down_restores_the_column_empty_with_its_check(
+    conn: sqlite3.Connection,
+) -> None:
+    """컬럼은 돌아오지만 값은 돌아오지 않는다. CHECK 는 같은 모양으로 돌아와야 한다."""
+    db.migrate_up(conn)
+    _seed_raw_job(conn)
+    conn.execute(
+        """
+        INSERT INTO normalized_jobs (raw_job_id, company, title, source_url)
+        VALUES (1, '삼성SDS', '백엔드 개발자', 'https://example.test/1')
+        """
+    )
+
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0019"))
+
+    assert "company_source" in _columns(conn, "normalized_jobs")
+    row = conn.execute("SELECT company, company_source FROM normalized_jobs").fetchone()
+    assert (row["company"], row["company_source"]) == ("삼성SDS", None)
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("UPDATE normalized_jobs SET company_source = '운영자'")
+
+
+def _seed_side_workflow(connection: sqlite3.Connection, **overrides: object) -> int:
+    """부가 워크플로우 한 행. 값을 주지 않은 칸은 표의 기본값이 채운다."""
+    values: dict[str, object] = {
+        "kind": "classify",
+        "name": "분류",
+        "target_scope": "unclassified",
+    }
+    values.update(overrides)
+    columns = ", ".join(values)
+    marks = ", ".join("?" * len(values))
+    cursor = connection.execute(
+        f"INSERT INTO side_workflows ({columns}) VALUES ({marks})", tuple(values.values())
+    )
+    return int(cursor.lastrowid or 0)
+
+
+def test_a_new_side_workflow_starts_paused(conn: sqlite3.Connection) -> None:
+    """만들자마자 도는 일이 없다. `all` 은 640건이면 약 285만 토큰이다."""
+    db.migrate_up(conn)
+
+    _seed_side_workflow(conn)
+
+    row = conn.execute("SELECT * FROM side_workflows WHERE id = 1").fetchone()
+    assert row["status"] == "paused"
+    assert row["trigger_kind"] == "manual"
+    assert (row["batch_limit"], row["target_days"], row["last_run_at"]) == (50, None, None)
+    assert row["created_at"]
+
+
+def test_side_workflows_has_no_token_columns(conn: sqlite3.Connection) -> None:
+    """토큰은 `llm_calls` 가 호출마다 센다. 같은 숫자를 두 곳에서 세지 않는다."""
+    db.migrate_up(conn)
+
+    assert not [name for name in _columns(conn, "side_workflows") if "token" in name]
+    assert not [name for name in _columns(conn, "side_runs") if "token" in name]
+
+
+@pytest.mark.parametrize(
+    ("kind", "scope"),
+    [
+        ("classify", "unclassified"),
+        ("classify", "empty_fields"),
+        ("classify", "all"),
+        ("deliver", "undelivered"),
+        ("deliver", "all"),
+    ],
+)
+def test_each_kind_accepts_its_own_scopes(conn: sqlite3.Connection, kind: str, scope: str) -> None:
+    db.migrate_up(conn)
+
+    _seed_side_workflow(conn, kind=kind, target_scope=scope)
+
+    assert conn.execute("SELECT count(*) AS n FROM side_workflows").fetchone()["n"] == 1
+
+
+@pytest.mark.parametrize(
+    ("kind", "scope"),
+    [
+        # 전달에는 분류할 것이 없고, 분류에는 전달 여부라는 것이 없다
+        ("deliver", "unclassified"),
+        ("deliver", "empty_fields"),
+        ("classify", "undelivered"),
+        ("classify", "없는범위"),
+    ],
+)
+def test_a_scope_the_kind_does_not_take_is_rejected(
+    conn: sqlite3.Connection, kind: str, scope: str
+) -> None:
+    """저장할 때 막지 않으면 실행할 때 대상을 못 찾는 것으로 드러난다."""
+    db.migrate_up(conn)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        _seed_side_workflow(conn, kind=kind, target_scope=scope)
+
+
+def test_target_days_belongs_to_recent_and_only_to_recent(conn: sqlite3.Connection) -> None:
+    """`recent` 에는 일수가 반드시 있고, 그 밖에는 없어야 한다."""
+    db.migrate_up(conn)
+
+    _seed_side_workflow(conn, target_scope="recent", target_days=7)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        _seed_side_workflow(conn, target_scope="recent")
+    with pytest.raises(sqlite3.IntegrityError):
+        _seed_side_workflow(conn, target_scope="unclassified", target_days=7)
+    with pytest.raises(sqlite3.IntegrityError):
+        _seed_side_workflow(conn, target_scope="recent", target_days=0)
+
+    assert conn.execute("SELECT count(*) AS n FROM side_workflows").fetchone()["n"] == 1
+
+
+def test_side_workflow_rejects_a_batch_limit_below_one(conn: sqlite3.Connection) -> None:
+    """위쪽 상한은 `app/classify/batch.py` 의 `MAX_LIMIT` 이 정한다. DB 는 아래만 막는다."""
+    db.migrate_up(conn)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        _seed_side_workflow(conn, batch_limit=0)
+
+    _seed_side_workflow(conn, batch_limit=1000)
+    assert conn.execute("SELECT batch_limit FROM side_workflows").fetchone()["batch_limit"] == 1000
+
+
+def test_a_side_run_starts_without_a_status(conn: sqlite3.Connection) -> None:
+    """시작할 때 행이 생기고 종료 상태는 그때 없다. 기록 없는 실행이 없어야 한다."""
+    db.migrate_up(conn)
+    _seed_side_workflow(conn)
+
+    conn.execute("INSERT INTO side_runs (side_workflow_id, trigger) VALUES (1, 'manual')")
+
+    row = conn.execute("SELECT * FROM side_runs WHERE id = 1").fetchone()
+    assert (row["status"], row["finished_at"]) == (None, None)
+    assert (row["target_count"], row["processed_count"], row["failed_count"]) == (0, 0, 0)
+    assert row["started_at"]
+
+
+@pytest.mark.parametrize("status", ["success", "failed", "skipped", "timeout"])
+def test_a_side_run_takes_the_four_end_states(conn: sqlite3.Connection, status: str) -> None:
+    """`skipped` 는 앞 실행이 돌고 있어 건너뛴 것, `timeout` 은 종료를 적지 못한 것이다."""
+    db.migrate_up(conn)
+    _seed_side_workflow(conn)
+    conn.execute("INSERT INTO side_runs (side_workflow_id, trigger) VALUES (1, 'schedule')")
+
+    conn.execute("UPDATE side_runs SET status = ? WHERE id = 1", (status,))
+
+    assert conn.execute("SELECT status FROM side_runs").fetchone()["status"] == status
+
+
+def test_side_run_rejects_an_unknown_status_or_trigger(conn: sqlite3.Connection) -> None:
+    db.migrate_up(conn)
+    _seed_side_workflow(conn)
+    conn.execute("INSERT INTO side_runs (side_workflow_id, trigger) VALUES (1, 'after_crawl')")
+
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("UPDATE side_runs SET status = '끝남' WHERE id = 1")
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("INSERT INTO side_runs (side_workflow_id, trigger) VALUES (1, 'test')")
+
+
+def test_a_side_run_needs_an_existing_side_workflow(conn: sqlite3.Connection) -> None:
+    """어디에도 안 걸린 실행 기록은 누구의 것인지 알 수 없다."""
+    db.migrate_up(conn)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("INSERT INTO side_runs (side_workflow_id, trigger) VALUES (99, 'manual')")
+
+
+def test_side_tables_down_removes_only_its_own_two_tables(conn: sqlite3.Connection) -> None:
+    """역적용은 0021 이 만든 두 표만 지운다. 크롤 쪽 기록은 그대로다."""
+    db.migrate_up(conn)
+    _seed_raw_job(conn)
+    conn.execute("INSERT INTO crawl_runs (workflow_id) VALUES (1)")
+    _seed_side_workflow(conn)
+    conn.execute("INSERT INTO side_runs (side_workflow_id, trigger) VALUES (1, 'manual')")
+
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0021"))
+
+    tables = _names(conn, "table")
+    assert "side_workflows" not in tables
+    assert "side_runs" not in tables
+    assert {"workflows", "crawl_runs", "raw_jobs", "normalized_jobs"} <= tables
+    assert conn.execute("SELECT count(*) AS n FROM crawl_runs").fetchone()["n"] == 1
+    assert conn.execute("SELECT count(*) AS n FROM raw_jobs").fetchone()["n"] == 1
+
+
+# 0023 이 대상으로 받는 필드. `app/normalize/rules.py` 의 `NORMALIZED_FIELDS` 와 같은 값이다
+def test_job_field_suggestions_accepts_every_normalized_field(conn: sqlite3.Connection) -> None:
+    """분류가 채우는 아홉 칸과 수집이 채우는 다섯 칸 전부가 제안 대상이다 (11.1.V)."""
+    db.migrate_up(conn)
+    _seed_raw_job(conn)
+
+    for field_name in NORMALIZED_FIELDS:
+        conn.execute(
+            """
+            INSERT INTO job_field_suggestions (raw_job_id, field_name, value, reason)
+            VALUES (1, ?, '제안 값', '원문과 다르다')
+            """,
+            (field_name,),
+        )
+
+    stored = conn.execute("SELECT count(*) AS n FROM job_field_suggestions").fetchone()
+    assert stored["n"] == len(NORMALIZED_FIELDS)
+
+
+def test_job_field_suggestions_rejects_a_field_outside_the_list(conn: sqlite3.Connection) -> None:
+    """`source_url` 은 공고의 신원이라 제안 대상이 아니다 (11.1.V)."""
+    db.migrate_up(conn)
+    _seed_raw_job(conn)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            """
+            INSERT INTO job_field_suggestions (raw_job_id, field_name, value, reason)
+            VALUES (1, 'source_url', 'https://example.test/other', '다르다')
+            """
+        )
+
+
+def test_a_new_suggestion_on_the_same_column_overwrites_the_old_one(
+    conn: sqlite3.Connection,
+) -> None:
+    """같은 칸에 제안이 둘이면 어느 것을 보고 있는지 알 수 없다 (11.1.V)."""
+    db.migrate_up(conn)
+    _seed_raw_job(conn)
+
+    for value in ("첫 제안", "다음 제안"):
+        conn.execute(
+            """
+            INSERT INTO job_field_suggestions (raw_job_id, field_name, value, reason)
+            VALUES (1, 'deadline', ?, '원문과 다르다')
+            ON CONFLICT (raw_job_id, field_name) DO UPDATE
+               SET value = excluded.value, reason = excluded.reason,
+                   created_at = datetime('now')
+            """,
+            (value,),
+        )
+
+    rows = conn.execute("SELECT value FROM job_field_suggestions").fetchall()
+    assert [row["value"] for row in rows] == ["다음 제안"]
+
+
+def test_job_field_suggestions_needs_an_existing_raw_job(conn: sqlite3.Connection) -> None:
+    db.migrate_up(conn)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            """
+            INSERT INTO job_field_suggestions (raw_job_id, field_name, value, reason)
+            VALUES (99, 'deadline', '2026-09-30', '다르다')
+            """
+        )
+
+
+def test_job_field_suggestions_down_drops_only_its_own_table(conn: sqlite3.Connection) -> None:
+    """역적용은 0023 이 만든 표만 지운다. 수집·정규화 데이터는 그대로다 (11.1.V)."""
+    db.migrate_up(conn)
+    _seed_raw_job(conn)
+    conn.execute(
+        """
+        INSERT INTO job_field_suggestions (raw_job_id, field_name, value, reason)
+        VALUES (1, 'deadline', '2026-09-30', '원문과 다르다')
+        """
+    )
+
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0023"))
+
+    assert "job_field_suggestions" not in _names(conn, "table")
+    assert conn.execute("SELECT count(*) AS n FROM raw_jobs").fetchone()["n"] == 1
+
+
+def test_job_field_suggestions_up_after_down_restores_the_table(conn: sqlite3.Connection) -> None:
+    """적용·역적용·재적용이 같은 스키마로 돌아오는지 (11.1.V)."""
+    db.migrate_up(conn)
+
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0023"))
+    assert "job_field_suggestions" not in _names(conn, "table")
+
+    db.migrate_up(conn)
+    assert _columns(conn, "job_field_suggestions") == EXPECTED_COLUMNS["job_field_suggestions"]

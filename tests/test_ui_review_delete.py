@@ -122,6 +122,21 @@ def test_행마다_체크박스가_있고_지우기_폼이_표를_감싼다(clie
         assert f'name="raw_job_id" value="{raw_job_id}"' in html
 
 
+def test_고른_공고_지우기는_접혀서_시작한다(client: TestClient) -> None:
+    """2026-08-29 결정. 고르기·지우기는 가끔 하는 일이라 공고 목록보다 먼저 보일 이유가 없다."""
+    html = client.get("/ui/review").text
+
+    assert "<details>" in html
+    assert "고른 공고 지우기 (열기)" in html
+    details_start = html.index("<details>")
+    select_form_field = html.index('id="review-select-filtered"')
+    table_start = html.index("<caption>검수 대상 공고</caption>")
+    summary_end = html.index("</summary>", details_start)
+    # summary 뒤에 체크박스가 있고, 체크박스는 표(공고 목록)보다 앞에 있다 — details 가
+    # 지우기 도구를 감싸되 표 자체는 감싸지 않는다
+    assert details_start < summary_end < select_form_field < table_start
+
+
 def test_지금_걸린_조건이_지우기_폼과_함께_간다(client: TestClient) -> None:
     """`조건 전체` 가 화면에 보이는 것과 같은 조건이어야 한다."""
     html = client.get("/ui/review", params={"workflow_id": "1", "status": "none"}).text
@@ -198,6 +213,47 @@ def test_고른_것만_세_표에서_사라지고_나머지는_남는다(
         )
         == 0
     )
+
+
+def test_분류가_붙은_건도_외래키_없이_지워진다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """`job_classifications` 도 `raw_job_id` 를 참조한다 (`migrations/0014`).
+
+    지우기 전에 이 표를 비우지 않으면 `sqlite3.IntegrityError: FOREIGN KEY constraint failed`
+    로 죽는다 — 분류가 붙은 공고를 지우려던 실제 운영 중 실패를 그대로 재현한다.
+    """
+    conn.execute(
+        "INSERT INTO job_classifications (raw_job_id, model) VALUES (1, 'gemini-3.7-flash')"
+    )
+
+    response = client.post("/ui/review/delete", data={"raw_job_id": ["1"]})
+
+    assert response.status_code == 200
+    assert "IntegrityError" not in response.text
+    assert raw_ids(conn) == [2, 3, 4, 5]
+    assert int(conn.execute("SELECT count(*) FROM job_classifications").fetchone()[0]) == 0
+
+
+def test_제안이_붙은_건도_외래키_없이_지워진다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """`job_field_suggestions` 도 `raw_job_id` 를 참조한다 (`migrations/0023`).
+
+    이 표를 비우지 않으면 `job_classifications` 때와 같은 이유로 `FOREIGN KEY constraint
+    failed` 로 죽는다 — 실제 운영 중 재현된 두 번째 사례다.
+    """
+    conn.execute(
+        "INSERT INTO job_field_suggestions (raw_job_id, field_name, value)"
+        " VALUES (1, 'company', '엘지전자(주)')"
+    )
+
+    response = client.post("/ui/review/delete", data={"raw_job_id": ["1"]})
+
+    assert response.status_code == 200
+    assert "IntegrityError" not in response.text
+    assert raw_ids(conn) == [2, 3, 4, 5]
+    assert int(conn.execute("SELECT count(*) FROM job_field_suggestions").fetchone()[0]) == 0
 
 
 def test_필터_전체로_지우면_조건에_걸린_것만_사라진다(

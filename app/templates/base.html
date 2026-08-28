@@ -217,6 +217,26 @@
           {% endfor %}
         </ul>
       </nav>
+      {# 위 묶음 안의 실제 화면들. `group_nav` 가 없으면(묶이지 않은 화면이거나 운영 설정
+         하위처럼 자기 하위 메뉴를 따로 그리는 화면이면) 이 줄은 아예 없다 —
+         빈 줄을 두면 화면마다 높이가 들쭉날쭉해진다 (`app/api/ui.py` 의 `render_page`) #}
+      {% if group_nav %}
+      <nav class="mt-2">
+        <ul class="flex flex-wrap gap-1">
+          {% for path, label in group_nav %}
+          <li>
+            {% if path == group_active %}
+            <a href="{{ path }}" aria-current="page"
+               class="block rounded-md bg-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-900">{{ label }}</a>
+            {% else %}
+            <a href="{{ path }}"
+               class="block rounded-md px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900">{{ label }}</a>
+            {% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+      </nav>
+      {% endif %}
     </div>
   </header>
 

@@ -73,13 +73,16 @@ SELECTORS: dict[str, Any] = {
 
 # 두산이 그 값을 주는 칸과 이 공고에서 나와야 하는 값
 FILLED = {
-    "job_category": "광고영업",
     "work_location": "서울",
-    "headcount": "0명",
 }
 
 # 두산이 주지 않는 칸. **빈 칸이어야 한다** — 다른 값으로 채우지 않는다
 EMPTY = ("department", "employment_type", "career_level", "preferred")
+
+# 그중 `normalized_jobs` 에 아직 남아 있는 칸. `department` 는 0016 이 지웠고, 수집은 여전히
+# 그 셀렉터를 들고 있다 — `raw_jobs` 는 건드리지 않는다
+# (`migrations/0016_drop_department_category_headcount.sql`)
+EMPTY_NORMALIZED = ("employment_type", "career_level", "preferred")
 
 
 def stub_fetcher() -> Fetcher:
@@ -169,7 +172,7 @@ async def test_normalization_leaves_the_missing_ones_null(conn: sqlite3.Connecti
     await run_once(conn)
 
     row = conn.execute("SELECT * FROM normalized_jobs ORDER BY id LIMIT 1").fetchone()
-    assert [row[name] for name in EMPTY] == [None, None, None, None]
+    assert [row[name] for name in EMPTY_NORMALIZED] == [None, None, None]
 
 
 async def test_a_rule_can_run_on_a_new_column(conn: sqlite3.Connection) -> None:
@@ -177,12 +180,12 @@ async def test_a_rule_can_run_on_a_new_column(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
         INSERT INTO normalization_rules (field_name, rule_type, rule_config_json)
-        VALUES ('headcount', 'regex', ?)
+        VALUES ('work_location', 'regex', ?)
         """,
-        (json.dumps({"pattern": r"명$", "replacement": " 명"}),),
+        (json.dumps({"pattern": r"울$", "replacement": "울시"}),),
     )
 
     await run_once(conn)
 
-    row = conn.execute("SELECT headcount FROM normalized_jobs ORDER BY id LIMIT 1").fetchone()
-    assert row["headcount"] == "0 명"
+    row = conn.execute("SELECT work_location FROM normalized_jobs ORDER BY id LIMIT 1").fetchone()
+    assert row["work_location"] == "서울시"

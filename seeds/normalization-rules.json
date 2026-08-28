@@ -1,5 +1,5 @@
 {
-  "note": "정규화 규칙 초기값. 2026-08-22 에 실제 수집된 현대자동차 공고 3건의 값을 보고 만들었다. 사이트가 늘면 여기에 더하지 말고 화면에서 추가한다.",
+  "note": "정규화 규칙 초기값. 2026-08-22 에 실제 수집된 현대자동차 공고 3건의 값을 보고 만들었다. 사이트가 늘면 여기에 더하지 말고 화면에서 추가한다. company 는 공고에서 뽑은 자회사 칸이고, 아래 규칙 넷은 그 칸에 걸린다. 모회사 칸(parent_company)에는 규칙을 두지 않는다 - 크롤러에 적힌 값을 그대로 옮기는 자리다 (migrations/0018_parent_company.sql).",
   "rules": [
     {
       "field_name": "title",
@@ -76,24 +76,6 @@
       "config": {
         "collapse_whitespace": true
       }
-    },
-    {
-      "field_name": "department",
-      "rule_type": "trim",
-      "priority": 0,
-      "config": {
-        "collapse_whitespace": true
-      }
-    },
-    {
-      "field_name": "department",
-      "rule_type": "regex",
-      "priority": 10,
-      "config": {
-        "pattern": "^[\\s·\\-/|>]+|[\\s·\\-/|>]+$",
-        "replacement": ""
-      },
-      "why": "부서명 앞뒤에 붙어 오는 구분기호를 뗀다"
     },
     {
       "field_name": "deadline",

@@ -51,26 +51,33 @@ from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 # `source_url`, `raw_job_id`, `normalized_at` 은 파이프라인이 채우고, `delivered_at` 은
 # 제공 API 만 쓴다 (`.claude/rules/data-safety.md`).
 #
-# 뒤의 열 개는 0011 이 더한 칸이다. 사이트가 이미 나눠서 주는 값을 도로 합치지 않으려고
+# 뒤의 일곱은 0011 이 더한 칸이다. 사이트가 이미 나눠서 주는 값을 도로 합치지 않으려고
 # 늘렸고, 넷 이상의 사이트가 주는 것만 골랐다
 # (`migrations/0011_split_body_columns.sql`, `tests/test_split_body_columns.py`).
+#
+# 0016 이 `department`·`job_category`·`headcount` 를 뺐다. 값이 자리에 맞게 들어오지 않는
+# 칸이었다 (`migrations/0016_drop_department_category_headcount.sql`). 0017 이 `job_role` 을
+# 더했다 — 지운 직군과 달리 닫힌 목록이 아니라 제목에서 옮기는 자유 텍스트다
+# (`migrations/0017_job_role.sql`). 0025 가 `job_major`·`job_minor` 를 더했다 — `career_level`
+# 처럼 셀렉터가 채우는 칸이 아니라 분류가 `job_taxonomy` 표에서 골라 덮는 칸이다
+# (`migrations/0025_job_major_minor.sql`).
 NORMALIZED_FIELDS: tuple[str, ...] = (
     "company",
     "title",
-    "department",
+    "job_role",
     "deadline",
     "body",
     "requirements",
     "start_date",
-    "job_category",
     "employment_type",
     "career_level",
     "work_location",
-    "headcount",
     "duties",
     "preferred",
     "hiring_process",
     "etc_info",
+    "job_major",
+    "job_minor",
 )
 
 # `normalization_rules.rule_type` 의 CHECK 제약과 같은 값이어야 한다.
@@ -95,7 +102,7 @@ class _Config(BaseModel):
 
 
 class MappingConfig(_Config):
-    """값 치환표. 부서명·고용형태처럼 사이트마다 표기가 갈리는 필드에 쓴다."""
+    """값 치환표. 회사명·고용형태처럼 사이트마다 표기가 갈리는 필드에 쓴다."""
 
     map: dict[str, str]
     # 표에 없는 값을 만났을 때. None 이면 원문을 그대로 둔다

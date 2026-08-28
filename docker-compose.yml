@@ -1,5 +1,9 @@
 # api 컨테이너 하나가 API·화면·스케줄러·크롤링 워커를 전부 담는다.
 # Redis·Celery·별도 web 컨테이너·nginx 는 두지 않는다 (.claude/docs/tech-stack.md).
+#
+# 두 번째 컨테이너는 minio 하나다. 2026-08-28 에 예외로 결정했다 — SQLite 한 파일에 올린
+# 이미지를 담을 수 없고, S3 API 를 그대로 말하므로 나중에 실제 S3 로 엔드포인트만 바꿔
+# 옮길 수 있다 (.claude/rules/core.md).
 services:
   api:
     build: .
@@ -28,5 +32,28 @@ services:
       - jobs-data:/data
     restart: unless-stopped
 
+  # 회사 로고 파일 저장소. depends_on 을 걸지 않는다 — 저장소가 없어도 수집과 화면은
+  # 그대로 돌아야 하고, 걸어 두면 저장소가 못 뜨는 날 API 까지 같이 멈춘다.
+  #
+  # 버킷은 콘솔(:9001)에서 손으로 만든다. 자동 생성하는 mc 컨테이너를 두지 않는다 —
+  # 버킷이 없는 것은 운영 설정 화면의 연결 확인이 사유를 대는 실패이지, 세 번째 컨테이너로
+  # 가릴 일이 아니다.
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: server /data --console-address ":9001"
+    ports:
+      # 9000 은 S3 API, 9001 은 브라우저로 보는 콘솔이다.
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      # 로컬 기본값이다. 운영에 올릴 때는 반드시 환경으로 넣는다.
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER:-minioadmin}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-minioadmin}"
+    volumes:
+      # named volume. 올린 로고 파일이 여기 남는다.
+      - minio-data:/data
+    restart: unless-stopped
+
 volumes:
   jobs-data:
+  minio-data:

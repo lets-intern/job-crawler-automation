@@ -1,4 +1,4 @@
-"""분류 실행. 본문이 있고 아직 분류되지 않은 공고를 찾아 돈다.
+"""분류 실행. 보낼 글이 있고 아직 분류되지 않은 공고를 찾아 돈다.
 
 **수집과 따로 돈다.** 같은 실행에서 이어 돌리면 SK 103건일 때 실행이 9분 가까이 길어지고,
 분류가 실패하면 수집까지 실패로 보인다. 수집은 본문까지만 하고, 나누는 것은 여기가 한다
@@ -25,8 +25,18 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from app import taxonomy
 from app.classify.classifier import ClassifyError, chosen, classify_body
-from app.classify.store import pending_count, pending_ids, read_body, save_classification
+from app.classify.schema import build_classification_model
+from app.classify.store import (
+    pending_count,
+    pending_ids,
+    read_current_values,
+    read_source,
+    read_title,
+    save_classification,
+    save_suggestions,
+)
 from app.config import Settings
 from app.llm import settings as llm_settings
 from app.llm.base import Usage
@@ -147,7 +157,7 @@ async def classify_pending(
     client: Any | None = None,
     settings: Settings | None = None,
 ) -> ClassifyProgress:
-    """본문이 있고 아직 분류되지 않은 공고를 상한만큼 돈다."""
+    """원문이나 본문이 있고 아직 분류되지 않은 공고를 상한만큼 돈다."""
     return await classify_ids(
         conn,
         pending_ids(conn, bounded(limit)),
@@ -187,8 +197,19 @@ async def classify_ids(
         progress.note(str(exc))
         return progress
 
+    # 직무 분류 표는 배치 시작 전에 한 번만 읽는다. 공고 640건을 돈다고 표를 640번 읽을
+    # 이유가 없다 — 표는 이 실행 도중에는 바뀌지 않는다고 본다
+    taxonomy_tree = taxonomy.enabled_tree(conn)
+    response_model = build_classification_model(conn)
+
     for raw_job_id in raw_job_ids:
-        body = read_body(conn, raw_job_id)
+        # 원문이 있으면 원문, 없으면 본문이다. 옛 건에는 원문이 없다 (`app/classify/store.py`)
+        source = read_source(conn, raw_job_id)
+        # 제목은 `job_role` 의 출처다. 본문만 보내면 그 칸이 영원히 빈다
+        title = read_title(conn, raw_job_id)
+        # company·deadline·start_date 중 수집이 이미 채운 값. 무엇이 채워져 있는지 몰라서는
+        # 분류가 원문과 "다르다" 를 말할 수 없다
+        current_values = read_current_values(conn, raw_job_id)
 
         def counted(usage: Usage) -> None:
             # 호출 하나가 행 하나다. 깨진 응답으로 한 번 더 물었으면 두 행이 남는다
@@ -197,7 +218,14 @@ async def classify_ids(
 
         try:
             result = await classify_body(
-                body, settings=resolved, client=resolved_client, on_call=counted
+                source,
+                title=title,
+                current_values=current_values,
+                taxonomy_tree=taxonomy_tree,
+                response_model=response_model,
+                settings=resolved,
+                client=resolved_client,
+                on_call=counted,
             )
         except ClassifyError as exc:
             _note_failed_call(conn, provider.name, model, exc)
@@ -213,6 +241,9 @@ async def classify_ids(
             evidence=result.evidence,
         )
         progress.dropped += len(result.dropped)
+        # 같은 호출의 다른 갈래다. 값이 있는 칸에 원문이 다른 값을 낸 것은 여기로 간다 —
+        # `normalize/engine.py` 는 이 표를 읽지 않는다 (PRD 6절)
+        save_suggestions(conn, raw_job_id, result.suggestions, result.suggestion_reasons)
         try:
             # 분류가 채운 칸이 `normalized_jobs` 까지 가야 소비 측이 본다. 규칙 -> 분류 ->
             # 사람 보정 순서는 정규화 경로 하나가 정한다 (`app/normalize/engine.py`)

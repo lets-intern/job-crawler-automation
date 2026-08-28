@@ -13,33 +13,50 @@
 정렬과 `enabled` 판정은 규칙을 어디서 받았든 이 파일에서 다시 한다. DB 의 ORDER BY 에만
 맡기면 규칙 목록을 손으로 만들어 넣는 경로에서 조용히 순서가 뒤집힌다.
 
-## 회사명은 두 출처에서 하나를 고른다
+## 회사명은 두 칸이다
 
-`raw_data_json.company` 가 비어 있지 않으면 그 값을 쓰고 `company_source='parsed'` 다.
-비어 있으면 그 크롤러의 `crawlers.default_company` 를, 그것도 비어 있으면 **크롤러 이름**을
-쓰고 `company_source='operator'` 다. 크롤러 이름조차 없는 경우에만 둘 다 NULL 이다 —
-빈 문자열로 채우지 않는다.
+`parent_company` 는 그 크롤러의 `crawlers.default_company`, **오직 그것뿐이다.** 비어 있으면
+NULL 이다 — 크롤러 이름으로 대신 채우지 않는다.
 
-크롤러 이름까지 내려가는 것은 목록이 회사명을 주지 않는 사이트(토스·우아한형제들)를 위한
-것이다. 비워 두는 것보다 상위 기업 이름이라도 있는 편이 낫다 (2026-08-26 결정).
+**2026-08-26 에는 비어 있으면 크롤러 이름을 대신 썼다.** 목록이 회사명을 주지 않는
+사이트(토스·우아한형제들)를 위한 것이었지만, 그러면 모회사가 운영자가 적은 값인지 시스템이
+추측한 값인지 화면에서 갈리지 않았다. 2026-08-29 에 크롤러 등록 화면이 이 칸을 필수로
+바꾸면서(빈 값으로 저장할 수 없다) 그 추측이 필요 없어졌다 — 모회사는 언제나 **설정한 값**
+이다. 이 결정 전에 등록돼 비어 있던 행은 `migrations/0022_backfill_default_company.sql`
+이 그 시점의 크롤러 이름으로 한 번 채웠다. 그 뒤로 새로 만들거나 비운 행은 없다.
 
-파싱값이 이기는 이유는 공고 단위가 사이트 단위보다 구체적이기 때문이다. 삼성 채용 사이트
-하나에 삼성SDS 와 삼성전기 공고가 섞여 들어오고, 그 둘을 구분하는 것은 파싱값뿐이다.
+`company` 는 `raw_data_json.company` 그대로이고, 뽑히지 않았으면 NULL 이다. **모회사 이름으로
+채우지 않는다.** 채우면 두 칸이 같은 값이 되어 칸을 가른 일이 없던 일이 된다. 자회사가 비어
+있다는 것은 "이 사이트는 계열사를 말하지 않는다" 는 사실이고, 그 사실이 값으로 남아야 한다.
 
-고른 값에도 다른 필드와 똑같이 규칙이 적용된다. "삼성전기(주)" 를 "삼성전기" 로 맞추는 것은
-`mapping` 규칙의 일이지 이 해결 단계의 일이 아니다.
+칸이 하나였을 때는 둘을 합쳐 넣고 어느 쪽을 썼는지 `company_source` 에 적었다. 칸 이름이
+출처를 말하게 된 뒤로 그 열은 할 말이 없다 (`migrations/0018_parent_company.sql`).
 
-## 여섯 칸은 수집이, 열한 칸은 분류가 가진다
+`company` 에는 다른 필드와 똑같이 규칙이 적용된다. "삼성전기(주)" 를 "삼성전기" 로 맞추는
+것은 `mapping` 규칙의 일이다. `parent_company` 에는 규칙을 태우지 않는다 — 사이트가 준 원문이
+아니라 운영자가 크롤러에 적어 둔 값을 그대로 옮기는 칸이다.
+
+## 처음 보는 회사는 행이 생긴다
+
+`normalized_jobs` 에 한 건이 들어갈 때 그 회사의 `companies` 행이 없으면 로고가 빈 행을
+만든다 (`app/companies.py`). 이름은 자회사가 있으면 자회사, 없으면 모회사다. 있는 행은
+덮지 않는다 — 운영자가 화면에서 고친 로고와 모회사 이름이 다음 수집에 도로 덮이면 그 화면은
+아무 일도 하지 못한다.
+
+만드는 자리는 `insert_normalized` 하나다. 값을 미리 보는 경로(`normalized_values`)에서
+만들면 규칙 화면에서 미리보기를 누른 것만으로 회사가 늘어난다.
+
+## 여섯 칸은 수집이, 아홉 칸은 분류가 가진다
 
 수집은 어느 사이트나 확실히 주는 여섯 칸만 한다 — `title` `body` `company` `deadline`
-`start_date` `source_url`. 나머지 열한 칸은 본문을 읽어 나눈 결과가 채운다 (`app/classify/`).
+`start_date` `source_url`. 나머지 아홉 칸은 공고를 읽어 나눈 결과가 채운다 (`app/classify/`).
 그 결과는 `job_classifications` 에 따로 남아 있다.
 
-**분류가 있으면 그 열한 칸은 전부 분류 값이다.** 규칙이 만든 값이 있어도 덮고, 분류가 빈 칸을
+**분류가 있으면 그 아홉 칸은 전부 분류 값이다.** 규칙이 만든 값이 있어도 덮고, 분류가 빈 칸을
 냈으면 빈 칸이 된다. 칸의 출처가 하나여야 소비 측이 한 가지 규칙으로 읽는다 (2026-08-26 결정).
 
 빈 칸까지 덮는 것이 핵심이다. 채워진 칸만 덮으면 2026-08-26 이전에 수집된 행에 옛 매핑이 넣어
-둔 값(`IT - 구축/운영/최적화`, `Permanent`)이 남고, 그 순간 판정 칸 셋의 닫힌 목록이
+둔 값(`Permanent`)이 남고, 그 순간 판정 칸 둘의 닫힌 목록이
 `.claude/docs/api-contract.md` 가 약속한 대로 성립하지 않는다.
 
 수집이 주는 여섯 칸은 분류가 건드리지 않는다. `deadline` 은 마감 지난 공고를 거르는 데 쓰이고
@@ -60,8 +77,8 @@
 보정도 `raw_jobs` 처럼 읽기만 한다. 정규화가 사람이 고친 값을 다시 쓰면 규칙 하나가 검수 결과를
 덮어쓰게 되고, 그것이 이 테이블을 따로 둔 이유를 없앤다.
 
-`company_source` 는 규칙 단계가 고른 출처만 말한다. 사람이 고쳤는지는 보정 행이 있는지로
-안다.
+`parent_company` 는 보정 대상이 아니다. 모회사가 틀렸으면 크롤러의 값을 고치고 재정규화한다 —
+공고 한 건이 아니라 그 크롤러가 모은 전부가 함께 고쳐지고, 그것이 맞는 단위다.
 
 ## 빈 값에는 규칙을 적용하지 않는다
 
@@ -85,7 +102,8 @@ from datetime import datetime
 
 from bs4 import BeautifulSoup
 
-from app.classify.schema import CLASSIFY_FIELDS
+from app import companies
+from app.classify.schema import STORED_CLASSIFY_FIELDS
 from app.classify.store import read_classification
 
 # 어디서 줄이 바뀌어야 하는지는 HTML 이 정하고, 그 목록은 저기 하나뿐이다. 여기에 같은
@@ -121,20 +139,20 @@ _HORIZONTAL = re.compile(r"[^\S\n]+")
 # 빈 줄이 셋 이상이면 둘로. 원문 텍스트에 있던 빈 줄만 여기까지 온다
 _BLANK_RUN = re.compile(r"\n{3,}")
 
-# `normalized_jobs.company_source` 의 CHECK 제약과 같은 값이어야 한다.
-PARSED = "parsed"
-OPERATOR = "operator"
-
-# 규칙이 만드는 필드가 아니라 해결 단계가 정하는 값이다. `NORMALIZED_FIELDS` 에 넣지 않는다.
-COMPANY_SOURCE = "company_source"
+# 규칙이 만드는 필드가 아니라 크롤러가 정하는 값이다. `NORMALIZED_FIELDS` 에 넣지 않는다 —
+# 그 목록은 "규칙이 값을 바꿀 수 있는 칸" 이고 이 칸은 그대로 옮기는 자리다.
+PARENT_COMPANY = "parent_company"
 
 # 사람이 고칠 수 있는 필드. `job_field_overrides.field_name` 의 CHECK 제약과 같은 값이어야
 # 한다. `source_url` 은 공고의 신원이라 들어 있지 않다.
 #
-# 0012 가 그 CHECK 를 열여섯 칸으로 넓혀서 `NORMALIZED_FIELDS` 와 같아졌다. 두 목록을 하나로
-# 합치지 않는 것은 뜻이 다르기 때문이다 — 이쪽은 "사람이 고쳐도 되는 칸" 이고, 언젠가
-# 고치면 안 되는 칸이 생기면 여기서만 빠진다. 늘릴 때는 마이그레이션과 같은 커밋에서 늘린다.
-# 코드만 넓히면 DB 가 거절하고, 그 실패는 운영자가 저장을 누른 뒤에야 드러난다.
+# 0012 가 그 CHECK 를 열여섯 칸으로 넓혔고, 0016 이 칸 셋을 지운 뒤로 CHECK 쪽이 더 넓다 —
+# 지운 칸의 보정 행은 되돌릴 때 필요해서 남겨 두었다
+# (`migrations/0016_drop_department_category_headcount.sql`). 이 목록에 없으므로 읽히지 않는다.
+# 두 목록을 하나로 합치지 않는 것은 뜻이 다르기 때문이다 — 이쪽은 "사람이 고쳐도 되는 칸"
+# 이고, 언젠가 고치면 안 되는 칸이 생기면 여기서만 빠진다. 늘릴 때는 마이그레이션과 같은
+# 커밋에서 늘린다. 코드만 넓히면 DB 가 거절하고, 그 실패는 운영자가 저장을 누른 뒤에야
+# 드러난다.
 OVERRIDABLE_FIELDS: tuple[str, ...] = NORMALIZED_FIELDS
 
 
@@ -173,39 +191,24 @@ def load_rules(conn: sqlite3.Connection) -> list[Rule]:
     return [_rule_from_row(row) for row in rows]
 
 
-def resolve_company(
-    raw: Mapping[str, object], default_company: str | None
-) -> tuple[str, str | None]:
-    """쓸 회사명과 그 출처. 파싱값이 이기고, 둘 다 없으면 ("", None) 이다.
-
-    규칙을 태우기 전의 값을 그대로 돌려준다. 앞뒤 공백을 여기서 깎으면 `trim` 규칙이 하는 일을
-    두 곳에서 하게 된다. 비었는지 판정할 때만 공백을 무시한다.
-    """
-    parsed = raw.get("company")
-    if isinstance(parsed, str) and parsed.strip():
-        return parsed, PARSED
-    if default_company and default_company.strip():
-        return default_company, OPERATOR
-    return "", None
-
-
 def normalize_fields(
     raw: Mapping[str, object],
     rules: Sequence[Rule],
-    default_company: str | None = None,
+    parent_company: str | None = None,
     classification: Mapping[str, str] | None = None,
 ) -> dict[str, str | None]:
     """원문 필드에서 `normalized_jobs` 의 값들을 만든다. 값이 없는 필드는 None 이다.
 
-    `company` 만 원문 그대로가 아니라 해결된 값에서 출발하고, 그 출처가 `company_source` 로
-    함께 나온다. 규칙이 값을 지워 버리면 출처도 NULL 이다 — 남은 값이 없는데 어디서 왔는지만
-    적혀 있으면 그 행은 읽는 쪽을 헷갈리게 한다.
+    `parent_company` 는 규칙을 타지 않고 받은 값 그대로 나온다. 빈 값은 NULL 이다 — 빈
+    문자열로 채우면 "모회사를 모른다" 와 "모회사가 빈 이름이다" 가 구분되지 않는다.
+
+    `company` 는 이제 다른 필드와 똑같다. 뽑히지 않았으면 NULL 이고, 모회사 이름이 그 자리를
+    메우지 않는다.
     """
     ordered = _by_field(rules)
-    resolved, source = resolve_company(raw, default_company)
     result: dict[str, str | None] = {}
     for field_name in NORMALIZED_FIELDS:
-        raw_value = resolved if field_name == "company" else raw.get(field_name)
+        raw_value = raw.get(field_name)
         value = raw_value if isinstance(raw_value, str) else ""
         if not value:
             result[field_name] = None
@@ -219,42 +222,54 @@ def normalize_fields(
                 # 공고는 남아야 한다.
                 break
         result[field_name] = value or None
-    result[COMPANY_SOURCE] = source if result["company"] else None
+    # 마감을 못 뽑았거나 규칙이 비웠으면(`상시채용` 매핑 등) "상시모집" 으로 채운다
+    # (2026-08-29 결정). 빈 마감은 셀렉터가 놓친 것과 정말 마감이 없는 상시채용을 화면에서
+    # 구분하지 못했다 — `career_level` 을 "무관" 으로 채운 것과 같은 실사용 판단이다
+    if result.get("deadline") is None:
+        result["deadline"] = "상시모집"
+    result[PARENT_COMPANY] = parent_company if parent_company and parent_company.strip() else None
     return apply_classification(result, classification)
 
 
 def apply_classification(
     fields: dict[str, str | None], classification: Mapping[str, str] | None
 ) -> dict[str, str | None]:
-    """열한 칸을 분류 결과로 바꾼다. 규칙이 만든 값이 있어도 덮고, 빈 칸이면 비운다.
+    """아홉 칸과 직무 분류 둘을 분류 결과로 바꾼다. 규칙이 만든 값이 있어도 덮고, 빈 칸이면
+    비운다.
 
     분류가 없으면(아직 돌지 않았으면) 아무것도 하지 않는다. 그 공고는 규칙이 만든 값을 그대로
     가진 채로 남고, 나중에 분류를 돌리면 재정규화 없이도 다음 정규화에서 넘어간다.
 
-    수집이 주는 여섯 칸은 `CLASSIFY_FIELDS` 에 없으므로 여기를 지나가지 않는다.
+    수집이 주는 여섯 칸은 `STORED_CLASSIFY_FIELDS` 에 없으므로 여기를 지나가지 않는다.
+    `job_major`/`job_minor` 는 `job_taxonomy` 표에서 고르는 판정 칸이라 정적 스키마 목록
+    (`CLASSIFY_FIELDS`)에는 없지만, 저장 경로는 이 둘까지 아는 `STORED_CLASSIFY_FIELDS` 를
+    쓴다(`app/classify/schema.py`).
+
+    **`career_level` 만 빈 칸을 "무관" 으로 채운다 (2026-08-28 결정).** 근거가 없어 판단하지
+    못한 것과 사이트가 경력무관이라고 밝힌 것은 원래 다른 뜻이지만, 실사용에서는 사이트가
+    경력을 아예 언급하지 않은 공고 대부분이 실제로 경력무관이다. 다른 칸은 이 규칙을 타지
+    않는다 — 빈 칸이 그대로 있어야 검수 화면에서 못 뽑은 것을 잡아낼 수 있다.
     """
     if not classification:
         return fields
-    for name in CLASSIFY_FIELDS:
+    for name in STORED_CLASSIFY_FIELDS:
         fields[name] = classification.get(name, "").strip() or None
+    if fields.get("career_level") is None:
+        fields["career_level"] = "무관"
     return fields
 
 
-def read_default_company(conn: sqlite3.Connection, raw_job_id: int) -> str | None:
-    """공고가 회사명을 주지 않을 때 쓸 값. 없으면 None 이다. 읽기 전용이다.
+def read_parent_company(conn: sqlite3.Connection, raw_job_id: int) -> str | None:
+    """그 공고를 모은 크롤러가 말하는 모회사. 없으면 None 이다. 읽기 전용이다.
 
-    운영자가 크롤러에 적어 둔 `crawlers.default_company` 가 먼저고, 그것도 비어 있으면
-    **크롤러 이름**을 쓴다. 토스·우아한형제들은 목록이 회사명을 주지 않는데, 비워 두는 것보다
-    상위 기업 이름이라도 있는 편이 낫다 (2026-08-26 결정).
-
-    크롤러 이름을 쓴 것도 `company_source` 는 `operator` 다. 그 열이 가르는 것은 "사이트가
-    준 값인가, 우리가 채운 값인가" 이고 둘 다 뒤쪽이다. 어느 쪽으로 채웠는지는 `crawlers`
-    행을 보면 안다 — 값이 둘로 갈린다고 출처를 셋으로 늘리면 소비 측이 읽던 두 값에 모르는
-    값이 하나 는다 (`.claude/docs/api-contract.md`).
+    **운영자가 크롤러 등록·수정 화면에 적은 `crawlers.default_company` 그대로다.** 크롤러
+    이름으로 대신 채우지 않는다 — 2026-08-29 부터 그 화면이 이 칸을 필수로 받으므로, 새로
+    만든 행에는 빈 값이 없다. 이 화면 이전에 만들어져 비어 있던 행은
+    `migrations/0022_backfill_default_company.sql` 이 한 번 채웠다.
     """
     row = conn.execute(
         """
-        SELECT c.default_company AS default_company, c.name AS name
+        SELECT c.default_company AS default_company
           FROM raw_jobs r
           JOIN workflows w ON w.id = r.workflow_id
           JOIN crawlers c ON c.id = w.crawler_id
@@ -262,13 +277,10 @@ def read_default_company(conn: sqlite3.Connection, raw_job_id: int) -> str | Non
         """,
         (raw_job_id,),
     ).fetchone()
-    if row is None:
+    if row is None or row["default_company"] is None:
         return None
-    for column in ("default_company", "name"):
-        value = row[column]
-        if value is not None and str(value).strip():
-            return str(value)
-    return None
+    value = str(row["default_company"]).strip()
+    return value or None
 
 
 def read_raw(conn: sqlite3.Connection, raw_job_id: int) -> tuple[str, dict[str, object]]:
@@ -319,10 +331,6 @@ def apply_overrides(
         if field_name not in OVERRIDABLE_FIELDS:
             continue
         fields[field_name] = value or None
-    if fields.get("company") is None:
-        # 사람이 회사명을 지웠으면 출처도 사라진다. 남은 값이 없는데 어디서 왔는지만 적혀
-        # 있으면 그 행은 읽는 쪽을 헷갈리게 한다
-        fields[COMPANY_SOURCE] = None
     return fields
 
 
@@ -338,7 +346,7 @@ def normalized_values(
     fields = normalize_fields(
         data,
         rules,
-        read_default_company(conn, raw_job_id),
+        read_parent_company(conn, raw_job_id),
         read_classification(conn, raw_job_id),
     )
     return source_url, apply_overrides(fields, read_overrides(conn, raw_job_id))
@@ -350,10 +358,11 @@ def insert_normalized(conn: sqlite3.Connection, raw_job_id: int, rules: Sequence
     `delivered_at` 은 쓰지 않는다. 제공 API 경로만 쓴다 (`.claude/rules/data-safety.md`).
     """
     source_url, fields = normalized_values(conn, raw_job_id, rules)
+    companies.register(conn, fields["company"], fields[PARENT_COMPANY])
     # 컬럼 이름은 이 모듈의 상수에서만 온다. 밖에서 오는 값이 들어오지 않는다. 손으로 적은
     # 목록을 두면 칸이 늘 때마다 여기와 `NORMALIZED_FIELDS` 가 갈리고, 갈린 순간 새 칸은
     # 조용히 NULL 로만 남는다
-    columns = (*NORMALIZED_FIELDS, COMPANY_SOURCE)
+    columns = (*NORMALIZED_FIELDS, PARENT_COMPANY)
     cursor = conn.execute(
         f"""
         INSERT INTO normalized_jobs

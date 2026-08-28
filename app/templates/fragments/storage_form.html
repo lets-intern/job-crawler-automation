@@ -1,0 +1,118 @@
+{# 저장소 설정. 저장 결과도 연결 확인 결과도 이 조각 하나로 돌아온다 #}
+{% from "macros.html" import failure, notice_box, state, wait %}
+{% if error %}
+{{ failure(error.reason, error.message, title="저장하지 못했다") }}
+{% endif %}
+{% if message %}
+{{ notice_box(message) }}
+{% endif %}
+{% if checked %}
+<div class="notice {{ 'notice-idle' if checked.ok else 'notice-bad' }}"
+     role="{{ 'status' if checked.ok else 'alert' }}">
+  <p>
+    <span class="font-semibold">연결 확인</span>
+    {{ state("성공") if checked.ok else state("실패") }} —
+    {% if not checked.ok %}<span class="font-semibold">{{ checked.step }}</span>에서 멈췄다.{% endif %}
+    {{ checked.message }}
+  </p>
+  <p class="mt-1">확인한 시각: {{ checked_at | as_time }}</p>
+</div>
+{% endif %}
+
+<form hx-put="/ui/storage" hx-target="#storage-form" hx-swap="innerHTML"
+      hx-disabled-elt="find button">
+  <fieldset>
+    <legend>저장소 (S3 호환)</legend>
+    <p>
+      <label for="storage-endpoint">엔드포인트</label>
+      <br>
+      <input id="storage-endpoint" name="endpoint" type="text" size="40"
+             value="{{ config.endpoint }}">
+      <br>
+      <span class="text-sm text-slate-600">
+        서버가 부르는 주소다. MinIO 는 <code>http://minio:9000</code> 이고,
+        실제 S3 는 <span class="font-semibold text-slate-900">비운다</span> — 비우면 아래 지역으로
+        SDK 가 주소를 만든다
+      </span>
+    </p>
+    <p>
+      <label for="storage-region">지역</label>
+      <br>
+      <input id="storage-region" name="region" type="text" size="20" value="{{ config.region }}">
+      <br>
+      <span class="text-sm text-slate-600">
+        MinIO 는 이 값을 무시한다. <code>us-east-1</code> 로 둔다
+      </span>
+    </p>
+    <p>
+      <label for="storage-bucket">버킷</label>
+      <br>
+      <input id="storage-bucket" name="bucket" type="text" size="20" value="{{ config.bucket }}">
+      <br>
+      <span class="text-sm text-slate-600">
+        버킷은 저장소 콘솔에서 먼저 만든다. 없으면 연결 확인이 없다고 알린다
+      </span>
+    </p>
+    <p>
+      <label for="storage-access-key">접근 키</label>
+      <br>
+      <input id="storage-access-key" name="access_key" type="text" size="30"
+             autocomplete="off" value="{{ config.access_key }}">
+    </p>
+    <p>
+      <label for="storage-secret-key">비밀 키</label>
+      <br>
+      <input id="storage-secret-key" name="secret_key" type="password" size="30"
+             autocomplete="off" placeholder="바꿀 때만 넣는다">
+      <br>
+      <span class="text-sm text-slate-600">
+        {% if config.secret_key %}
+        {{ state("있음") }}
+        {% if secret_tail %}끝 네 자리 <code>{{ secret_tail }}</code>{% else %}네 자리 이하라 가렸다{% endif %}.
+        {% else %}
+        {{ state("없음") }}.
+        {% endif %}
+        비우고 저장하면 저장된 값이 그대로 남는다 — 여섯이 한 벌로 저장되므로, 버킷 이름 하나
+        고치려고 키를 다시 타이핑하지 않게 한다
+      </span>
+    </p>
+    <p>
+      <label for="storage-public-base">공개 주소</label>
+      <br>
+      <input id="storage-public-base" name="public_base" type="url" size="40"
+             value="{{ config.public_base }}">
+      <br>
+      <span class="text-sm text-slate-600">
+        브라우저가 로고를 읽는 주소다. 엔드포인트와 다르다. 이 주소로 열리려면 버킷에 익명
+        읽기 권한이 있어야 한다 — 저장소 콘솔에서 준다
+      </span>
+    </p>
+    <p class="text-sm text-slate-600">
+      올릴 수 있는 것은 {{ accepted }} 이미지이고 상한은 {{ max_label }} 다. 형식은 파일
+      이름이 아니라 파일 내용으로 정한다.
+    </p>
+    <p>
+      <button type="submit">저장</button>
+      {{ wait("저장하는 중") }}
+    </p>
+  </fieldset>
+</form>
+
+<form hx-post="/ui/storage/check" hx-target="#storage-form" hx-swap="innerHTML"
+      hx-disabled-elt="find button">
+  <fieldset>
+    <legend>연결 확인</legend>
+    <p>
+      <span class="font-semibold text-slate-900">저장된 설정</span>으로 작은 객체를 넣고, 읽고,
+      지운다. 폼에 적어 둔 값이 아니라 다음 업로드가 실제로 쓸 값이라, 고쳤으면 먼저 저장한다.
+    </p>
+    <p class="text-sm text-slate-600">
+      실패하면 어느 걸음에서 멈췄는지 적힌다. 키가 틀린 것과 버킷이 없는 것과 주소에 못 닿는
+      것은 고치는 방법이 다르다.
+    </p>
+    <p>
+      <button type="submit">연결 확인</button>
+      {{ wait("확인하는 중") }}
+    </p>
+  </fieldset>
+</form>

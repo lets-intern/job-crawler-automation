@@ -27,7 +27,7 @@ import pytest
 from app import db
 from app.crawler.runner import run_workflow
 from app.normalize.backfill import BackfillProgress, renormalize
-from app.normalize.engine import OPERATOR, OVERRIDABLE_FIELDS
+from app.normalize.engine import OVERRIDABLE_FIELDS
 from tests.test_normalize_engine import raw_snapshot
 from tests.test_normalize_pipeline import (
     LIST_URL,
@@ -41,7 +41,7 @@ DEFAULT_COMPANY = "운영자가 적은 회사"
 
 HUMAN_TITLE = "사람이 정한 제목"
 RULE_TITLE = "규칙이 만든 제목"
-RULE_DEPARTMENT = "규칙이 만든 부서"
+RULE_BODY = "규칙이 만든 본문"
 
 # 어느 원문 값과도 같지 않은 키. `mapping` 규칙이 항상 `default` 로 떨어지게 만든다
 UNMATCHED = "어느 공고에도 없는 값"
@@ -86,9 +86,9 @@ def add_late_rules(conn: sqlite3.Connection) -> None:
     add_rule(conn, "title", "mapping", {"map": {UNMATCHED: "쓰이지 않는다"}, "default": RULE_TITLE})
     add_rule(
         conn,
-        "department",
+        "body",
         "mapping",
-        {"map": {UNMATCHED: "쓰이지 않는다"}, "default": RULE_DEPARTMENT},
+        {"map": {UNMATCHED: "쓰이지 않는다"}, "default": RULE_BODY},
     )
 
 
@@ -116,7 +116,7 @@ async def test_override_survives_a_later_rule_change(conn: sqlite3.Connection) -
 
     row = normalized(conn, 1)
     assert row["title"] == HUMAN_TITLE
-    assert row["department"] == RULE_DEPARTMENT
+    assert row["body"] == RULE_BODY
 
     other = normalized(conn, 2)
     assert other["title"] == RULE_TITLE, "보정이 없는 건은 규칙 값 그대로다"
@@ -161,32 +161,35 @@ async def test_override_is_applied_when_the_row_is_first_inserted(
     assert normalized(conn, 1)["title"] == HUMAN_TITLE
 
 
-async def test_company_override_keeps_the_rule_stage_source(conn: sqlite3.Connection) -> None:
-    """`company_source` 는 규칙 단계가 고른 출처다. 사람이 고쳤는지는 보정 행이 말한다."""
+async def test_company_override_does_not_touch_the_parent_column(
+    conn: sqlite3.Connection,
+) -> None:
+    """보정은 자회사 칸에만 걸린다. 모회사는 크롤러가 정하는 값이라 보정 대상이 아니다."""
     await collect(conn)
     before = normalized(conn, 1)
-    assert (before["company"], before["company_source"]) == (DEFAULT_COMPANY, OPERATOR)
+    # 이 사이트는 회사명을 주지 않는다. 자회사가 비고 모회사만 남는 것이 맞는 모양이다
+    assert (before["parent_company"], before["company"]) == (DEFAULT_COMPANY, None)
 
     set_override(conn, 1, "company", "사람이 정한 회사")
     run_renormalize(conn)
 
     row = normalized(conn, 1)
     assert row["company"] == "사람이 정한 회사"
-    assert row["company_source"] == OPERATOR
+    assert row["parent_company"] == DEFAULT_COMPANY
 
 
 async def test_empty_override_clears_the_field(conn: sqlite3.Connection) -> None:
     """빈 문자열은 "비어 있는 것이 맞다" 는 판단이다. 값 없음은 NULL 하나로만 나타난다."""
     await collect(conn)
     set_override(conn, 1, "company", "")
-    set_override(conn, 1, "department", "")
+    set_override(conn, 1, "work_location", "")
 
     run_renormalize(conn)
 
     row = normalized(conn, 1)
     assert row["company"] is None
-    assert row["company_source"] is None, "회사명이 없는데 출처만 남으면 읽는 쪽이 헷갈린다"
-    assert row["department"] is None
+    assert row["parent_company"] == DEFAULT_COMPANY, "자회사를 비운 것이 모회사를 지우지 않는다"
+    assert row["work_location"] is None
 
 
 async def test_overrides_leave_raw_and_delivery_untouched(conn: sqlite3.Connection) -> None:
@@ -244,3 +247,26 @@ async def test_every_normalized_column_can_be_corrected(conn: sqlite3.Connection
     assert [row[field] for field in OVERRIDABLE_FIELDS] == [
         f"{field} 를 사람이 고쳤다" for field in OVERRIDABLE_FIELDS
     ]
+
+
+async def test_an_override_on_a_dropped_field_does_not_break_renormalization(
+    conn: sqlite3.Connection,
+) -> None:
+    """0016 이 지운 칸의 보정 행은 남겨 두고 읽지 않는다.
+
+    지우지 않는 것은 되돌릴 때 필요해서다. 읽히지 않는 것은 `apply_overrides` 가
+    `OVERRIDABLE_FIELDS` 밖의 필드를 건너뛰기 때문이고, 그래서 그 행이 남아 있어도
+    재정규화가 실패하지 않는다 (`migrations/0016_drop_department_category_headcount.sql`).
+    """
+    await collect(conn)
+    set_override(conn, 1, "department", "사람이 고친 부서")
+    set_override(conn, 1, "title", HUMAN_TITLE)
+
+    run_renormalize(conn)
+
+    assert normalized(conn, 1)["title"] == HUMAN_TITLE
+    # 행은 그대로 남아 있다. 되돌릴 때 이것이 있어야 검수 결과가 살아난다
+    kept = conn.execute(
+        "SELECT value FROM job_field_overrides WHERE raw_job_id = 1 AND field_name = 'department'"
+    ).fetchone()
+    assert kept["value"] == "사람이 고친 부서"

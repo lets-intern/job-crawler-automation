@@ -40,21 +40,77 @@ from app.crawler.collect import API
 from app.crawler.playwright import PLAYWRIGHT, STATIC
 from app.selector.api_schema import ApiConfig, ApiConfigError, parse_api_config
 from app.selector.schema import SelectorSchemaError, SelectorSet, validate_selectors
+from app.storage import s3
 
 logger = logging.getLogger(__name__)
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
-# 네비게이션. 경로와 이름은 여기 한 곳에서만 정한다
+# 화면이 늘 때마다 위 줄이 한 칸씩 길어지면, 늘어난 자리를 찾는 일이 화면 하나 늘리는
+# 일보다 커진다. 그래서 위 네비게이션은 묶음 이름만 놓고, 묶음 안의 실제 화면은 그 아래
+# 두 번째 줄(`group_nav`)에서 고른다 — `SETTINGS_NAV` 가 이미 하는 일을 세 묶음에 더 쓴다.
+#
+# 묶음을 가르는 기준은 화면 개수가 아니라 파이프라인 단계다 (2026-08-29 결정,
+# `.claude/docs/architecture.md` 의 실행 흐름).
+#
+# 처음에는 "수집" 하나에 부가 워크플로우까지 넣었다. 부가 워크플로우(LLM 분류·전달)는
+# 사이트를 가져오는 일이 아니라 이미 가져온 데이터를 가공하는 일이라, 그 자리는 틀렸다 —
+# raw_jobs 를 만드는 것이 수집이고 그것을 읽어 normalized_jobs 를 채우거나 고치는 것이
+# 정규화다. 부가 워크플로우는 후자다.
+#
+# "수집" 묶음의 대표 주소는 `/` 가 아니라 `/crawlers` 다 — 루트는 대시보드가 가져갔다
+# (2026-08-29 결정, `app/api/ui_dashboard.py`). 대시보드는 화면 하나뿐이라 두 번째 줄
+# 메뉴가 필요 없어서 `NAV_GROUPS` 에 묶지 않고 `NAV` 에 직접 얹는다 — `/settings` 와 같다.
+NAV_GROUPS: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
+    (
+        "/crawlers",
+        "수집",
+        (
+            ("/crawlers", "크롤러 등록"),
+            ("/tests", "테스트 실행"),
+            ("/workflows", "워크플로우"),
+        ),
+    ),
+    (
+        "/rules",
+        "정규화",
+        (
+            ("/rules", "정규화 규칙"),
+            ("/side", "부가 워크플로우"),
+            ("/taxonomy", "직무 분류"),
+        ),
+    ),
+    (
+        "/review",
+        "데이터 확인",
+        (
+            ("/review", "데이터 확인"),
+            ("/complete", "완성 공고"),
+            ("/companies", "회사 로고"),
+        ),
+    ),
+)
+
+# 네비게이션. 경로와 이름은 여기 한 곳에서만 정한다. 묶음의 이름과 대표 주소는
+# `NAV_GROUPS` 에서 그대로 가져온다 — 두 곳에 따로 적으면 화면 하나가 늘 때 한쪽만 넓어진다
+#
+# 대시보드(`/`)는 `NAV_GROUPS` 어디에도 없다. `/settings` 와 같은 이유다 — 묶여야 할
+# 하위 화면이 없는 화면 하나는 두 번째 줄 메뉴를 만들 이유가 없다
 NAV: tuple[tuple[str, str], ...] = (
-    ("/", "크롤러 등록"),
-    ("/tests", "테스트 실행"),
-    ("/workflows", "워크플로우"),
-    ("/rules", "정규화 규칙"),
-    ("/review", "데이터 검수"),
+    ("/", "대시보드"),
+    *((path, label) for path, label, _ in NAV_GROUPS),
     ("/settings", "운영 설정"),
 )
+
+
+def _group_of(path: str) -> tuple[str, str, tuple[tuple[str, str], ...]] | None:
+    """이 주소가 속한 묶음. 묶음에 없는 주소(`/settings` 등)는 `None` 이다."""
+    for group in NAV_GROUPS:
+        if any(member_path == path for member_path, _ in group[2]):
+            return group
+    return None
+
 
 router = APIRouter(tags=["ui"], include_in_schema=False)
 
@@ -65,10 +121,21 @@ def render(request: Request, name: str, /, **context: Any) -> HTMLResponse:
 
 
 def render_page(request: Request, name: str, /, **context: Any) -> HTMLResponse:
-    """페이지 하나를 렌더한다. 네비게이션과 현재 위치는 여기서 채운다."""
-    return templates.TemplateResponse(
-        request, name, {"nav": NAV, "active": request.url.path, **context}
-    )
+    """페이지 하나를 렌더한다. 네비게이션과 현재 위치는 여기서 채운다.
+
+    지금 주소가 `NAV_GROUPS` 의 한 묶음에 속하면, 위 네비게이션은 그 묶음의 대표 주소로
+    켜지고(`active`) 그 아래 두 번째 줄에 그 묶음의 화면들이 나온다(`group_nav`,
+    `group_active`). 묶이지 않은 주소(`/settings`)는 지금까지와 같다 — 위 네비게이션이 그
+    주소로 바로 켜지고 두 번째 줄은 없다(운영 설정은 `render_settings` 가 자기 하위 메뉴를
+    이미 그린다).
+    """
+    path = request.url.path
+    group = _group_of(path)
+    context.setdefault("nav", NAV)
+    context.setdefault("active", group[0] if group else path)
+    context.setdefault("group_nav", group[2] if group else None)
+    context.setdefault("group_active", path)
+    return templates.TemplateResponse(request, name, context)
 
 
 # 실패 사유별 다음 행동. "500 Internal Server Error" 는 운영자가 할 수 있는 것을 말해 주지
@@ -163,6 +230,25 @@ def format_time(value: Any) -> str:
         parsed = parsed.replace(tzinfo=UTC)
     shown = parsed.astimezone(display_zone())
     return f"{shown.strftime('%Y-%m-%d %H:%M:%S')} {shown.strftime('%Z')}".strip()
+
+
+def collapse_blank_lines(value: Any) -> str:
+    """연속된 빈 줄을 하나로 접는다. 화면에 그리는 이 순간만 접고 저장값은 그대로 둔다.
+
+    분류가 낸 값(주요 업무·자격요건 등)에는 규칙(`app/normalize/rules.py`)을 태우지
+    않는다 — "있는 글자를 그대로 옮긴다" 는 분류의 원칙이라, 원문의 빈 줄이 여러 줄이면
+    그대로 옮겨 적힌다. 그 값 자체를 고치면 원문과 달라지므로, 여기서는 **읽기 전용
+    미리보기 화면에서 보여줄 때만** 접는다(`app/templates/fragments/complete_preview.html`).
+    """
+    if not value:
+        return ""
+    lines = [line.rstrip() for line in str(value).splitlines()]
+    collapsed: list[str] = []
+    for line in lines:
+        if line == "" and collapsed and collapsed[-1] == "":
+            continue
+        collapsed.append(line)
+    return "\n".join(collapsed).strip()
 
 
 def next_step(reason: str) -> str:
@@ -309,6 +395,7 @@ templates.env.globals["next_step"] = next_step
 templates.env.globals["mode_word"] = mode_word
 templates.env.globals["reason_word"] = reason_word
 templates.env.filters["as_time"] = format_time
+templates.env.filters["tidy_text"] = collapse_blank_lines
 
 
 def render_error(request: Request, reason: str, message: str) -> HTMLResponse:
@@ -356,7 +443,7 @@ def install_ui_error_handlers(app: FastAPI) -> None:
         return render_error(request, "server_error", f"{type(exc).__name__}: {exc}")
 
 
-@router.get("/", response_class=HTMLResponse)
+@router.get("/crawlers", response_class=HTMLResponse)
 def crawlers_page(request: Request) -> HTMLResponse:
     return render_page(request, "pages/crawlers.html")
 
@@ -371,9 +458,37 @@ def workflows_page(request: Request) -> HTMLResponse:
     return render_page(request, "pages/workflows.html")
 
 
+@router.get("/side", response_class=HTMLResponse)
+def side_page(request: Request) -> HTMLResponse:
+    """부가 워크플로우 화면. 크롤링과 따로 도는 작업을 여기서 등록하고 돌린다.
+
+    `/workflows` 와 같은 층이다. 운영 설정의 하위로 넣지 않는 이유는 여기에 등록·주기·실행·
+    이력이 다 있기 때문이다 — 값을 한 번 넣어 두는 화면이 아니라 운영하는 화면이다.
+    """
+    return render_page(request, "pages/side.html")
+
+
 @router.get("/rules", response_class=HTMLResponse)
 def rules_page(request: Request) -> HTMLResponse:
     return render_page(request, "pages/rules.html")
+
+
+@router.get("/taxonomy", response_class=HTMLResponse)
+def taxonomy_page(request: Request) -> HTMLResponse:
+    """직무 분류 체계 화면. `/rules` 와 같은 묶음이다 — 분류 체계는 정규화 파이프라인의
+    입력이지 수집이 아니다."""
+    return render_page(request, "pages/taxonomy.html")
+
+
+@router.get("/companies", response_class=HTMLResponse)
+def companies_page(request: Request) -> HTMLResponse:
+    """회사 화면. 받는 형식과 상한은 저장소 모듈에서 가져와 적는다 — 두 곳에서 따로 쓰지 않는다."""
+    return render_page(
+        request,
+        "pages/companies.html",
+        accepted=s3.ACCEPTED,
+        max_label=s3.MAX_IMAGE_LABEL,
+    )
 
 
 @router.get("/jobs")
@@ -395,6 +510,7 @@ def jobs_page() -> RedirectResponse:
 SETTINGS_NAV: tuple[tuple[str, str], ...] = (
     ("/settings", "AI 제공자"),
     ("/settings/notify", "알림"),
+    ("/settings/storage", "파일 저장소"),
     ("/settings/runs", "동시 실행"),
     ("/settings/export", "스냅샷 내보내기"),
     ("/settings/import", "데이터 가져오기"),
@@ -420,6 +536,11 @@ def settings_page(request: Request) -> HTMLResponse:
 @router.get("/settings/notify", response_class=HTMLResponse)
 def settings_notify_page(request: Request) -> HTMLResponse:
     return render_settings(request, "pages/settings_notify.html")
+
+
+@router.get("/settings/storage", response_class=HTMLResponse)
+def settings_storage_page(request: Request) -> HTMLResponse:
+    return render_settings(request, "pages/settings_storage.html")
 
 
 @router.get("/settings/runs", response_class=HTMLResponse)

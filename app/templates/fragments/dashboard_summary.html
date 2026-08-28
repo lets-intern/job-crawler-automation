@@ -1,0 +1,123 @@
+{# 대시보드 본문 조각. 지표 넷, 최근 14일 추이, 최근 완성 공고, 자주 쓰는 화면 바로가기
+   순서로 놓는다 — 숫자를 먼저 보고 그 추이를 보고 실제 건을 확인하는 순서다.
+
+   "완성" 시각은 근사값이다(`app/api/ui_dashboard.py`). 막대 높이는 서버가 미리 0~100
+   비율로 계산해 넘긴다 — 템플릿에서 픽셀이나 SVG 계산을 하지 않는다.
+
+   최근 완성 공고 카드는 `/complete` 목록과 같은 매크로(`fragments/complete_card.html`)를
+   써서 크기·모양·클릭 동작을 똑같이 맞춘다 — 대시보드에서 본 카드가 완성 공고 화면에서
+   다르게 보이면 어느 쪽이 진짜 모양인지 믿을 수 없다. #}
+{% from "fragments/complete_card.html" import complete_card %}
+{% macro delta_word(n) %}
+  {% if n > 0 %}<span class="text-emerald-600">▲ 어제보다 {{ "{:,}".format(n) }}</span>
+  {% elif n < 0 %}<span class="text-slate-400">▼ 어제보다 {{ "{:,}".format(-n) }}</span>
+  {% else %}<span class="text-slate-400">어제와 같음</span>
+  {% endif %}
+{% endmacro %}
+
+<div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+  <div class="rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-4 shadow-sm">
+    <p class="mb-0 text-xs font-semibold uppercase tracking-wide text-slate-500">오늘 추가</p>
+    <p class="mb-0 mt-1.5 text-3xl font-bold tracking-tight text-slate-900">{{ metrics.added_today }}<span class="text-base font-medium text-slate-400">건</span></p>
+    <p class="mb-0 mt-1 text-xs font-medium">{{ delta_word(metrics.added_delta) }}</p>
+  </div>
+  <div class="rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-4 shadow-sm">
+    <p class="mb-0 text-xs font-semibold uppercase tracking-wide text-emerald-700">오늘 완성(근사)</p>
+    <p class="mb-0 mt-1.5 text-3xl font-bold tracking-tight text-emerald-800">{{ metrics.completed_today }}<span class="text-base font-medium text-emerald-500">건</span></p>
+    <p class="mb-0 mt-1 text-xs font-medium">{{ delta_word(metrics.completed_delta) }}</p>
+  </div>
+  <div class="rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50 to-white p-4 shadow-sm">
+    <p class="mb-0 text-xs font-semibold uppercase tracking-wide text-indigo-700">오늘 AI 토큰</p>
+    <p class="mb-0 mt-1.5 text-3xl font-bold tracking-tight text-indigo-800">{{ "{:,}".format(metrics.tokens_today) }}</p>
+    <p class="mb-0 mt-1 text-xs font-medium">{{ delta_word(metrics.tokens_delta) }}</p>
+  </div>
+  <div class="rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-4 shadow-sm">
+    <p class="mb-0 text-xs font-semibold uppercase tracking-wide text-slate-500">전체 완성</p>
+    <p class="mb-0 mt-1.5 text-3xl font-bold tracking-tight text-slate-900">{{ metrics.completed_total }}<span class="text-base font-medium text-slate-400">건</span></p>
+    <p class="mb-0 mt-1 text-xs text-slate-400">지금까지 누적</p>
+  </div>
+  <div class="rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-4 shadow-sm">
+    <p class="mb-0 text-xs font-semibold uppercase tracking-wide text-slate-500">전체 수집</p>
+    <p class="mb-0 mt-1.5 text-3xl font-bold tracking-tight text-slate-900">{{ metrics.added_total }}<span class="text-base font-medium text-slate-400">건</span></p>
+    <p class="mb-0 mt-1 text-xs text-slate-400">지금까지 누적</p>
+  </div>
+</div>
+
+<h3 class="mb-3 mt-6">최근 {{ trend_days | length }}일 추이</h3>
+<div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+  <p class="mb-0 flex flex-wrap items-center gap-4 text-xs font-medium text-slate-500">
+    <span><span class="inline-block h-2.5 w-2.5 rounded-full bg-slate-400 align-middle"></span> 추가</span>
+    <span><span class="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500 align-middle"></span> 완성(근사)</span>
+    <span><span class="inline-block h-2.5 w-2.5 rounded-full bg-indigo-500 align-middle"></span> AI 토큰(이 기간 중 최댓값 기준, 추가·완성과 축이 다르다)</span>
+  </p>
+  {# 서버가 미리 SVG viewBox(0~100) 좌표를 계산해 넘긴다(`app/api/ui_dashboard.py` 의
+     `chart_points`) — 템플릿은 좌표 계산을 하지 않는다. `preserveAspectRatio="none"` 이라
+     칸 너비에 맞춰 가로로만 늘어나고, `vector-effect="non-scaling-stroke"` 가 그렇게
+     늘어나도 선 굵기를 그대로 지킨다. #}
+  <div class="mt-3 border-t border-slate-100 pt-3">
+    <svg viewBox="0 0 100 100" preserveAspectRatio="none" class="h-36 w-full">
+      {% if added_line %}
+      <polyline points="{{ added_line }}" fill="none" stroke="#94a3b8" stroke-width="2"
+                stroke-linejoin="round" vector-effect="non-scaling-stroke"></polyline>
+      <polyline points="{{ completed_line }}" fill="none" stroke="#10b981" stroke-width="2"
+                stroke-linejoin="round" vector-effect="non-scaling-stroke"></polyline>
+      <polyline points="{{ token_line }}" fill="none" stroke="#6366f1" stroke-width="2"
+                stroke-linejoin="round" vector-effect="non-scaling-stroke"></polyline>
+      {% endif %}
+    </svg>
+    <div class="mt-1 flex justify-between gap-1 text-[10px] text-slate-400">
+      {% for day in trend_days %}
+      <span class="cursor-default"
+            title="{{ day.label }} — 추가 {{ day.added }}건, 완성 {{ day.completed }}건, 토큰 {{ "{:,}".format(day.tokens) }}">{{ day.label }}</span>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<h3 class="mb-3 mt-6">AI 토큰 사용량</h3>
+<div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+  {% set total_calls = token_bars | sum(attribute="calls") %}
+  {% if not total_calls %}
+  <p class="notice notice-idle mb-0">아직 쌓인 호출이 없다.</p>
+  {% else %}
+  <div class="space-y-3">
+    {% for bar in token_bars %}
+    <div>
+      <div class="mb-1 flex items-baseline justify-between text-xs">
+        <span class="font-medium text-slate-700">{{ bar.label }}</span>
+        <span class="text-slate-500">{{ "{:,}".format(bar.total_tokens) }} 토큰 · 호출 {{ bar.calls }}회</span>
+      </div>
+      <div class="h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
+        <div class="h-full rounded-full bg-gradient-to-r from-indigo-400 to-indigo-600"
+             style="width: {{ bar.pct }}%"></div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+<div class="mb-3 mt-6 flex items-center justify-between">
+  <h3 class="mb-0">최근 완성 공고</h3>
+  <a class="text-sm font-medium text-slate-600 underline hover:text-slate-900" href="/complete">더보기</a>
+</div>
+{% if not cards %}
+<p class="notice notice-idle">아직 완성된 공고가 없다.</p>
+{% else %}
+<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+  {% for card in cards %}
+  {{ complete_card(card, "dashboard-open") }}
+  {% endfor %}
+</div>
+{% endif %}
+
+<h3 class="mb-3 mt-6">자주 쓰는 화면</h3>
+<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+  {% for path, label, desc in quick_links %}
+  <a href="{{ path }}"
+     class="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md">
+    <p class="mb-0 text-sm font-semibold text-slate-900">{{ label }}</p>
+    <p class="mb-0 mt-1 text-xs leading-relaxed text-slate-500">{{ desc }}</p>
+  </a>
+  {% endfor %}
+</div>

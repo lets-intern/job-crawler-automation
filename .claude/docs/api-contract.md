@@ -47,18 +47,19 @@ GET /api/jobs?updated_after=<ISO8601>&limit=100&cursor=<opaque>
   "items": [
     {
       "id": 1,
-      "company": "회사명",
+      "parent_company": "삼성전자",
+      "company": "삼성SDS",
       "title": "공고 제목",
-      "department": "부서",
+      "job_role": "백엔드 개발",
+      "job_major": "IT·개발",
+      "job_minor": "서버·백엔드",
       "deadline": "2026-09-30",
       "body": "본문",
       "requirements": "자격요건",
       "start_date": "2026-09-01",
-      "job_category": "연구/개발",
       "employment_type": "정규직",
       "career_level": "신입",
       "work_location": "경기 수원시",
-      "headcount": "0명",
       "duties": "주요 업무",
       "preferred": "우대 조건",
       "hiring_process": "전형 절차",
@@ -72,18 +73,50 @@ GET /api/jobs?updated_after=<ISO8601>&limit=100&cursor=<opaque>
 }
 ```
 
-`start_date` 부터 `etc_info` 까지 열 개는 나중에 더한 필드다. **더하는 방향이고 기존 필드는
-그대로 둔다** — 소비 측이 읽던 것이 사라지지 않는다. 특히 `deadline` 은 모집 마감일 그대로이고
-`start_date` 가 그 짝이다. `deadline` 의 뜻은 바뀌지 않았다.
+`start_date` 부터 `etc_info` 까지 여덟은 나중에 더한 필드다. `deadline` 은 모집 마감일
+그대로이고 `start_date` 가 그 짝이다. `deadline` 의 뜻은 바뀌지 않았다.
+
+**2026-08-28 에 `department`·`job_category`·`headcount` 셋을 뺐다.** 값이 자리에 맞게 들어오지
+않는 칸이었고 (한화는 부서에 근무지가, SK 는 부서에 직무가 들어갔다), 모집인원은 적지 않는
+사이트가 많았다. 소비 측은 아직 붙지 않았으므로 이 셋을 읽던 코드는 없다
+(`migrations/0016_drop_department_category_headcount.sql`).
+
+**같은 날 `job_role` 을 더했다.** 공고 제목이 말하는 직무이고, 값은 공고 제목에서 그대로
+옮긴 것이다. **자유 텍스트라 이 필드로 거를 수 없다** — 지운 `job_category` 는 닫힌 목록
+열다섯 개였지만 그 자리에 들어오는 것은 목록이 아니다. 거르는 데 쓸 수 있는 필드는 아래
+`employment_type`·`career_level` 둘뿐이다 (`migrations/0017_job_role.sql`).
+
+제목이 직무를 말하지 않는 통합 공고(`전 직군 채용`)에서는 `null` 이다. 열한 사이트 중 둘이
+그런 공고를 올린다 (`tests/test_job_role_source.py`).
+
+**2026-08-29 에 `job_major`·`job_minor` 를 더했다.** 둘 다 직무 분류 결과이고, `job_role` 과
+근본적으로 다르다 — `job_role` 은 공고 제목에서 그대로 옮긴 자유 텍스트라 어떤 값이 나올지
+정해져 있지 않지만, `job_major`·`job_minor` 는 매번 `job_taxonomy` 표(운영자가 화면에서
+이름을 만들고 켜고 끄는 표, `.claude/tasks/todo/prd-job-taxonomy.md`)에 있는 이름 중 하나를
+고른 값이다.
+
+그래서 **이 순간에는 닫힌 목록이지만, `employment_type`·`career_level` 처럼 이 문서가 그
+목록을 고정하지 않는다.** 운영자가 어드민 화면에서 대분류·소분류 이름을 새로 만들거나 끄면
+다음 분류부터 나오는 값이 그만큼 바뀐다. 소비 측이 이 필드로 거르거나 화면에 매핑표를 만들어
+쓸 수는 있지만, 그 매핑표를 하드코딩하면 운영자가 표를 고친 날 어긋난다 — 값 자체를 그대로
+쓰고, 목록이 궁금하면 그때그때 물어야 한다.
+
+`job_major` 가 `null` 이면 아직 분류를 돌리지 않았거나 본문만으로 대분류를 정할 근거가 없다는
+뜻이고, 그때 `job_minor` 도 항상 `null` 이다. `job_major` 는 정해졌는데 `job_minor` 만 `null`
+인 것은 정상이다 — 대분류는 분명한데 소분류가 본문으로 갈리지 않는 공고가 그렇다(예: `IT·개발`
+인 것은 분명해도 `서버·백엔드`인지 `웹풀스택`인지 본문이 말하지 않는 경우).
+
+값이 정해진 필드의 목록은 아래 표 하나에만 적는다.
 
 | 필드 | 뜻 |
 |---|---|
+| job_role | 직무. 제목에서 옮긴 자유 텍스트 |
+| job_major | 직무 대분류. `job_taxonomy` 에서 고른 이름. 운영자가 바꿀 수 있어 이 문서가 목록을 고정하지 않는다 |
+| job_minor | 직무 소분류. 대분류가 정해지지 않으면 항상 `null` 이다 |
 | start_date | 모집 시작일 |
-| job_category | 직군 |
-| employment_type | 고용형태. 정규직 / 인턴 / 기간제 |
-| career_level | 경력 구분. 신입 / 경력 |
+| employment_type | 고용형태 |
+| career_level | 경력 구분 |
 | work_location | 근무지 |
-| headcount | 모집인원 |
 | duties | 주요 업무 |
 | preferred | 우대 조건 |
 | hiring_process | 전형 절차 |
@@ -92,30 +125,48 @@ GET /api/jobs?updated_after=<ISO8601>&limit=100&cursor=<opaque>
 **근거가 없으면 `null` 이다.** 없는 값을 다른 값으로 채우지 않는다. 빈 값은 "이 공고에는 그
 값이 없다" 는 사실이고, 소비 측은 그 필드를 그리지 않으면 된다.
 
-이 열 필드와 `requirements`·`department` 는 2026-08-26 부터 **수집이 아니라 본문을 나눠서**
-채운다. 사이트마다 칸 매핑을 적는 방식이 640건에서 절반도 채우지 못했기 때문이다
+위 표에서 `start_date` 를 뺀 여덟 필드와 `requirements` 는 2026-08-26 부터 **수집이 아니라
+본문을 나눠서** 채운다. 사이트마다 칸 매핑을 적는 방식이 640건에서 절반도 채우지 못했기 때문이다
 (`.claude/tasks/memos/보류/llm-classify/prd-llm-classify.md`). 소비 측이 보는 필드 이름과 뜻은 그대로다 —
 바뀐 것은 값이 어디서 오는가뿐이다.
 
-`job_category`·`employment_type`·`career_level` 세 필드는 **정해진 값만 나온다.** 사이트마다
+`employment_type`·`career_level` 두 필드는 **정해진 값만 나온다.** 사이트마다
 `Permanent`·`정규직`·`정규` 로 흩어지던 것을 하나로 모은 것이고, 그래서 소비 측이 이 필드로
 거를 수 있다. 목록은 아래와 같고, 늘거나 줄면 이 문서와 구현을 같은 커밋에서 고친다.
 
 | 필드 | 나올 수 있는 값 |
 |---|---|
-| job_category | 개발·IT / 연구개발 / 생산·제조 / 품질·안전 / 건설·플랜트 / 영업 / 마케팅 / 기획·전략 / 경영지원 / 재무·회계 / 법무 / 구매·물류 / 디자인 / 고객서비스 / 기타 |
 | employment_type | 정규직 / 계약직 / 인턴 / 기타 |
 | career_level | 신입 / 경력 / 무관 |
 
 목록에 없는 값은 나가지 않는다. 본문만으로 판단할 수 없으면 `null` 이다.
 
-**예외는 없다. 2026-08-26 이전에 수집된 행에도 같은 목록이 성립한다.** 그때는 이 세 값을
+**예외는 없다. 2026-08-26 이전에 수집된 행에도 같은 목록이 성립한다.** 그때는 이 두 값을
 사이트에서 그대로 받아 적었고 `raw_jobs` 는 append-only 라 그 값이 남아 있지만, 정규화가
-열한 칸을 분류 결과로 덮어 `Permanent` 나 `IT - 구축/운영/최적화` 같은 사이트 표기는
-`normalized_jobs` 에 남지 않는다. 소비 측은 수집 시점을 따질 필요가 없다.
+아홉 칸을 분류 결과로 덮어 `Permanent` 같은 사이트 표기는 `normalized_jobs` 에 남지 않는다.
+소비 측은 수집 시점을 따질 필요가 없다.
 
-`title`·`company`·`deadline`·`body`·`source_url` 은 수집이 채우고, 그중 앞의 넷은 대부분
-채워진다.
+**2026-08-28 에 회사명을 두 칸으로 갈랐다.** 한 칸에 "그 채용 사이트를 운영하는 기업" 과
+"그 공고가 말한 계열사" 가 겹쳐 앉아 있었고, 소비 측이 그 칸 하나를 보고 둘을 가릴 방법이
+없었다 (`migrations/0018_parent_company.sql`).
+
+| 필드 | 뜻 | 비는가 |
+|---|---|---|
+| parent_company | 그 채용 사이트를 운영하는 기업. 삼성 채용 사이트면 `삼성전자` | 거의 없다 |
+| company | 그 공고가 말한 계열사. 삼성 채용 사이트의 한 공고면 `삼성SDS` | 빈다 |
+
+**`company` 는 `null` 일 수 있다.** 계열사를 말하지 않는 사이트(토스·우아한형제들)에서는 늘
+`null` 이고, 그 자리를 모회사 이름으로 메우지 않는다. 메우면 두 칸이 같은 값이 되어 계열사를
+가르려고 칸을 늘린 일이 없던 일이 된다.
+
+회사 이름을 하나만 보여줄 자리라면 `parent_company` 를 쓴다. 계열사까지 가르려면 `company`
+가 있을 때만 그것을 쓰고, 없으면 모회사를 쓴다.
+
+`parent_company` 도 `null` 일 수 있다. 2026-08-28 이전에 정규화된 행은 재정규화하기 전까지
+그렇다 — 새로 들어오는 공고에서는 비지 않는다.
+
+`title`·`parent_company`·`company`·`deadline`·`body`·`source_url` 은 수집이 채운다. 그중
+`company` 만 위에 적은 이유로 자주 비고, 나머지는 대부분 채워진다.
 
 커서 기반이다. 소비 측이 한 번 폴링을 걸러도 다음에 이어서 받는다. 오프셋 기반이면 그 사이 삽입된
 행 때문에 건너뛰는 건이 생긴다.

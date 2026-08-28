@@ -4,17 +4,24 @@
 읽어도 되는 모양인지만 판정하고, 그 값이 본문에 근거가 있는지는 `app/classify/grounding.py`
 가 본다.
 
-칸은 `normalized_jobs` 에 이미 있는 열한 개다. 새로 만들지 않는다
-(`migrations/0011_split_body_columns.sql`).
+칸은 `normalized_jobs` 에 이미 있는 아홉 개다. 새로 만들지 않는다
+(`migrations/0011_split_body_columns.sql`). 0016 이 부서·직군·모집인원을 뺐고
+(`migrations/0016_drop_department_category_headcount.sql`) 0017 이 직무를 더했다
+(`migrations/0017_job_role.sql`).
 
 ## 칸이 두 가지다
 
-**뽑는 칸**은 본문에 있는 글자를 그대로 가져온다. 옮긴 값은 본문에서 그대로 찾을 수 있어야
+**뽑는 칸**은 원문에 있는 글자를 그대로 가져온다. 옮긴 값은 원문에서 그대로 찾을 수 있어야
 하고, 없으면 빈 칸이다.
 
-**판정하는 칸**은 본문을 읽고 정해진 값 중에서 고른다. `백엔드 개발자 채용` 이라는 제목에
-"직군: 개발" 이라고 적혀 있지 않다 — 글자 일치를 요구하면 이 칸은 영원히 빈다. 매핑 방식의
-채움률이 직군 53%, 고용형태 26%, 경력 45% 였던 이유가 그것이다.
+`job_role` 만 원문이 본문이 아니라 **제목**이다. 열한 사이트 픽스처에서 제목이 직무를 말하는
+곳이 아홉이고 그중 본문이 같은 글자를 되풀이하는 곳은 셋뿐이었다
+(`tests/test_job_role_source.py`). 직무를 판정 칸으로 만들지 않는 것은 값이 자유 텍스트이기
+때문이다 — 닫힌 목록을 만들 수 있었으면 그것이 직군이고, 직군은 0016 이 지웠다.
+
+**판정하는 칸**은 본문을 읽고 정해진 값 중에서 고른다. `정규직 채용` 이라고 본문에 그대로
+적혀 있지 않은 공고가 많다 — 글자 일치를 요구하면 이 칸은 영원히 빈다. 매핑 방식의 채움률이
+고용형태 26%, 경력 45% 였던 이유가 그것이다.
 
 판정 칸은 **반드시 닫힌 목록**이다. 목록을 정하지 않으면 같은 일이 사이트마다 다른 이름으로
 쌓인다 — 운영 DB 640건에 `Permanent` 71건과 `정규직` 7건과 `정규` 3건이 따로 있고,
@@ -43,10 +50,13 @@ empty`). `판단불가` 는 저장되지 않고 빈 칸이 된다.
 from __future__ import annotations
 
 import json
+import sqlite3
 from collections.abc import Mapping
 from typing import Any, Final, Literal, get_args
 
-from pydantic import BaseModel
+from pydantic import BaseModel, create_model
+
+from app import taxonomy
 
 # 아래 모델은 Gemini 의 response_schema 로 그대로 나간다. `extra="forbid"` 를 걸면
 # `additionalProperties: false` 로 변환되는데 Gemini 가 그 필드를 모르고 400 을 낸다.
@@ -62,66 +72,82 @@ UNDECIDED: Final = "판단불가"
 
 
 class Classification(BaseModel):
-    """본문을 나눈 열한 칸과, 판정 칸 셋의 근거 문장.
+    """공고 하나를 나눈 아홉 칸과, 판정 칸 둘의 근거 문장.
 
-    뽑는 칸은 자유 문자열이고 본문에 없으면 빈 문자열이다. 판정 칸은 `Literal` 이라 목록에
+    뽑는 칸은 자유 문자열이고 원문에 없으면 빈 문자열이다. 판정 칸은 `Literal` 이라 목록에
     없는 값이 애초에 응답에 담기지 못한다. `판단불가` 가 목록에 있는 것은 "본문만으로는 고를
     수 없다" 를 답할 자리가 있어야 하기 때문이다 — 자리가 없으면 모델은 아무거나 고른다.
     """
 
-    # 판정하는 칸. 목록은 운영 DB 640건의 실제 값에서 뽑았다 (아래 주석)
-    job_category: Literal[
-        "판단불가",
-        "개발·IT",
-        "연구개발",
-        "생산·제조",
-        "품질·안전",
-        "건설·플랜트",
-        "영업",
-        "마케팅",
-        "기획·전략",
-        "경영지원",
-        "재무·회계",
-        "법무",
-        "구매·물류",
-        "디자인",
-        "고객서비스",
-        "기타",
-    ] = UNDECIDED
-    job_category_evidence: str = ""
-
+    # 판정하는 칸. 목록은 운영 DB 640건의 실제 값에서 뽑았다
     employment_type: Literal["판단불가", "정규직", "계약직", "인턴", "기타"] = UNDECIDED
     employment_type_evidence: str = ""
 
     career_level: Literal["판단불가", "신입", "경력", "무관"] = UNDECIDED
     career_level_evidence: str = ""
 
-    # 뽑는 칸. 본문에 있는 글자를 그대로 옮긴다
+    # 뽑는 칸. 원문에 있는 글자를 그대로 옮긴다. `job_role` 만 원문이 제목이다
+    job_role: str = ""
     work_location: str = ""
-    headcount: str = ""
     duties: str = ""
     preferred: str = ""
     hiring_process: str = ""
     requirements: str = ""
-    department: str = ""
     etc_info: str = ""
+
+    # 수집이 이미 채운 칸을 원문과 견줘 다르면 낸다 (Push 11, PRD 6절). 값이 같거나 판단할
+    # 근거가 없으면 둘 다 빈 문자열이다 — 이 칸이 채워진다고 그 값이 그대로 저장되지 않는다.
+    # 근거 검사(`app/classify/grounding.py`)를 통과한 것만 `job_field_suggestions` 로 가고,
+    # 정규화의 어느 경로도 이 제안을 읽지 않는다(`app/normalize/engine.py` 는 그대로 둔다).
+    company_suggestion: str = ""
+    company_suggestion_reason: str = ""
+    deadline_suggestion: str = ""
+    deadline_suggestion_reason: str = ""
+    start_date_suggestion: str = ""
+    start_date_suggestion_reason: str = ""
 
 
 # 본문을 읽고 정해진 값 중에서 고르는 칸
-JUDGE_FIELDS: tuple[str, ...] = ("job_category", "employment_type", "career_level")
+JUDGE_FIELDS: tuple[str, ...] = ("employment_type", "career_level")
+
+# 수집이 채우는 여섯 칸 중, 원문을 읽어 다른 값을 낼 수 있는 셋. `title` 은 이미 `job_role` 의
+# 출처로 프롬프트에 그대로 들어가 있어 다시 비교할 이유가 없고, `body` 는 모델에게 보내는
+# 원문 그 자체라 비교할 대상이 없다. `source_url` 은 공고의 신원이라 애초에 후보가 아니다.
+#
+# `deadline` 은 마감 지난 공고를 거르는 데 쓰이고 `company` 는 계열사를 가르는 값이라, 이
+# 셋은 값이 있으면 아무리 근거가 있어도 자동으로 덮지 않고 제안으로만 낸다
+# (`.claude/tasks/todo/prd-side-workflows.md` 6절).
+COLLECTED_REVIEW_FIELDS: tuple[str, ...] = ("company", "deadline", "start_date")
+
+# 화면에 보일 이름. 프롬프트에 값을 적을 때도 같은 이름을 쓴다
+COLLECTED_REVIEW_LABELS: dict[str, str] = {
+    "company": "회사명",
+    "deadline": "마감일",
+    "start_date": "모집 시작일",
+}
+
+
+def suggestion_field(name: str) -> str:
+    """그 칸의 제안 값이 담기는 응답 필드 이름."""
+    return f"{name}_suggestion"
+
+
+def suggestion_reason_field(name: str) -> str:
+    """그 칸의 제안 이유가 담기는 응답 필드 이름."""
+    return f"{name}_suggestion_reason"
+
 
 # 판정 칸마다 따라오는 근거 문장. 컬럼이 아니라 검증과 보고를 위한 값이다
 EVIDENCE_FIELDS: tuple[str, ...] = tuple(f"{name}_evidence" for name in JUDGE_FIELDS)
 
-# 본문에 있는 글자를 그대로 가져오는 칸
+# 원문에 있는 글자를 그대로 가져오는 칸. `job_role` 은 제목에서, 나머지는 본문에서 온다
 EXTRACT_FIELDS: tuple[str, ...] = (
+    "job_role",
     "work_location",
-    "headcount",
     "duties",
     "preferred",
     "hiring_process",
     "requirements",
-    "department",
     "etc_info",
 )
 
@@ -130,6 +156,23 @@ CLASSIFY_FIELDS: tuple[str, ...] = (*JUDGE_FIELDS, *EXTRACT_FIELDS)
 
 # 응답에 올 수 있는 이름 전부
 RESPONSE_FIELDS: tuple[str, ...] = tuple(Classification.model_fields)
+
+# 직무 분류. `job_taxonomy`(운영 DB 표)에서 고르는 판정 칸 둘이라 `Classification`(정적
+# pydantic 모델)에도, 위 `CLASSIFY_FIELDS`/`RESPONSE_FIELDS`(둘 다 그 정적 모델에서 뽑는다)
+# 에도 없다 — 목록이 배포 없이 바뀌어야 해서 호출 시점에 `build_classification_model()` 이
+# 이 두 칸을 가진 모델을 새로 만든다. `CLASSIFY_FIELDS` 를 그대로 넓히지 않는 이유는
+# `EXTRACT_FIELDS | JUDGE_FIELDS == CLASSIFY_FIELDS` (`tests/test_classify_body.py`)가
+# "이 아홉 칸은 전부 정적 모델의 필드다" 를 지키는 불변식이기 때문이다. 근거 검사
+# (`app/classify/grounding.py`)에 이 둘을 엮는 것은 Push 3 이 한다 — 지금은 저장 경로
+# (`app/classify/store.py`, `app/normalize/engine.py`)만 이 두 칸을 안다
+JOB_MAJOR: Final = "job_major"
+JOB_MINOR: Final = "job_minor"
+TAXONOMY_FIELDS: tuple[str, ...] = (JOB_MAJOR, JOB_MINOR)
+
+# 저장 경로(분류 결과 표, 정규화)가 옮기는 칸 전부. `CLASSIFY_FIELDS` 에 직무 분류 둘을 더한
+# 것이다 — `job_classifications`/`normalized_jobs` 양쪽 다 이 두 칸의 컬럼을 갖는다
+# (`migrations/0025_job_major_minor.sql`)
+STORED_CLASSIFY_FIELDS: tuple[str, ...] = (*CLASSIFY_FIELDS, *TAXONOMY_FIELDS)
 
 
 def _choices(name: str) -> tuple[str, ...]:
@@ -148,6 +191,39 @@ for _name in JUDGE_FIELDS:
     assert UNDECIDED in get_args(Classification.model_fields[_name].annotation), _name
 
 
+def build_classification_model(conn: sqlite3.Connection) -> type[Classification]:
+    """`job_taxonomy` 의 켜진 값으로 `job_major`/`job_minor` 를 더한 모델을 만든다.
+
+    `Classification` 은 고치지 않는다 — 그 클래스는 배포 시점에 고정된 아홉 칸의 모양이고,
+    직무 분류는 운영 중에 표가 바뀌면 다음 호출부터 목록이 따라와야 한다. 그래서 매 호출
+    시점에 이 함수로 새 모델을 만든다.
+
+    **켜진 대분류가 하나도 없으면(표가 비었거나 전부 껐으면) `Classification` 을 그대로
+    돌려준다.** 고를 것이 없는 판정 칸을 모델에 보내면 그 자리를 채우라고 강요하는 것과
+    같다. 대분류는 있는데 켜진 소분류가 하나도 없으면 `job_minor` 없이 `job_major` 만 더한다.
+    """
+    majors = taxonomy.list_majors(conn, enabled_only=True)
+    if not majors:
+        return Classification
+
+    major_names = tuple(major.name for major in majors)
+    minor_names = tuple(
+        minor.name
+        for major in majors
+        for minor in taxonomy.list_minors(conn, major.id, enabled_only=True)
+    )
+
+    fields: dict[str, Any] = {
+        JOB_MAJOR: (Literal[(*major_names, UNDECIDED)], UNDECIDED),
+        f"{JOB_MAJOR}_evidence": (str, ""),
+    }
+    if minor_names:
+        fields[JOB_MINOR] = (Literal[(*minor_names, UNDECIDED)], UNDECIDED)
+        fields[f"{JOB_MINOR}_evidence"] = (str, "")
+
+    return create_model("ClassificationWithTaxonomy", __base__=Classification, **fields)
+
+
 class ClassifySchemaError(ValueError):
     """검증 실패. `reason` 은 위 표의 값 중 하나다."""
 
@@ -156,11 +232,18 @@ class ClassifySchemaError(ValueError):
         self.reason = reason
 
 
-def validate_classification(data: Any) -> dict[str, str]:
+def validate_classification(
+    data: Any, response_fields: tuple[str, ...] = RESPONSE_FIELDS
+) -> dict[str, str]:
     """파싱된 응답을 검증해 이름별 문자열로 돌려준다. 없는 키는 빈 문자열이다.
 
     스키마에 없는 칸 이름이 오면 무엇을 말하려던 것인지 추측해서 고치지 않는다. 조용히 고친
     값은 나중에 왜 그 칸에 그 값이 들어갔는지 아무도 설명하지 못한다.
+
+    `response_fields` 는 기본값이 정적 아홉 칸(`RESPONSE_FIELDS`)이지만, 직무 분류가 있는
+    호출은 `build_classification_model()` 이 만든 그 모델의 필드 이름을 넘긴다 — 그 두 칸은
+    호출마다 있을 수도 없을 수도 있어 고정 튜플에 넣을 수 없다(`app/classify/schema.py` 의
+    `TAXONOMY_FIELDS` 설명).
 
     판정 칸의 값이 목록 밖이면 여기서 버리지 않고 그대로 넘긴다. 무엇을 왜 버렸는지 한자리에서
     세려고 판정은 `app/classify/grounding.py` 가 한다.
@@ -168,12 +251,12 @@ def validate_classification(data: Any) -> dict[str, str]:
     if not isinstance(data, Mapping):
         raise ClassifySchemaError("unparsable", f"응답이 객체가 아니다: {type(data).__name__}")
 
-    unknown = sorted(str(key) for key in data if key not in RESPONSE_FIELDS)
+    unknown = sorted(str(key) for key in data if key not in response_fields)
     if unknown:
         raise ClassifySchemaError("unknown_field", f"스키마에 없는 칸이 있다: {', '.join(unknown)}")
 
     result: dict[str, str] = {}
-    for name in RESPONSE_FIELDS:
+    for name in response_fields:
         raw = data.get(name, "")
         if raw is None:
             raw = ""
@@ -185,10 +268,12 @@ def validate_classification(data: Any) -> dict[str, str]:
     return result
 
 
-def parse_classification(text: str) -> dict[str, str]:
+def parse_classification(
+    text: str, response_fields: tuple[str, ...] = RESPONSE_FIELDS
+) -> dict[str, str]:
     """모델 응답 문자열을 파싱하고 검증한다."""
     try:
         data = json.loads(text)
     except json.JSONDecodeError as exc:
         raise ClassifySchemaError("unparsable", f"JSON 으로 읽을 수 없다: {exc}") from exc
-    return validate_classification(data)
+    return validate_classification(data, response_fields)

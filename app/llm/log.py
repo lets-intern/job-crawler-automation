@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+from dataclasses import dataclass
 
 from app.llm.base import Usage
 
@@ -84,3 +85,32 @@ def totals(conn: sqlite3.Connection, feature: str | None = None) -> dict[str, in
         params,
     ).fetchone()
     return {name: int(row[name]) for name in row.keys()}
+
+
+@dataclass(frozen=True)
+class FeatureUsage:
+    """기능 하나의 누적 사용량. 대시보드의 토큰 사용량 그래프가 이 값을 쓴다."""
+
+    feature: str
+    calls: int
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+
+
+def by_feature(conn: sqlite3.Connection) -> list[FeatureUsage]:
+    """기능별 누적 사용량. 호출이 한 번도 없는 기능도 0으로 나온다 — 그래프에서 아예
+    빠지면 "그 기능이 있는지도" 알 수 없다. 순서는 `FEATURES` 순서로 고정한다."""
+    result: list[FeatureUsage] = []
+    for feature in FEATURES:
+        t = totals(conn, feature)
+        result.append(
+            FeatureUsage(
+                feature=feature,
+                calls=t["calls"],
+                input_tokens=t["input_tokens"],
+                output_tokens=t["output_tokens"],
+                total_tokens=t["total_tokens"],
+            )
+        )
+    return result

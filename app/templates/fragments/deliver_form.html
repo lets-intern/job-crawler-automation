@@ -1,0 +1,57 @@
+{# 전달 설정. 저장 결과만 이 조각으로 돌아온다 — 테스트 전송 단추는 두지 않는다.
+   없는 기능을 있는 것처럼 보이게 하는 단추가 가장 나쁘다 (PRD 3절) #}
+{% from "macros.html" import failure, notice_box %}
+<div class="notice notice-idle">
+  <span class="font-semibold">아직 아무것도 보내지 않는다.</span>
+  아래 값은 저장만 되고, 실제로 스프링에 데이터를 보내는 동작은 이번 범위가 아니다. 언제
+  보낼지는 이 화면 아래의 <span class="font-semibold text-slate-900">전달</span> 종류
+  워크플로우에서 정하지만, 그 워크플로우의 지금 실행도 아직 아무 일도 하지 않는다.
+</div>
+{% if error %}
+{{ failure(error.reason, error.message, title="저장하지 못했다") }}
+{% endif %}
+{% if message %}
+{{ notice_box(message) }}
+{% endif %}
+
+<form hx-put="/ui/deliver" hx-target="#deliver-form" hx-swap="innerHTML"
+      hx-disabled-elt="find button">
+  <fieldset>
+    <legend>스프링 전달 설정</legend>
+    <p>
+      <label for="deliver-url">받는 주소</label>
+      <br>
+      <input id="deliver-url" name="url" type="url" size="50" value="{{ config.url }}">
+      <br>
+      <span class="text-sm text-slate-600">http:// 나 https:// 로 시작한다. 비워 두면 설정되지 않은 것이다</span>
+    </p>
+    <p>
+      <label for="deliver-method">방식</label>
+      <br>
+      <select id="deliver-method" name="method">
+        {% for value in methods %}
+        <option value="{{ value }}" {% if value == config.method %}selected{% endif %}>{{ value }}</option>
+        {% endfor %}
+      </select>
+    </p>
+    <p>
+      <label for="deliver-auth">인증 헤더</label>
+      <br>
+      <input id="deliver-auth" name="auth_header" type="text" size="50" value="{{ config.auth_header }}"
+             placeholder="예: X-Api-Key: secret">
+      <br>
+      <span class="text-sm text-slate-600">
+        "이름: 값" 한 줄이다. 비워 두면 인증 없이 부른다. 자격증명을 어떻게 줄지는 아직
+        정하지 않았다 — 정해지면 이 칸의 뜻도 함께 바뀔 수 있다
+      </span>
+    </p>
+    <p>
+      <label for="deliver-batch">1회 전달 건수</label>
+      <br>
+      <input id="deliver-batch" name="batch_size" type="number" min="1" value="{{ config.batch_size }}" class="w-24">
+    </p>
+    <p>
+      <button type="submit">저장</button>
+    </p>
+  </fieldset>
+</form>

@@ -1,15 +1,22 @@
 {% extends "base.html" %}
-{% block title %}데이터 검수{% endblock %}
-{% block heading %}데이터 검수{% endblock %}
+{% block title %}데이터 확인{% endblock %}
+{% block heading %}데이터 확인{% endblock %}
 {% block content %}
 <section>
-  <div id="review-filters" hx-get="/ui/review/filters" hx-trigger="load" hx-swap="innerHTML">
-    <p>조회 조건을 불러오는 중</p>
-  </div>
+  {# 닫힌 채로 시작한다. 조회 조건 일곱 줄이 열려 있으면 공고 목록을 보려고 매번 그만큼
+     내려야 한다 — 이 화면에 오는 대부분의 이유는 조건을 바꾸는 것이 아니라 방금 들어온
+     공고를 보는 것이다. 접혀 있어도 안의 `hx-trigger="load"` 는 그대로 도는데, `details` 가
+     닫혀 있을 뿐 DOM 에서 빠지는 것은 아니기 때문이다 #}
+  <details>
+    <summary class="cursor-pointer text-sm font-medium text-slate-700">조회 조건 (열기)</summary>
+    <div id="review-filters" hx-get="/ui/review/filters" hx-trigger="load" hx-swap="innerHTML">
+      <p>조회 조건을 불러오는 중</p>
+    </div>
+  </details>
 </section>
 
 <section>
-  <h3>검수 대상</h3>
+  <h3>공고 목록</h3>
   <p>
     수집된 공고를 보고, 고치고, 지우는 한 화면이다. 고르지 않으면 미전달 건이 먼저 나온다 —
     이미 전달된 행을 고쳐도 소비 측이 가진 값은 그대로다. 수동 수정은 전달 표시를 되돌리지

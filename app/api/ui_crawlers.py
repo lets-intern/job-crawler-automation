@@ -201,8 +201,22 @@ async def create_crawler_fragment(
     `detail_url` 은 선택이다. 상세를 JS 로 그려 주소가 따로 없는 사이트가 있고, 비우면 목록
     페이지만 보고 만든다. 그때 상세 셀렉터는 실패가 아니라 건너뜀으로 표시된다.
 
-    `default_company` 는 선택이다. 비워 두면 회사명은 공고에서 뽑은 값만 쓰인다.
+    `default_company` 는 모회사 이름이고 이 화면은 필수로 받는다(2026-08-29 결정). 비었으면
+    셀렉터 생성(브라우저·모델 호출)을 시작하기 전에 여기서 거절한다 — 어차피 거절할 요청에
+    그 비용을 쓰지 않는다. `crawlers.create_crawler` 자체는 이 값을 막지 않는다 — 그 함수를
+    직접 쓰는 테스트·가져오기 경로까지 막으면 파급이 너무 크다(`app/api/crawlers.py`).
     """
+    if not default_company.strip():
+        return _result(
+            request,
+            error={
+                "reason": "empty_parent_company",
+                "message": (
+                    "모회사 이름은 비울 수 없다. 계열사가 하나뿐인 사이트도 그 크롤러 이름을 "
+                    "그대로 적는다 — 시스템이 대신 짐작하지 않는다"
+                ),
+            },
+        )
     payload = crawlers.CrawlerCreate(
         list_url=list_url,
         detail_url=detail_url,

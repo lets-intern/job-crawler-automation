@@ -37,6 +37,16 @@
         {% endfor %}
       </select>
 
+      {# 대분류만 먼저 둔다. 소분류는 대분류에 종속되므로 대분류를 고르지 않고는 좁힐 수
+         없다(5.2, PRD 5절). `job_role`(자유 텍스트) 과는 다른, 닫힌 목록에서 고르는 값이다 #}
+      <label for="review-job-major">직무 대분류</label>
+      <select id="review-job-major" name="job_major">
+        <option value="">전체</option>
+        {% for name in job_majors %}
+        <option value="{{ name }}">{{ name }}</option>
+        {% endfor %}
+      </select>
+
       <label for="review-status">진행 여부</label>
       <select id="review-status" name="status">
         <option value="">전체</option>
@@ -49,6 +59,16 @@
       <select id="review-delivered" name="delivered">
         <option value="">전체</option>
         {% for value, label in delivery_states.items() %}
+        <option value="{{ value }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+
+      {# 원문을 다시 읽어 값이 있는 칸과 다르게 낸 것이 붙었는지. 어느 칸인지는 이 조건이
+         가르지 않는다 — 모달을 열어야 그 칸을 본다 (11.6, 11.7) #}
+      <label for="review-has-suggestion">제안 여부</label>
+      <select id="review-has-suggestion" name="has_suggestion">
+        <option value="">전체</option>
+        {% for value, label in has_suggestion_states.items() %}
         <option value="{{ value }}">{{ label }}</option>
         {% endfor %}
       </select>
@@ -102,7 +122,7 @@
       <span class="text-sm text-slate-600">까지 (그날 포함)</span>
     </p>
     <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
-      <label for="review-q">검색 (제목·회사·부서)</label>
+      <label for="review-q">검색 (제목·회사)</label>
       <input id="review-q" name="q" type="search" size="40">
 
       <label for="review-sort">정렬</label>

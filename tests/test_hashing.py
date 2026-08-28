@@ -45,6 +45,20 @@ def test_noisy_fields_do_not_change_the_hash(field: str, changed: Any) -> None:
     assert content_hash(other) == content_hash(sample())
 
 
+def test_the_source_text_stays_out_of_the_hash() -> None:
+    """원문에는 조회수·배너·옆에 붙은 안내가 섞인다. 해시에 들어가면 같은 공고가 매 크롤마다
+    신규로 쌓인다. `HASH_FIELDS` 는 넷 그대로다."""
+    assert "source_text" not in HASH_FIELDS
+
+    first = sample()
+    first["source_text"] = "백엔드 개발자\n조회수 1,204\n지원하기"
+    second = sample()
+    second["source_text"] = "백엔드 개발자\n조회수 1,881\n지원하기\n신규 배너"
+
+    assert content_hash(first) == content_hash(sample())
+    assert content_hash(second) == content_hash(first)
+
+
 def test_unknown_field_does_not_change_the_hash() -> None:
     other = sample()
     other["새로_생긴_필드"] = "무엇이든"

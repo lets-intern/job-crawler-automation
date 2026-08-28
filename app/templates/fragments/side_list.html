@@ -1,0 +1,16 @@
+{# 부가 워크플로우 전체. 페이지 로드 때 한 번 들어오고, 이후에는 카드 하나씩 갈리거나
+   (설정 저장·상태 토글·지금 실행) 목록 전체가 다시 그려진다(만들기·지우기).
+
+   표를 쓰지 않는 이유는 `fragments/workflow_card.html` 과 같다 — 값이 열 개 가까이라
+   좁은 화면에서 표는 가로 스크롤로 밀린다 #}
+<div class="my-3 space-y-3">
+  {% for card in cards %}
+  {% include "fragments/side_card.html" with context %}
+  {% else %}
+  <div class="notice notice-idle">
+    등록된 부가 워크플로우가 없다. 아래에서 첫 워크플로우를 만든다.
+  </div>
+  {% endfor %}
+
+  {% include "fragments/side_new_form.html" with context %}
+</div>

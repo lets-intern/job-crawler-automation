@@ -363,3 +363,43 @@ def test_조건_전체_지우기는_묶음_전체를_대상으로_한다(
     assert "중복 제목" in confirm.text
     # 확인만 하고 지우지 않는다
     assert count(conn, JobFilter()) == len(ROWS)
+
+
+def _add_row(
+    conn: sqlite3.Connection, raw_job_id: int, parent: str, company: str | None, title: str
+) -> None:
+    """자회사가 빈 행을 하나 더한다. 손으로 센 픽스처를 건드리지 않으려고 테스트 안에서 넣는다."""
+    conn.execute(
+        """
+        INSERT INTO raw_jobs (id, workflow_id, source_url, raw_data_json, content_hash,
+                              crawled_at)
+        VALUES (?, 1, ?, '{}', ?, '2026-08-20 01:00:00')
+        """,
+        (raw_job_id, f"{LIST_URL}{raw_job_id}/", f"hash-{raw_job_id}"),
+    )
+    conn.execute(
+        """
+        INSERT INTO normalized_jobs (raw_job_id, parent_company, company, title, source_url,
+                                     normalized_at)
+        VALUES (?, ?, ?, ?, ?, '2026-08-20 02:00:00')
+        """,
+        (raw_job_id, parent, company, title, f"{LIST_URL}{raw_job_id}/"),
+    )
+
+
+def test_자회사가_비면_제목과_회사_기준이_모회사를_본다(conn: sqlite3.Connection) -> None:
+    """회사명을 주지 않는 사이트의 중복이 이 기준에서 통째로 빠지지 않게 한다.
+
+    자회사만 보면 그 사이트의 행은 회사가 빈 값이라 묶이지 않고(`_dup_key` 가 빈 값끼리는
+    묶지 않는다), 중복을 찾을 길이 제목 기준 하나만 남는다. 그 기준은 계열사가 나눠 올린
+    것까지 잡는 넓은 기준이다.
+    """
+    before = measured(conn, JobFilter(dup=DUP_TITLE_COMPANY))
+    _add_row(conn, 100, "토스", None, "프론트엔드 개발자")
+    _add_row(conn, 101, "토스", None, "프론트엔드 개발자")
+    # 모회사가 다르면 같은 제목이어도 묶이지 않는다. 두 회사가 각각 올린 공고다
+    _add_row(conn, 102, "우아한형제들", None, "안드로이드 개발자")
+    _add_row(conn, 103, "당근", None, "안드로이드 개발자")
+
+    assert before == (1, 5, 4)
+    assert measured(conn, JobFilter(dup=DUP_TITLE_COMPANY)) == (2, 7, 5)

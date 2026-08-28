@@ -20,6 +20,7 @@ import pytest
 
 from app import db
 from app.api.import_data import (
+    READ_TABLES,
     ImportRejected,
     inspect_upload,
     server_version,
@@ -226,3 +227,18 @@ def _every_bad_upload(tmp_path: pathlib.Path) -> list[pathlib.Path]:
     source.close()
 
     return [not_sqlite, empty, no_table, ahead]
+
+
+def test_0021_이전에_뜬_스냅샷도_거절되지_않는다(conn: sqlite3.Connection) -> None:
+    """새 표가 생겨도 그 표가 없는 옛 파일은 그대로 들어온다.
+
+    `side_workflows` 와 `side_runs` 는 이 서버의 설정과 이 서버의 실행 기록이라 올린 파일에서
+    읽을 것이 없다. 그래서 `READ_TABLES` 에 넣지 않았고, 넣지 않은 것이 옛 스냅샷이 계속
+    통과한다는 뜻이다 — 넣으면 저장소의 실제 스냅샷부터 `missing_table` 로 거절된다.
+
+    `crawl_runs` 를 가져오지 않는 것과 같은 판단이다 (`app/api/import_data.py`).
+    """
+    assert "side_workflows" not in READ_TABLES
+    assert "side_runs" not in READ_TABLES
+
+    assert inspect_upload(SNAPSHOT, server_version=server_version(conn))

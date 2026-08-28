@@ -36,9 +36,10 @@ MAX_LIMIT = 500
 STORED_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 _SELECT = """
-    SELECT id, company, title, department, deadline, body, requirements,
-           start_date, job_category, employment_type, career_level, work_location,
-           headcount, duties, preferred, hiring_process, etc_info,
+    SELECT id, parent_company, company, title, job_role, job_major, job_minor,
+           deadline, body, requirements,
+           start_date, employment_type, career_level, work_location,
+           duties, preferred, hiring_process, etc_info,
            source_url, normalized_at
       FROM normalized_jobs
 """
@@ -47,26 +48,40 @@ _SELECT = """
 class JobOut(BaseModel):
     """계약의 `items` 한 건. 필드 이름과 순서는 문서를 그대로 따른다.
 
-    `start_date` 아래 열 개는 0011 이 더한 칸이다. **더하는 방향이라 기존 필드는 그대로다** —
-    소비 측이 읽던 것이 사라지지 않는다 (`.claude/docs/api-contract.md`).
+    `start_date` 아래 일곱은 0011 이 더한 칸이고, 0016 이 `department`·`job_category`·
+    `headcount` 를 뺐다. 0017 이 `job_role` 을 더했다 — 지운 직군과 달리 닫힌 목록이 아니라
+    제목에서 옮기는 자유 텍스트라 **소비 측이 이 필드로 거를 수 없다.** 셋을 지운 것도 이
+    필드를 더한 것도 소비 측이 아직 붙지 않은 동안에만 할 수 있는 일이다
+    (`.claude/docs/api-contract.md`).
+
+    0018 이 회사명을 두 칸으로 갈랐다. `parent_company` 는 그 채용 사이트를 운영하는 기업이고
+    거의 언제나 값이 있다. `company` 는 그 공고가 말한 계열사이고, 계열사를 말하지 않는
+    사이트에서는 `null` 이다 — 그 자리를 모회사 이름으로 메우지 않는다
+    (`migrations/0018_parent_company.sql`).
+
+    0025 가 `job_major`/`job_minor` 를 더했다 — `job_role` 과 달리 셀렉터가 뽑는 자유
+    텍스트가 아니라 분류가 `job_taxonomy`(운영자가 어드민에서 바꾸는 표)에서 골라 채우는
+    닫힌 값이다. 아직 분류를 돌리지 않았거나 본문으로 판단이 갈리지 않으면 `null` 이다
+    (`.claude/docs/api-contract.md`).
 
     사이트가 그 값을 주지 않으면 `null` 이다. 없는 값을 다른 값으로 채우지 않는다.
     """
 
     id: int
+    parent_company: str | None
     company: str | None
     title: str | None
-    department: str | None
+    job_role: str | None
+    job_major: str | None
+    job_minor: str | None
     deadline: str | None
     body: str | None
     requirements: str | None
     # 모집 시작일. `deadline`(모집 마감일)의 짝이고 그 필드를 대신하지 않는다
     start_date: str | None
-    job_category: str | None
     employment_type: str | None
     career_level: str | None
     work_location: str | None
-    headcount: str | None
     duties: str | None
     preferred: str | None
     hiring_process: str | None
@@ -157,18 +172,19 @@ def _iso(stored: str) -> str:
 def _out(row: sqlite3.Row) -> JobOut:
     return JobOut(
         id=int(row["id"]),
+        parent_company=row["parent_company"],
         company=row["company"],
         title=row["title"],
-        department=row["department"],
+        job_role=row["job_role"],
+        job_major=row["job_major"],
+        job_minor=row["job_minor"],
         deadline=row["deadline"],
         body=row["body"],
         requirements=row["requirements"],
         start_date=row["start_date"],
-        job_category=row["job_category"],
         employment_type=row["employment_type"],
         career_level=row["career_level"],
         work_location=row["work_location"],
-        headcount=row["headcount"],
         duties=row["duties"],
         preferred=row["preferred"],
         hiring_process=row["hiring_process"],

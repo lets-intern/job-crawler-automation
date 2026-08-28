@@ -17,14 +17,22 @@ from app.api import (
     review_filter,
     rules,
     settings,
+    side,
     ui,
+    ui_companies,
+    ui_complete,
     ui_crawlers,
+    ui_dashboard,
+    ui_deliver,
     ui_llm,
     ui_notify,
     ui_rules,
     ui_rules_preview,
     ui_runs,
     ui_settings,
+    ui_side,
+    ui_storage,
+    ui_taxonomy,
     ui_tests,
     ui_workflows,
     workflows,
@@ -32,9 +40,20 @@ from app.api import (
 from app.config import get_settings
 from app.crawler.fetcher import close_fetcher
 from app.crawler.runner import close_orphan_runs
+from app.log_ring import handler as _log_ring_handler
 from app.scheduler import get_scheduler, shutdown_scheduler
+from app.side.runs import close_orphans as close_orphan_side_runs
 
 logger = logging.getLogger(__name__)
+
+# 대시보드의 실시간 로그가 읽는 자리. `app` 로거 아래는 전부 기본이 `NOTSET` 이라 이 한
+# 줄이 없으면 부모(루트, 기본 WARNING)를 따라가 `logger.info` 호출이 버퍼에 닿지 않는다.
+# 모듈이 다시 임포트돼도(리로드 없는 한 프로세스 안에서는 일어나지 않지만) 핸들러가
+# 두 번 붙지 않게 막는다 — 붙으면 로그 줄마다 화면에 두 번씩 나온다.
+_app_logger = logging.getLogger("app")
+_app_logger.setLevel(logging.INFO)
+if _log_ring_handler not in _app_logger.handlers:
+    _app_logger.addHandler(_log_ring_handler)
 
 
 @asynccontextmanager
@@ -50,6 +69,14 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         orphans = close_orphan_runs(conn)
         if orphans:
             logger.warning("지난 프로세스가 남긴 미완 실행 %d건을 timeout 으로 닫았다", orphans)
+        # 부가 워크플로우도 같은 뒷정리가 필요하다. 그리고 여기는 화면 표시만의 문제가
+        # 아니다 — 겹침 방지가 "열린 행이 있으면 돌고 있는 것" 으로 판단하므로, 죽은
+        # 프로세스가 남긴 행 하나가 그 워크플로우를 영영 막는다 (`app/side/runner.py`)
+        side_orphans = close_orphan_side_runs(conn)
+        if side_orphans:
+            logger.warning(
+                "지난 프로세스가 남긴 미완 부가 실행 %d건을 timeout 으로 닫았다", side_orphans
+            )
         try:
             get_scheduler().start(conn)
         except sqlite3.OperationalError:
@@ -75,8 +102,10 @@ app.include_router(workflows.router)
 app.include_router(settings.router)
 app.include_router(rules.router)
 app.include_router(classify.router)
+app.include_router(side.router)
 # 화면. API 라우터 뒤에 붙인다 — `/api/...` 가 먼저 잡힌다
 app.include_router(ui.router)
+app.include_router(ui_dashboard.router)
 app.include_router(ui_crawlers.router)
 app.include_router(ui_tests.router)
 app.include_router(ui_workflows.router)
@@ -85,9 +114,15 @@ app.include_router(ui_rules.router)
 app.include_router(ui_rules_preview.router)
 app.include_router(review_filter.router)
 app.include_router(review.router)
+app.include_router(ui_companies.router)
+app.include_router(ui_complete.router)
+app.include_router(ui_side.router)
+app.include_router(ui_deliver.router)
 app.include_router(ui_settings.router)
 app.include_router(ui_notify.router)
+app.include_router(ui_storage.router)
 app.include_router(ui_llm.router)
+app.include_router(ui_taxonomy.router)
 # 조각 요청의 실패는 200 과 오류 조각으로 나간다. HTMX 가 4xx·5xx 를 갈아 끼우지 않아
 # 그대로 두면 화면이 조용해진다. `/api/...` 의 상태 코드는 건드리지 않는다
 ui.install_ui_error_handlers(app)

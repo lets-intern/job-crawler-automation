@@ -26,6 +26,7 @@ import pytest
 from app import db
 from app.api.import_data import ImportRejected, ImportResult, import_database
 from app.crawler.hashing import content_hash
+from app.normalize.rules import NORMALIZED_FIELDS
 
 SNAPSHOT = pathlib.Path(__file__).resolve().parent.parent / "seeds" / "snapshot" / "jobs.db"
 
@@ -392,7 +393,7 @@ def test_스냅샷이_통째로_들어오고_두_번째는_전부_중복이다(c
 
     assert first.crawlers_added == source["crawlers"]
     assert first.workflows_added == source["workflows"]
-    assert first.rules_added == source["normalization_rules"]
+    assert first.rules_added == source["normalization_rules_kept"]
     assert first.raw_added == source["raw_jobs"]
     assert first.overrides_added == source["job_field_overrides"]
     assert first.raw_duplicate == 0
@@ -413,7 +414,7 @@ def test_스냅샷이_통째로_들어오고_두_번째는_전부_중복이다(c
     assert second.raw_duplicate == source["raw_jobs"]
     assert second.crawlers_skipped == source["crawlers"]
     assert second.workflows_skipped == source["workflows"]
-    assert second.rules_skipped == source["normalization_rules"]
+    assert second.rules_skipped == source["normalization_rules"]  # 지워진 칸의 규칙까지 센다
     assert second.overrides_skipped == source["job_field_overrides"]
     assert rows(conn, "SELECT * FROM raw_jobs ORDER BY id") == before
 
@@ -422,7 +423,7 @@ def _source_counts(path: pathlib.Path) -> dict[str, int]:
     """올릴 파일에 무엇이 몇 건 있는지. 읽기 전용으로 연다."""
     source = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     try:
-        return {
+        counts = {
             table: int(source.execute(f"SELECT count(*) FROM {table}").fetchone()[0])
             for table in (
                 "crawlers",
@@ -432,6 +433,17 @@ def _source_counts(path: pathlib.Path) -> dict[str, int]:
                 "job_field_overrides",
             )
         }
+        # 지워진 칸의 규칙은 들이지 않는다. 이 파일은 0016 이전에 뜬 것이라 `department`
+        # 규칙 둘이 들어 있고, 들어오면 그 뒤의 정규화가 한 건도 되지 않는다
+        # (`app/api/import_data.py`)
+        placeholders = ", ".join("?" for _ in NORMALIZED_FIELDS)
+        counts["normalization_rules_kept"] = int(
+            source.execute(
+                f"SELECT count(*) FROM normalization_rules WHERE field_name IN ({placeholders})",
+                NORMALIZED_FIELDS,
+            ).fetchone()[0]
+        )
+        return counts
     finally:
         source.close()
 

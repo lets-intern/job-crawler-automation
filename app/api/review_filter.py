@@ -51,7 +51,8 @@ SORTS: dict[str, tuple[str, ...]] = {
     "review": ("(n.delivered_at IS NULL)", "r.crawled_at", "n.id"),
     "crawled_at": ("r.crawled_at", "n.id"),
     "normalized_at": ("n.normalized_at", "n.id"),
-    "company": ("n.company", "n.id"),
+    # 모회사가 앞이다. 계열사 공고가 그 그룹 아래 모여야 표를 훑는 순서와 회사가 맞는다
+    "company": ("n.parent_company", "n.company", "n.id"),
     "title": ("n.title", "n.id"),
     "deadline": ("n.deadline", "n.id"),
 }
@@ -59,7 +60,7 @@ SORT_LABELS: dict[str, str] = {
     "review": "검수 순서 (미전달 먼저)",
     "crawled_at": "수집 시각",
     "normalized_at": "정규화 시각",
-    "company": "회사",
+    "company": "회사 (모회사 다음 자회사)",
     "title": "제목",
     "deadline": "마감",
 }
@@ -82,26 +83,37 @@ DELIVERY_STATES: dict[str, str] = {
     "no": "미전달",
 }
 
-# 사람이 고칠 수 있는 여섯 필드와 화면에 적을 이름. 키는 `OVERRIDABLE_FIELDS` 와 같아야 한다 —
+# 제안 여부. `job_field_suggestions` 에 그 공고의 행이 하나라도 있는지만 본다 — 어느 칸의
+# 제안인지는 이 조건이 가르지 않는다. 640건에서 제안이 붙은 것을 눈으로 찾게 두면 아무도
+# 수락하지 않는다 (11.7, PRD 6절)
+HAS_SUGGESTION_STATES: dict[str, str] = {
+    "yes": "제안 있음",
+    "no": "제안 없음",
+}
+
+# 사람이 고칠 수 있는 필드와 화면에 적을 이름. 키는 `OVERRIDABLE_FIELDS` 와 같아야 한다 —
 # 그쪽이 `job_field_overrides.field_name` 의 CHECK 와 이미 맞춰져 있다.
-# 지우기의 조건 설명도 이 이름을 쓰기 때문에 `app/api/review.py` 가 아니라 여기 둔다
+# 지우기의 조건 설명도 이 이름을 쓰기 때문에 `app/api/review.py` 가 아니라 여기 둔다.
+#
+# `parent_company` 는 여기 없다. 규칙도 보정도 걸리지 않는 칸이라 표에서 읽기만 하고, 그
+# 열은 `fragments/review_table.html` 이 따로 그린다 (`migrations/0018_parent_company.sql`)
 FIELD_LABELS: dict[str, str] = {
-    "company": "회사",
+    "company": "자회사",
     "title": "제목",
-    "department": "부서",
+    "job_role": "직무",
     "deadline": "마감",
     "body": "본문",
     "requirements": "자격요건",
     "start_date": "모집 시작",
-    "job_category": "직군",
     "employment_type": "고용형태",
     "career_level": "경력 구분",
     "work_location": "근무지",
-    "headcount": "모집인원",
     "duties": "주요 업무",
     "preferred": "우대 조건",
     "hiring_process": "전형 절차",
     "etc_info": "기타",
+    "job_major": "직무 대분류",
+    "job_minor": "직무 소분류",
 }
 
 # `빈 값인 필드` 조건에서 "아무 필드나 하나라도 비었다" 를 가리키는 값
@@ -111,24 +123,32 @@ EMPTY_LABELS: dict[str, str] = {EMPTY_ANY: "아무 필드나", **FIELD_LABELS}
 
 # 빈 값과, 뜻이 있어서 빈 값은 다르다. 구분할 방법이 화면에 없는 필드는 그 사실을 적는다 —
 # 마감이 빈 148건을 셀렉터가 놓친 것으로 읽고 셀렉터를 고치러 가는 일이 여기서 난다.
-# 여기 없는 필드(회사·제목·본문)는 비어 있으면 놓친 것이다
+# 여기 없는 필드(제목·본문)는 비어 있으면 놓친 것이다
 EMPTY_NOTES: dict[str, str] = {
+    # 0018 이 회사명을 두 칸으로 가른 뒤로 자회사는 정상적으로 빈다. 계열사를 말하지 않는
+    # 사이트에서는 전부 비고, 그 자리를 모회사 이름으로 메우지 않는 것이 그 마이그레이션의
+    # 요지다 (`migrations/0018_parent_company.sql`)
+    "company": "계열사를 말하지 않는 사이트는 전부 빈다. 그때는 모회사 열만 값이 있는 것이 맞다",
     "deadline": "상시채용이면 비어 있는 것이 맞다. 저장된 값만으로는 놓친 것과 구분되지 않는다",
-    "department": "부서를 적지 않는 공고가 있다. 목록에 부서가 없는 사이트면 전부 빈다",
     "requirements": "본문에 자격요건이 섞여 있는 사이트면 늘 빈다. 그 사이트는 이것이 정상이다",
-    # 0011 이 더한 열 칸. 사이트가 그 값을 나눠서 줄 때만 채워지고, 한 덩어리로 주는
+    # 0011 이 더한 칸들. 사이트가 그 값을 나눠서 줄 때만 채워지고, 한 덩어리로 주는
     # 사이트에서는 전부 빈다 — 그때 빈 것은 놓친 것이 아니다
     # (`seeds/site-configs-20260826.json` 의 사이트별 note)
     "start_date": "모집 시작일을 적지 않는 사이트가 있다. 그런 사이트는 전부 빈다",
-    "job_category": "직군을 따로 주지 않는 사이트면 늘 빈다",
     "employment_type": "정규직/인턴 구분을 따로 주는 사이트가 넷뿐이다. 나머지는 전부 빈다",
     "career_level": "신입/경력 구분을 따로 주는 사이트가 다섯뿐이다. 나머지는 전부 빈다",
     "work_location": "근무지를 따로 주지 않는 사이트면 늘 빈다",
-    "headcount": "모집인원을 적지 않는 사이트가 많다. 그런 사이트는 전부 빈다",
     "duties": "본문에 주요 업무가 섞여 있는 사이트면 늘 빈다. 그 사이트는 이것이 정상이다",
     "preferred": "본문에 우대 조건이 섞여 있는 사이트면 늘 빈다. 그 사이트는 이것이 정상이다",
     "hiring_process": "전형 절차를 따로 주지 않는 사이트면 늘 빈다",
     "etc_info": "기타 안내가 없는 공고는 빈다",
+    # 0017 이 더한 칸. 제목에서 옮기는 값이라 제목이 직무를 말하지 않으면 빈다 —
+    # `전 직군 채용` 처럼 여러 직무를 묶은 공고가 그렇다 (`tests/test_job_role_source.py`)
+    "job_role": "제목이 직무를 말하지 않는 통합 공고는 빈다. 그때 빈 것은 놓친 것이 아니다",
+    # 0025 가 더한 직무 분류. 사이트 셀렉터가 아니라 분류가 채우는 칸이라, 아직 분류를
+    # 돌리지 않았거나 본문으로 판단이 갈리지 않으면 빈다
+    "job_major": "아직 분류를 돌리지 않았거나 본문으로 판단할 근거가 없으면 빈다",
+    "job_minor": "대분류만 정해지고 소분류가 본문으로 갈리지 않는 공고는 이 칸만 빈다",
 }
 
 # 같은 공고가 두 번 들어왔는지 보는 기준. 무엇을 중복으로 볼지가 상황마다 달라 고르게 둔다.
@@ -234,6 +254,11 @@ class JobFilter:
     normalized_from: str = ""
     normalized_to: str = ""
     dup: str = ""
+    has_suggestion: str = ""
+    # 직무 대분류. 소분류는 대분류에 종속되므로 대분류 하나만 먼저 둔다(5.2, PRD 5절).
+    # 목록에 없는 이름이 와도 그대로 받는다 — 꺼진 대분류로 이미 분류된 공고를 조회할
+    # 방법이 없어지면 안 된다(`company` 와 같은 이유)
+    job_major: str = ""
 
     def without_empty(self) -> JobFilter:
         """빈 값 조건만 뺀 같은 조건. 필드별 빈 건수를 세는 데 쓴다.
@@ -257,6 +282,8 @@ class JobFilter:
             "normalized_from": self.normalized_from,
             "normalized_to": self.normalized_to,
             "dup": self.dup,
+            "has_suggestion": self.has_suggestion,
+            "job_major": self.job_major,
         }
 
 
@@ -272,6 +299,8 @@ def read_filter(
     normalized_from: str = "",
     normalized_to: str = "",
     dup: str = "",
+    has_suggestion: str = "",
+    job_major: str = "",
 ) -> JobFilter:
     """화면이 보낸 값을 조건 한 벌로. 표에 없는 값은 조건을 걸지 않은 것으로 본다.
 
@@ -290,6 +319,10 @@ def read_filter(
         normalized_from=normalized_from.strip(),
         normalized_to=normalized_to.strip(),
         dup=dup if dup in DUP_CRITERIA else "",
+        has_suggestion=has_suggestion if has_suggestion in HAS_SUGGESTION_STATES else "",
+        # 켜진 대분류가 아니어도 그대로 받는다. 대분류를 끈 뒤에도 이미 그 값으로 분류된
+        # 공고를 조회할 수 있어야 한다(`company` 와 같은 이유로 표에 대지 않는다)
+        job_major=job_major.strip(),
     )
 
 
@@ -336,10 +369,21 @@ def _dup_parts(kind: str) -> tuple[str, ...]:
     값이라 저장된 컬럼을 그대로 쓴다.
     """
     if kind == DUP_TITLE_COMPANY:
-        return (shown_value("title"), shown_value("company"))
+        return (shown_value("title"), _company_or_parent())
     if kind == DUP_TITLE:
         return (shown_value("title"),)
     return ("n.source_url",)
+
+
+def _company_or_parent() -> str:
+    """중복 판정이 볼 회사. 자회사가 있으면 그것이고, 없으면 모회사다.
+
+    자회사만 보면 계열사를 말하지 않는 사이트의 공고가 한 건도 이 기준에 걸리지 않는다.
+    빈 값끼리는 묶지 않기 때문이고(`_dup_key`), 그러면 토스·우아한형제들의 중복은 제목
+    기준으로만 잡힌다 — 그 기준은 계열사가 나눠 올린 것까지 잡는 넓은 기준이다.
+    """
+    shown = shown_value("company")
+    return f"COALESCE(NULLIF(TRIM({shown}, {_BLANK_CHARS}), ''), n.parent_company)"
 
 
 def _dup_key(kind: str) -> tuple[str, str]:
@@ -369,11 +413,19 @@ def filter_sql(picked: JobFilter) -> tuple[str, list[Any]]:
         clauses.append("r.workflow_id = ?")
         params.append(picked.workflow_id)
     if picked.company:
-        clauses.append("n.company = ?")
-        params.append(picked.company)
+        # 두 칸 어느 쪽이든 그 이름이면 걸린다. `삼성` 을 고르면 계열사 공고까지, `삼성SDS` 를
+        # 고르면 그것만 나온다. 자회사만 보면 회사명을 주지 않는 사이트가 회사로 걸리지 않고,
+        # 모회사만 보면 계열사를 고를 방법이 없다
+        clauses.append("(n.parent_company = ? OR n.company = ?)")
+        params.extend([picked.company] * 2)
     if picked.query:
-        clauses.append("(n.title LIKE ? OR n.company LIKE ? OR n.department LIKE ?)")
+        clauses.append("(n.title LIKE ? OR n.company LIKE ? OR n.parent_company LIKE ?)")
         params.extend([f"%{picked.query}%"] * 3)
+    if picked.job_major:
+        # 저장된 컬럼을 그대로 본다. `company` 필터와 같은 자리 — 보정을 얹은 값이 아니라
+        # 분류가 채운 값으로 좁힌다
+        clauses.append("n.job_major = ?")
+        params.append(picked.job_major)
 
     # 마감일은 날짜 문자열이다. `date()` 가 NULL 을 내는 값(빈 값, 날짜가 아닌 값)은 진행중도
     # 마감도 아니라 `마감일 없음` 쪽에 모은다 — 그렇지 않으면 어느 조건에도 걸리지 않는 행이
@@ -395,6 +447,14 @@ def filter_sql(picked: JobFilter) -> tuple[str, list[Any]]:
         clauses.append("n.delivered_at IS NOT NULL")
     elif picked.delivered == "no":
         clauses.append("n.delivered_at IS NULL")
+
+    # 어느 칸의 제안인지는 보지 않는다 — "제안이 붙어 있다" 만 가른다. 칸별로 좁히고 싶으면
+    # 모달을 열어 본다 (11.6)
+    _suggestion_exists = "EXISTS (SELECT 1 FROM job_field_suggestions s WHERE s.raw_job_id = r.id)"
+    if picked.has_suggestion == "yes":
+        clauses.append(_suggestion_exists)
+    elif picked.has_suggestion == "no":
+        clauses.append(f"NOT {_suggestion_exists}")
 
     for column, start, end in (
         ("r.crawled_at", picked.crawled_from, picked.crawled_to),
@@ -545,8 +605,17 @@ def empty_counts(conn: sqlite3.Connection, picked: JobFilter) -> list[dict[str, 
             "field": EMPTY_ANY,
             "label": EMPTY_LABELS[EMPTY_ANY],
             "count": counted("any_empty"),
-            "note": "여섯 필드 중 하나라도 빈 공고",
-            "normal": "",
+            # 몇 칸을 보는지는 세어서 적는다. 0011 이 여섯을 열여섯으로 늘리고 0016 이 셋을
+            # 지우고 0017 이 하나를 더하는 동안 이 문장만 `여섯` 으로 남아 있었다. 칸이
+            # 열넷이면 이 조건은 거의 전부를 잡으므로, 그 사실을 함께 적지 않으면 걸린
+            # 건수를 보고 수집이 통째로 망가진 줄 안다
+            "note": (
+                f"위 {len(OVERRIDABLE_FIELDS)}칸 중 하나라도 빈 공고."
+                " 칸이 많아 대부분이 걸린다 — 고칠 자리는 위 줄에서 하나씩 고른다"
+            ),
+            # 칸마다 답이 달라서 한 낱말로 답할 수 없다. 빈 칸으로 두지 않는다
+            # (`.claude/rules/writing.md`)
+            "normal": "칸마다 다름",
         }
     )
     return found
@@ -612,11 +681,13 @@ def _describe(conn: sqlite3.Connection, picked: JobFilter, scope: str) -> str:
     return " · ".join(
         (
             f"워크플로우 {workflow}",
-            f"회사 {picked.company or '전체'}",
+            f"회사(모회사 또는 자회사) {picked.company or '전체'}",
+            f"직무 대분류 {picked.job_major or '전체'}",
             f"진행 여부 {DEADLINE_STATES.get(picked.status, '전체')}",
             f"전달 여부 {DELIVERY_STATES.get(picked.delivered, '전체')}",
             f"빈 값 {EMPTY_LABELS.get(picked.empty, '안 걸림')}",
             f"중복 {DUP_LABELS.get(picked.dup, '안 걸림')}",
+            f"제안 여부 {HAS_SUGGESTION_STATES.get(picked.has_suggestion, '전체')}",
             f"수집 {span(picked.crawled_from, picked.crawled_to)}",
             f"정규화 {span(picked.normalized_from, picked.normalized_to)}",
             f"검색어 {picked.query or '없음'}",
@@ -739,6 +810,8 @@ async def _delete_request(request: Request) -> tuple[str, list[int], JobFilter]:
                 "normalized_from",
                 "normalized_to",
                 "dup",
+                "has_suggestion",
+                "job_major",
             )
         }
     )
@@ -746,10 +819,17 @@ async def _delete_request(request: Request) -> tuple[str, list[int], JobFilter]:
 
 
 def _delete_rows(conn: sqlite3.Connection, raw_job_ids: Sequence[int]) -> tuple[int, int, int]:
-    """세 표를 한 트랜잭션으로, 외래키 순서대로 비운다.
+    """다섯 표를 한 트랜잭션으로, 외래키 순서대로 비운다.
 
-    `job_field_overrides` -> `normalized_jobs` -> `raw_jobs` 순이다. 거꾸로 지우면 외래키가
-    막고, 막히지 않는다면 그것대로 문제다 — 가리키는 곳이 없는 보정이 남는다.
+    `job_field_overrides` -> `job_classifications` -> `job_field_suggestions` ->
+    `normalized_jobs` -> `raw_jobs` 순이다. 거꾸로 지우면 외래키가 막고, 막히지 않는다면
+    그것대로 문제다 — 가리키는 곳이 없는 보정이 남는다. `job_classifications`
+    (`migrations/0014_job_classifications.sql`) 와 `job_field_suggestions`
+    (`migrations/0023_job_field_suggestions.sql`) 도 `raw_job_id` 를 참조하는데 이 함수가
+    지우지 않으면 분류·제안이 붙은 건을 지울 때 `FOREIGN KEY constraint failed` 로 죽는다 —
+    지운 것은 여기서 함께 지운다. 반환값 개수에는 넣지 않는다. 화면의 확인 창이 보여주는 세
+    수치(`overrides`, `normalized`, `delivered`)는 그대로 두고, 분류·제안은 원문에서 다시
+    만들 수 있는 파생값이라 사라져도 되돌릴 수 없는 손실이 아니다.
 
     한 트랜잭션인 이유는 절반만 지워진 상태를 운영자가 손으로 풀 수 없어서다. 정규화 행만
     사라지고 수집 건이 남으면 그 건은 어느 화면에도 나오지 않는데 표에는 있다.
@@ -761,6 +841,8 @@ def _delete_rows(conn: sqlite3.Connection, raw_job_ids: Sequence[int]) -> tuple[
             overrides += conn.execute(
                 f"DELETE FROM job_field_overrides WHERE raw_job_id IN ({marks})", part
             ).rowcount
+            conn.execute(f"DELETE FROM job_classifications WHERE raw_job_id IN ({marks})", part)
+            conn.execute(f"DELETE FROM job_field_suggestions WHERE raw_job_id IN ({marks})", part)
             normalized += conn.execute(
                 f"DELETE FROM normalized_jobs WHERE raw_job_id IN ({marks})", part
             ).rowcount
