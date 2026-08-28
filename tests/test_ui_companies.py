@@ -35,7 +35,7 @@ from fastapi.testclient import TestClient
 
 from app import companies, db
 from app.api.settings import get_connection
-from app.api.ui import NAV
+from app.api.ui import NAV_GROUPS
 from app.main import app
 from app.normalize.engine import insert_normalized
 from app.storage import s3
@@ -95,7 +95,9 @@ def client(tmp_path: pathlib.Path, conn: sqlite3.Connection) -> Iterator[TestCli
 
 
 def test_네비게이션에_회사가_있다() -> None:
-    assert ("/companies", "회사") in NAV
+    """개별 화면이 아니라 `데이터` 묶음 안에 있다 (`app/api/ui.py` 의 `NAV_GROUPS`)."""
+    data_group = next(members for path, label, members in NAV_GROUPS if label == "데이터")
+    assert ("/companies", "회사") in data_group
 
 
 def test_회사_화면이_열리고_네비게이션이_켜진다(client: TestClient) -> None:

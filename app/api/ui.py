@@ -47,17 +47,50 @@ logger = logging.getLogger(__name__)
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
-# 네비게이션. 경로와 이름은 여기 한 곳에서만 정한다
+# 화면이 늘 때마다 위 줄이 한 칸씩 길어지면, 늘어난 자리를 찾는 일이 화면 하나 늘리는
+# 일보다 커진다. 그래서 위 네비게이션은 묶음 이름만 놓고, 묶음 안의 실제 화면은 그 아래
+# 두 번째 줄(`group_nav`)에서 고른다 — `SETTINGS_NAV` 가 이미 하는 일을 두 묶음에 더 쓴다.
+#
+# 묶음을 가르는 기준은 화면 개수가 아니라 파이프라인 단계다. 앞 넷은 수집(등록부터 주기
+# 실행까지), 뒤 셋은 그 수집이 만든 데이터를 다듬고 보는 자리다
+# (`.claude/docs/architecture.md` 의 실행 흐름).
+NAV_GROUPS: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
+    (
+        "/",
+        "수집",
+        (
+            ("/", "크롤러 등록"),
+            ("/tests", "테스트 실행"),
+            ("/workflows", "워크플로우"),
+            ("/side", "부가 워크플로우"),
+        ),
+    ),
+    (
+        "/rules",
+        "데이터",
+        (
+            ("/rules", "정규화 규칙"),
+            ("/review", "데이터 검수"),
+            ("/companies", "회사"),
+        ),
+    ),
+)
+
+# 네비게이션. 경로와 이름은 여기 한 곳에서만 정한다. 묶음의 이름과 대표 주소는
+# `NAV_GROUPS` 에서 그대로 가져온다 — 두 곳에 따로 적으면 화면 하나가 늘 때 한쪽만 넓어진다
 NAV: tuple[tuple[str, str], ...] = (
-    ("/", "크롤러 등록"),
-    ("/tests", "테스트 실행"),
-    ("/workflows", "워크플로우"),
-    ("/side", "부가 워크플로우"),
-    ("/rules", "정규화 규칙"),
-    ("/review", "데이터 검수"),
-    ("/companies", "회사"),
+    *((path, label) for path, label, _ in NAV_GROUPS),
     ("/settings", "운영 설정"),
 )
+
+
+def _group_of(path: str) -> tuple[str, str, tuple[tuple[str, str], ...]] | None:
+    """이 주소가 속한 묶음. 묶음에 없는 주소(`/settings` 등)는 `None` 이다."""
+    for group in NAV_GROUPS:
+        if any(member_path == path for member_path, _ in group[2]):
+            return group
+    return None
+
 
 router = APIRouter(tags=["ui"], include_in_schema=False)
 
@@ -68,10 +101,21 @@ def render(request: Request, name: str, /, **context: Any) -> HTMLResponse:
 
 
 def render_page(request: Request, name: str, /, **context: Any) -> HTMLResponse:
-    """페이지 하나를 렌더한다. 네비게이션과 현재 위치는 여기서 채운다."""
-    return templates.TemplateResponse(
-        request, name, {"nav": NAV, "active": request.url.path, **context}
-    )
+    """페이지 하나를 렌더한다. 네비게이션과 현재 위치는 여기서 채운다.
+
+    지금 주소가 `NAV_GROUPS` 의 한 묶음에 속하면, 위 네비게이션은 그 묶음의 대표 주소로
+    켜지고(`active`) 그 아래 두 번째 줄에 그 묶음의 화면들이 나온다(`group_nav`,
+    `group_active`). 묶이지 않은 주소(`/settings`)는 지금까지와 같다 — 위 네비게이션이 그
+    주소로 바로 켜지고 두 번째 줄은 없다(운영 설정은 `render_settings` 가 자기 하위 메뉴를
+    이미 그린다).
+    """
+    path = request.url.path
+    group = _group_of(path)
+    context.setdefault("nav", NAV)
+    context.setdefault("active", group[0] if group else path)
+    context.setdefault("group_nav", group[2] if group else None)
+    context.setdefault("group_active", path)
+    return templates.TemplateResponse(request, name, context)
 
 
 # 실패 사유별 다음 행동. "500 Internal Server Error" 는 운영자가 할 수 있는 것을 말해 주지

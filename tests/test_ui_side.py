@@ -23,7 +23,7 @@ from fastapi.testclient import TestClient
 from app import db
 from app.api import rules as rules_api
 from app.api import side as side_api
-from app.api.ui import NAV
+from app.api.ui import NAV_GROUPS
 from app.main import app
 from app.scheduler import get_scheduler
 from app.side import runner, store
@@ -85,7 +85,9 @@ def _client_with_fake_provider(path: pathlib.Path, texts: tuple[str, ...]) -> It
 
 
 def test_네비게이션에_부가_워크플로우가_있다() -> None:
-    assert ("/side", "부가 워크플로우") in NAV
+    """개별 화면이 아니라 `수집` 묶음 안에 있다 (`app/api/ui.py` 의 `NAV_GROUPS`)."""
+    collect_group = next(members for path, label, members in NAV_GROUPS if label == "수집")
+    assert ("/side", "부가 워크플로우") in collect_group
 
 
 def test_부가_워크플로우_화면이_열리고_네비게이션이_켜진다(client: TestClient) -> None:
