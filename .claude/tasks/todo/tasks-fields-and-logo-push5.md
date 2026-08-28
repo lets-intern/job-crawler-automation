@@ -26,10 +26,12 @@
           `app/notify/` 하나뿐이라고 한다. 둘 다 이 Push 로 거짓이 된다. 예외와 근거를 적는다.
           규칙을 어기고 지나가는 것이 아니라 고치고 지나간다
         - [x] 5.1.V 검증(화면 아님): 두 파일에 예외와 날짜와 근거가 적혀 있는지 읽어 확인
-    - [ ] 5.2 `docker-compose.yml` 에 MinIO 서비스와 볼륨을 더한다. 운영
+    - [x] 5.2 `docker-compose.yml` 에 MinIO 서비스와 볼륨을 더한다. 운영
           (`docker-compose.coolify.yml`)은 이 Push 에서 건드리지 않는다 — 로컬이 도는 것을
           본 뒤에 정한다
-        - [ ] 5.2.V 검증(로컬): `local-env` 로 띄워 MinIO 콘솔에 닿는지 확인
+        - [x] 5.2.V 검증(로컬): `local-env` 로 띄워 MinIO 콘솔에 닿는지 확인.
+              `docker compose up -d minio` 후 콘솔(:9001) 200, S3 헬스(:9000) 200,
+              api 컨테이너에서 `http://minio:9000` 200
     - [ ] 5.3 설정 저장소. `s3_endpoint`·`s3_region`·`s3_bucket`·`s3_access_key`·
           `s3_secret_key`·`s3_public_base` 를 `app_settings` 에 넣는다. 새 표를 만들지 않는다.
           주소는 `http`/`https` 여야 하고 버킷은 비어 있을 수 없다
