@@ -178,6 +178,19 @@ def test_로고가_있으면_카드에_나온다(client: TestClient, conn: sqlit
     assert 'src="https://logo.test/lg.png"' in body
 
 
+def test_카드_태그는_직무_대신_직무_분류를_보여준다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """PRD 대분류·소분류가 카드 태그다. `job_role` 은 더 이상 태그로 쓰지 않는다."""
+    insert_job(conn, 1, complete=True, job_major="IT·개발")
+
+    body = client.get("/ui/complete").text
+
+    assert "#IT·개발" in body
+    assert "#값-job_minor" in body
+    assert "값-job_role" not in body
+
+
 def test_미리보기에_섹션과_본문이_나온다(client: TestClient, conn: sqlite3.Connection) -> None:
     insert_job(conn, 1, complete=True)
 
