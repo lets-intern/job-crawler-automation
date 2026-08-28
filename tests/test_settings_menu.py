@@ -1,7 +1,8 @@
 """운영 설정의 하위 메뉴 (2.4.V 의 자동 확인분).
 
-다섯으로 갈렸다 — AI 제공자 / 알림 / 동시 실행 / 스냅샷 내보내기 / 데이터 가져오기.
-**자리만 옮겼고 동작은 그대로다.** 그래서 여기서 보는 것은 셋이다. 다섯이 다 열리는가,
+여섯으로 갈렸다 — AI 제공자 / 알림 / 파일 저장소 / 동시 실행 / 스냅샷 내보내기 /
+데이터 가져오기. 파일 저장소는 2026-08-28 에 더했다 (Push 5).
+**자리만 옮겼고 동작은 그대로다.** 그래서 여기서 보는 것은 셋이다. 여섯이 다 열리는가,
 각 화면이 옮기기 전과 같은 조각을 부르는가, 그리고 어느 하위 화면에 있든 위 네비게이션이
 `운영 설정` 에 머무는가.
 """
@@ -20,6 +21,7 @@ from app.main import app
 CALLS: tuple[tuple[str, str], ...] = (
     ("/settings", 'hx-get="/ui/llm"'),
     ("/settings/notify", 'hx-get="/ui/notify"'),
+    ("/settings/storage", 'hx-get="/ui/storage"'),
     ("/settings/runs", 'hx-get="/ui/settings"'),
     ("/settings/export", 'href="/ui/settings/export"'),
     ("/settings/import", 'hx-post="/ui/settings/import"'),
@@ -31,10 +33,11 @@ def client() -> Iterator[TestClient]:
     yield TestClient(app, follow_redirects=False)
 
 
-def test_하위_메뉴가_다섯이다() -> None:
+def test_하위_메뉴가_여섯이다() -> None:
     assert [label for _, label in SETTINGS_NAV] == [
         "AI 제공자",
         "알림",
+        "파일 저장소",
         "동시 실행",
         "스냅샷 내보내기",
         "데이터 가져오기",

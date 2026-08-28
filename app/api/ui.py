@@ -395,6 +395,7 @@ def jobs_page() -> RedirectResponse:
 SETTINGS_NAV: tuple[tuple[str, str], ...] = (
     ("/settings", "AI 제공자"),
     ("/settings/notify", "알림"),
+    ("/settings/storage", "파일 저장소"),
     ("/settings/runs", "동시 실행"),
     ("/settings/export", "스냅샷 내보내기"),
     ("/settings/import", "데이터 가져오기"),
@@ -420,6 +421,11 @@ def settings_page(request: Request) -> HTMLResponse:
 @router.get("/settings/notify", response_class=HTMLResponse)
 def settings_notify_page(request: Request) -> HTMLResponse:
     return render_settings(request, "pages/settings_notify.html")
+
+
+@router.get("/settings/storage", response_class=HTMLResponse)
+def settings_storage_page(request: Request) -> HTMLResponse:
+    return render_settings(request, "pages/settings_storage.html")
 
 
 @router.get("/settings/runs", response_class=HTMLResponse)
