@@ -42,6 +42,7 @@ LONG_BODY = "본문 첫 줄\n" + ("이 자리는 표 칸 폭에 들어가지 않
 FULL_FORM = {
     "company": "파이썬재단",
     "title": "백엔드 개발자",
+    "job_role": "",
     "work_location": "",
     "deadline": "",
     "body": LONG_BODY,
@@ -144,6 +145,16 @@ def test_모달에_여섯_필드가_다_들어오고_규칙값을_함께_보여�
     # 고치지 않는 값도 조회 상세처럼 함께 보인다
     assert "수집 시각" in html
     assert "정규화 시각" in html
+
+
+def test_검수_표와_모달에_직무_열이_나온다(client: TestClient) -> None:
+    """0017 이 더한 칸이다. 화면에 없으면 잘못 뽑힌 직무를 아무도 보지 못한다 (2.5.V)."""
+    table = client.get("/ui/review").text
+    modal = client.get("/ui/review/modal/7").text
+
+    assert "직무" in table
+    assert 'id="review-cell-7-job_role"' in table
+    assert 'name="job_role"' in modal
 
 
 def test_보정된_필드는_규칙이_만든_값을_함께_보여준다(client: TestClient) -> None:

@@ -97,6 +97,7 @@ _COLUMNS = """
            n.company       AS company,
            n.company_source AS company_source,
            n.title         AS title,
+           n.job_role      AS job_role,
            n.deadline      AS deadline,
            n.body          AS body,
            n.requirements  AS requirements,

@@ -88,6 +88,7 @@ DELIVERY_STATES: dict[str, str] = {
 FIELD_LABELS: dict[str, str] = {
     "company": "회사",
     "title": "제목",
+    "job_role": "직무",
     "deadline": "마감",
     "body": "본문",
     "requirements": "자격요건",
@@ -123,6 +124,9 @@ EMPTY_NOTES: dict[str, str] = {
     "preferred": "본문에 우대 조건이 섞여 있는 사이트면 늘 빈다. 그 사이트는 이것이 정상이다",
     "hiring_process": "전형 절차를 따로 주지 않는 사이트면 늘 빈다",
     "etc_info": "기타 안내가 없는 공고는 빈다",
+    # 0017 이 더한 칸. 제목에서 옮기는 값이라 제목이 직무를 말하지 않으면 빈다 —
+    # `전 직군 채용` 처럼 여러 직무를 묶은 공고가 그렇다 (`tests/test_job_role_source.py`)
+    "job_role": "제목이 직무를 말하지 않는 통합 공고는 빈다. 그때 빈 것은 놓친 것이 아니다",
 }
 
 # 같은 공고가 두 번 들어왔는지 보는 기준. 무엇을 중복으로 볼지가 상황마다 달라 고르게 둔다.

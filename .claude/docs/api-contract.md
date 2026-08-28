@@ -49,6 +49,7 @@ GET /api/jobs?updated_after=<ISO8601>&limit=100&cursor=<opaque>
       "id": 1,
       "company": "회사명",
       "title": "공고 제목",
+      "job_role": "백엔드 개발",
       "deadline": "2026-09-30",
       "body": "본문",
       "requirements": "자격요건",
@@ -77,10 +78,19 @@ GET /api/jobs?updated_after=<ISO8601>&limit=100&cursor=<opaque>
 사이트가 많았다. 소비 측은 아직 붙지 않았으므로 이 셋을 읽던 코드는 없다
 (`migrations/0016_drop_department_category_headcount.sql`).
 
+**같은 날 `job_role` 을 더했다.** 공고 제목이 말하는 직무이고, 값은 공고 제목에서 그대로
+옮긴 것이다. **자유 텍스트라 이 필드로 거를 수 없다** — 지운 `job_category` 는 닫힌 목록
+열다섯 개였지만 그 자리에 들어오는 것은 목록이 아니다. 거르는 데 쓸 수 있는 필드는 아래
+`employment_type`·`career_level` 둘뿐이다 (`migrations/0017_job_role.sql`).
+
+제목이 직무를 말하지 않는 통합 공고(`전 직군 채용`)에서는 `null` 이다. 열한 사이트 중 둘이
+그런 공고를 올린다 (`tests/test_job_role_source.py`).
+
 값이 정해진 필드의 목록은 아래 표 하나에만 적는다.
 
 | 필드 | 뜻 |
 |---|---|
+| job_role | 직무. 제목에서 옮긴 자유 텍스트 |
 | start_date | 모집 시작일 |
 | employment_type | 고용형태 |
 | career_level | 경력 구분 |

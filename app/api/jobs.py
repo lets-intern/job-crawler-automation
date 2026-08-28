@@ -36,7 +36,7 @@ MAX_LIMIT = 500
 STORED_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 _SELECT = """
-    SELECT id, company, title, deadline, body, requirements,
+    SELECT id, company, title, job_role, deadline, body, requirements,
            start_date, employment_type, career_level, work_location,
            duties, preferred, hiring_process, etc_info,
            source_url, normalized_at
@@ -48,7 +48,9 @@ class JobOut(BaseModel):
     """계약의 `items` 한 건. 필드 이름과 순서는 문서를 그대로 따른다.
 
     `start_date` 아래 일곱은 0011 이 더한 칸이고, 0016 이 `department`·`job_category`·
-    `headcount` 를 뺐다. 소비 측이 아직 붙지 않은 동안에만 할 수 있는 일이다
+    `headcount` 를 뺐다. 0017 이 `job_role` 을 더했다 — 지운 직군과 달리 닫힌 목록이 아니라
+    제목에서 옮기는 자유 텍스트라 **소비 측이 이 필드로 거를 수 없다.** 셋을 지운 것도 이
+    필드를 더한 것도 소비 측이 아직 붙지 않은 동안에만 할 수 있는 일이다
     (`.claude/docs/api-contract.md`).
 
     사이트가 그 값을 주지 않으면 `null` 이다. 없는 값을 다른 값으로 채우지 않는다.
@@ -57,6 +59,7 @@ class JobOut(BaseModel):
     id: int
     company: str | None
     title: str | None
+    job_role: str | None
     deadline: str | None
     body: str | None
     requirements: str | None
@@ -157,6 +160,7 @@ def _out(row: sqlite3.Row) -> JobOut:
         id=int(row["id"]),
         company=row["company"],
         title=row["title"],
+        job_role=row["job_role"],
         deadline=row["deadline"],
         body=row["body"],
         requirements=row["requirements"],

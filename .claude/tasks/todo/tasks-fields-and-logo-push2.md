@@ -44,8 +44,19 @@
         - [x] 2.4.V 검증(정규화): 제목에만 있는 직무가 버려지지 않고, 어디에도 없는 값은
               버려지는지 pytest. `tests/test_classify_body.py` 34건,
               `tests/test_classify_run.py` 19건 통과
-    - [ ] 2.5 화면 라벨과 계약 문서에 직무를 더한다
-        - [ ] 2.5.V 검증(화면): 검수 표와 모달에 열이 나오는지 확인
+    - [x] 2.5 화면 라벨과 계약 문서에 직무를 더한다. `NORMALIZED_FIELDS` 가 여기서 넓어진다
+          — 그 상수가 곧 `OVERRIDABLE_FIELDS` 이고, 라벨 없이 넓히면 검수 화면이
+          `KeyError` 로 선다. 그래서 2.3 이 아니라 이 커밋이다
+        - [x] 2.5.V 검증(화면): 검수 표에 `직무` 열과 `review-cell-7-job_role` 이,
+              모달에 `name="job_role"` 이 나오는 것을 렌더된 HTML 로 확인
+              (`tests/test_ui_review_modal.py`). 제공 API 응답 키도
+              `tests/test_api_jobs.py` 가 계약과 대조한다
+    - [x] 2.6 (실행 중 추가) 검수 화면이 `normalized_jobs` 를 손으로 적은 컬럼 목록으로
+          읽고 있어서(`app/api/review.py` 의 `_COLUMNS`) 새 칸이 그 행에 없었다. 저장을
+          누르면 `job[field]` 가 `IndexError` 로 터진다 — 열이 안 보이는 것이 아니라
+          모달 저장 경로 전체가 선다. 그 목록에 `job_role` 을 더했다
+        - [x] 2.6.V 검증(화면): `pytest tests/test_ui_review_modal.py` 15건 통과.
+              2.5 없이는 스위트가 통과하지 않아 같은 커밋에 들어간다
 
 ## 2.1 이 잰 것 (2026-08-28)
 

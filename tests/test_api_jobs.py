@@ -169,6 +169,8 @@ def test_item_shape_matches_contract(client: TestClient, conn: sqlite3.Connectio
         "id",
         "company",
         "title",
+        # 0017 이 더한 직무. 제목에서 옮긴 자유 텍스트라 이 필드로는 거를 수 없다
+        "job_role",
         "deadline",
         "body",
         "requirements",

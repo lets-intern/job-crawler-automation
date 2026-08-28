@@ -56,10 +56,13 @@ from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 # (`migrations/0011_split_body_columns.sql`, `tests/test_split_body_columns.py`).
 #
 # 0016 이 `department`·`job_category`·`headcount` 를 뺐다. 값이 자리에 맞게 들어오지 않는
-# 칸이었다 (`migrations/0016_drop_department_category_headcount.sql`).
+# 칸이었다 (`migrations/0016_drop_department_category_headcount.sql`). 0017 이 `job_role` 을
+# 더했다 — 지운 직군과 달리 닫힌 목록이 아니라 제목에서 옮기는 자유 텍스트다
+# (`migrations/0017_job_role.sql`).
 NORMALIZED_FIELDS: tuple[str, ...] = (
     "company",
     "title",
+    "job_role",
     "deadline",
     "body",
     "requirements",
