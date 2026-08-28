@@ -216,8 +216,8 @@ async def test_a_blank_classification_clears_the_old_collected_value(
 ) -> None:
     """분류가 빈 칸을 내면 옛 값도 남지 않는다.
 
-    남겨 두면 `IT - 구축/운영/최적화` 같은 사이트 표기가 계속 나가고, 판정 칸 셋의 닫힌
-    목록이 640건에 대해 성립하지 않는다 (`.claude/docs/api-contract.md`).
+    남겨 두면 사이트가 준 옛 값이 계속 나간다. 칸의 출처가 하나여야 소비 측이 한 가지
+    규칙으로 읽는다 (`app/normalize/engine.py`).
     """
     conn.execute(
         "UPDATE raw_jobs SET raw_data_json = ? WHERE id = 1",
@@ -227,18 +227,18 @@ async def test_a_blank_classification_clears_the_old_collected_value(
                     "source_url": "https://x/1",
                     "title": "공고 1",
                     "body": BODY,
-                    "job_category": "IT - 구축/운영/최적화",
+                    "work_location": "본사 (서울)",
                 },
                 ensure_ascii=False,
             ),
         ),
     )
 
-    # GOOD 응답은 job_category 를 비워 둔다
+    # GOOD 응답은 work_location 을 비워 둔다
     await run(conn, GOOD)
 
-    row = conn.execute("SELECT job_category FROM normalized_jobs WHERE raw_job_id = 1").fetchone()
-    assert row["job_category"] is None
+    row = conn.execute("SELECT work_location FROM normalized_jobs WHERE raw_job_id = 1").fetchone()
+    assert row["work_location"] is None
 
 
 async def test_the_six_collected_columns_are_untouched_by_the_classification(

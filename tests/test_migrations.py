@@ -67,20 +67,17 @@ EXPECTED_COLUMNS = {
         "company",
         "company_source",
         "title",
-        "department",
         "deadline",
         "body",
         "requirements",
         "source_url",
         "normalized_at",
         "delivered_at",
-        # 0011 이 더한 열 칸. 넷 이상의 사이트가 주는 것만 골랐다
+        # 0011 이 더한 열 칸에서 0016 이 셋을 뺀 나머지
         "start_date",
-        "job_category",
         "employment_type",
         "career_level",
         "work_location",
-        "headcount",
         "duties",
         "preferred",
         "hiring_process",
@@ -755,8 +752,13 @@ SPLIT_BODY_COLUMNS = [
     "etc_info",
 ]
 
-# 0011 이 건드리지 않는 칸. 소비 측이 읽던 것이라 이름도 뜻도 그대로다
-KEPT_COLUMNS = "company, title, department, deadline, body, requirements, source_url"
+# 0011 이 더한 열 칸 중 0016 이 지운 둘. 전부 적용한 자리에서는 이 둘이 없으므로, 0011 이
+# 무엇을 더했는지 보는 검사는 살아남은 여덟만 센다
+SPLIT_BODY_KEPT = [name for name in SPLIT_BODY_COLUMNS if name not in ("job_category", "headcount")]
+
+# 0011 이 건드리지 않는 칸. 소비 측이 읽던 것이라 이름도 뜻도 그대로다.
+# `department` 는 0016 이 지웠다
+KEPT_COLUMNS = "company, title, deadline, body, requirements, source_url"
 
 
 def _at_0010(connection: sqlite3.Connection) -> None:
@@ -767,14 +769,13 @@ def _at_0010(connection: sqlite3.Connection) -> None:
 
 
 def _seed_normalized(connection: sqlite3.Connection) -> None:
-    """정규화된 공고 한 행. 여섯 칸에 값이 다 들어 있다."""
+    """정규화된 공고 한 행. 남은 칸에 값이 다 들어 있다."""
     _seed_raw_job(connection)
     connection.execute(
         """
         INSERT INTO normalized_jobs
-               (raw_job_id, company, title, department, deadline, body, requirements,
-                source_url)
-        VALUES (1, '한화생명', '마케팅 기획', '', '2026-08-25', '본문', '자격요건',
+               (raw_job_id, company, title, deadline, body, requirements, source_url)
+        VALUES (1, '한화생명', '마케팅 기획', '2026-08-25', '본문', '자격요건',
                 'https://example.test/1')
         """
     )
@@ -792,7 +793,7 @@ def test_split_body_only_adds_columns_and_keeps_the_existing_values(
 
     after = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
     assert [tuple(row) for row in after] == [tuple(row) for row in before]
-    assert set(SPLIT_BODY_COLUMNS) <= _columns(conn, "normalized_jobs")
+    assert set(SPLIT_BODY_KEPT) <= _columns(conn, "normalized_jobs")
 
 
 def test_split_body_leaves_the_new_columns_empty(conn: sqlite3.Connection) -> None:
@@ -802,15 +803,15 @@ def test_split_body_leaves_the_new_columns_empty(conn: sqlite3.Connection) -> No
 
     db.migrate_up(conn)
 
-    row = conn.execute(f"SELECT {', '.join(SPLIT_BODY_COLUMNS)} FROM normalized_jobs").fetchone()
-    assert [row[name] for name in SPLIT_BODY_COLUMNS] == [None] * len(SPLIT_BODY_COLUMNS)
+    row = conn.execute(f"SELECT {', '.join(SPLIT_BODY_KEPT)} FROM normalized_jobs").fetchone()
+    assert [row[name] for name in SPLIT_BODY_KEPT] == [None] * len(SPLIT_BODY_KEPT)
 
 
 def test_split_body_down_drops_only_the_ten_it_added(conn: sqlite3.Connection) -> None:
     """역적용은 더한 열 칸만 지운다. 공고와 여섯 칸의 값은 그대로다."""
     db.migrate_up(conn)
     _seed_normalized(conn)
-    conn.execute("UPDATE normalized_jobs SET work_location = '서울', headcount = '0명'")
+    conn.execute("UPDATE normalized_jobs SET work_location = '서울', duties = '기획'")
     before = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
 
     db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0011"))
@@ -930,3 +931,50 @@ def test_dropped_field_rules_come_back_on_down(conn: sqlite3.Connection) -> None
     db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0016"))
 
     assert _rules(conn) == [("department", "trim", 0), ("department", "regex", 10)]
+
+
+# 0016 이 지우는 세 칸
+DROPPED_COLUMNS = ["department", "job_category", "headcount"]
+
+
+def _seed_normalized_with_dropped(connection: sqlite3.Connection) -> None:
+    """0016 직전의 공고 한 행. 지워질 세 칸에도 값이 들어 있다."""
+    _seed_raw_job(connection)
+    connection.execute(
+        """
+        INSERT INTO normalized_jobs
+               (raw_job_id, company, title, deadline, body, requirements, source_url,
+                department, job_category, headcount)
+        VALUES (1, '한화생명', '마케팅 기획', '2026-08-25', '본문', '자격요건',
+                'https://example.test/1', '마케팅본부', '영업', '0명')
+        """
+    )
+
+
+def test_dropping_the_three_keeps_the_rows_and_the_other_values(
+    conn: sqlite3.Connection,
+) -> None:
+    """0016 은 칸만 지운다. 공고가 사라지거나 남은 칸의 값이 바뀌면 안 된다."""
+    _at_0015(conn)
+    _seed_normalized_with_dropped(conn)
+    before = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
+
+    db.migrate_up(conn)
+
+    after = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
+    assert [tuple(row) for row in after] == [tuple(row) for row in before]
+    assert not set(DROPPED_COLUMNS) & _columns(conn, "normalized_jobs")
+
+
+def test_the_three_come_back_empty_on_down(conn: sqlite3.Connection) -> None:
+    """되돌리면 칸은 돌아오지만 값은 돌아오지 않는다. 어디에도 옮겨 두지 않았다."""
+    _at_0015(conn)
+    _seed_normalized_with_dropped(conn)
+    db.migrate_up(conn)
+
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0016"))
+
+    assert set(DROPPED_COLUMNS) <= _columns(conn, "normalized_jobs")
+    row = conn.execute(f"SELECT {', '.join(DROPPED_COLUMNS)} FROM normalized_jobs").fetchone()
+    assert [row[name] for name in DROPPED_COLUMNS] == [None] * len(DROPPED_COLUMNS)
+    assert conn.execute("SELECT count(*) AS n FROM normalized_jobs").fetchone()["n"] == 1
