@@ -65,7 +65,6 @@ EXPECTED_COLUMNS = {
         "id",
         "raw_job_id",
         "company",
-        "company_source",
         "title",
         "deadline",
         "body",
@@ -149,6 +148,7 @@ ALL_VERSIONS = [
     "0016",
     "0017",
     "0018",
+    "0019",
 ]
 
 
@@ -245,7 +245,8 @@ def test_company_columns_start_empty_and_hold_the_two_sources(conn: sqlite3.Conn
 
 
 def test_company_source_rejects_a_value_outside_the_two(conn: sqlite3.Connection) -> None:
-    db.migrate_up(conn)
+    """0019 가 지우기 전까지의 CHECK. 되살린 열도 같은 두 값만 받아야 한다."""
+    _at_0018(conn)
     conn.execute(
         "INSERT INTO crawlers (name, list_url) VALUES (?, ?)", ("테스트", "https://example.test")
     )
@@ -1178,3 +1179,66 @@ def test_the_parent_company_down_drops_only_that_column(conn: sqlite3.Connection
     row = conn.execute("SELECT company, title FROM normalized_jobs").fetchone()
     assert (row["company"], row["title"]) == ("삼성SDS", "백엔드 개발자")
     assert conn.execute("SELECT count(*) AS n FROM raw_jobs").fetchone()["n"] == 1
+
+
+def _at_0018(connection: sqlite3.Connection) -> None:
+    """0019 직전 상태로 만든다. 회사명 출처 열이 아직 있는 스키마다."""
+    db.migrate_up(connection)
+    db.migrate_down(connection, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0019"))
+
+
+def test_company_source_is_dropped(conn: sqlite3.Connection) -> None:
+    """칸 이름이 출처를 말하게 된 뒤로 이 열은 답이 둘이 되게 할 뿐이다."""
+    _at_0018(conn)
+    assert "company_source" in _columns(conn, "normalized_jobs")
+
+    db.migrate_up(conn)
+
+    assert "company_source" not in _columns(conn, "normalized_jobs")
+    # 회사명 두 칸은 그대로다. 지운 것은 출처 열 하나뿐이다
+    assert {"company", "parent_company"} <= _columns(conn, "normalized_jobs")
+
+
+def test_dropping_company_source_keeps_the_rows_and_the_two_company_columns(
+    conn: sqlite3.Connection,
+) -> None:
+    _at_0018(conn)
+    _seed_raw_job(conn)
+    conn.execute(
+        """
+        INSERT INTO normalized_jobs
+               (raw_job_id, parent_company, company, company_source, title, source_url)
+        VALUES (1, '삼성전자', '삼성SDS', 'parsed', '백엔드 개발자', 'https://example.test/1')
+        """
+    )
+
+    db.migrate_up(conn)
+
+    row = conn.execute("SELECT parent_company, company, title FROM normalized_jobs").fetchone()
+    assert (row["parent_company"], row["company"], row["title"]) == (
+        "삼성전자",
+        "삼성SDS",
+        "백엔드 개발자",
+    )
+
+
+def test_the_company_source_down_restores_the_column_empty_with_its_check(
+    conn: sqlite3.Connection,
+) -> None:
+    """컬럼은 돌아오지만 값은 돌아오지 않는다. CHECK 는 같은 모양으로 돌아와야 한다."""
+    db.migrate_up(conn)
+    _seed_raw_job(conn)
+    conn.execute(
+        """
+        INSERT INTO normalized_jobs (raw_job_id, company, title, source_url)
+        VALUES (1, '삼성SDS', '백엔드 개발자', 'https://example.test/1')
+        """
+    )
+
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0019"))
+
+    assert "company_source" in _columns(conn, "normalized_jobs")
+    row = conn.execute("SELECT company, company_source FROM normalized_jobs").fetchone()
+    assert (row["company"], row["company_source"]) == ("삼성SDS", None)
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("UPDATE normalized_jobs SET company_source = '운영자'")
