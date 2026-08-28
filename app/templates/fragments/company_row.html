@@ -16,8 +16,11 @@
     {{ failure(parent_error.reason, parent_error.message, parent_error.title) }}
     {% endif %}
     <p>{{ row.parent_name if row.parent_name else blank() }}</p>
+    {# 대기 문구는 폼 안에 둔다. HTMX 가 요청을 낸 폼에 `htmx-request` 를 붙이므로
+       `hx-indicator` 가 필요 없다. `closest td` 로 잡으면 그 칸의 문구가 한꺼번에 뜬다
+       (`fragments/rule_list.html` 에 같은 주의가 있다) #}
     <form hx-put="/ui/companies/parent" hx-target="closest tr" hx-swap="outerHTML"
-          hx-disabled-elt="find button" hx-indicator="closest td">
+          hx-disabled-elt="find button">
       <input type="hidden" name="name" value="{{ row.name }}">
       <input name="parent_name" type="text" value="{{ row.parent_name or '' }}"
              aria-label="{{ row.name }} 모회사 이름" class="w-full max-w-xs">
@@ -56,7 +59,7 @@
        주소를 비우고 저장하면 지운다. 지우기 단추를 따로 두지 않는다 —
        비움이 곧 지움이어야 화면에 길이 하나만 남는다 (`app/companies.py`) #}
     <form hx-put="/ui/companies/logo" hx-target="closest tr" hx-swap="outerHTML"
-          hx-disabled-elt="find button" hx-indicator="closest td">
+          hx-disabled-elt="find button">
       <input type="hidden" name="name" value="{{ row.name }}">
       <input name="logo_url" type="url" value="{{ row.logo_url or '' }}"
              aria-label="{{ row.name }} 로고 주소" placeholder="https://..."
@@ -72,7 +75,7 @@
     {% if storage_ready %}
     <form hx-post="/ui/companies/logo/upload" hx-target="closest tr" hx-swap="outerHTML"
           hx-encoding="multipart/form-data"
-          hx-disabled-elt="find button" hx-indicator="closest td">
+          hx-disabled-elt="find button">
       <input type="hidden" name="name" value="{{ row.name }}">
       <input name="file" type="file" required
              accept="image/png,image/jpeg,image/webp"

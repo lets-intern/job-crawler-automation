@@ -91,3 +91,9 @@
               (2) 원본 12건을 전부 재정규화했는데 둘 다 `삼성전자` 그대로였다.
               `companies.ensure` 가 있는 행을 한 글자도 고치지 않기 때문이다.
               `tests/test_ui_companies.py` 44개 통과
+    - [x] 6.9 (수정) 줄 안의 폼 셋에 `hx-indicator="closest td"` 를 걸어 두어, 하나를
+          저장하면 그 칸의 대기 문구가 한꺼번에 떴다. 주소를 저장하는 동안 `올리는 중` 이
+          같이 보인다. HTMX 가 요청을 낸 폼에 `htmx-request` 를 붙이므로 지시자를 떼면
+          제 문구만 뜬다 — `fragments/rule_list.html` 에 같은 주의가 이미 적혀 있다
+        - [x] 6.9.V 검증(테스트): 지시자를 뗀 뒤 `tests/test_ui_companies.py` 44개 통과,
+              `pytest -m "not live"` 전체 통과
