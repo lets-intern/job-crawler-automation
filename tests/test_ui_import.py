@@ -26,6 +26,7 @@ from app import db
 from app.api import settings as settings_api
 from app.api import workflows as workflows_api
 from app.main import app
+from app.normalize.rules import NORMALIZED_FIELDS
 from app.scheduler import WorkflowScheduler
 
 SNAPSHOT = pathlib.Path(__file__).resolve().parent.parent / "seeds" / "snapshot" / "jobs.db"
@@ -111,7 +112,7 @@ def test_스냅샷을_올리면_건수가_화면에_나온다(client: TestClient
     assert count(conn, "raw_jobs") == stored["raw_jobs"]
     assert count(conn, "crawlers") == stored["crawlers"]
     assert count(conn, "workflows") == stored["workflows"]
-    assert count(conn, "normalization_rules") == stored["normalization_rules"]
+    assert count(conn, "normalization_rules") == stored["normalization_rules_kept"]
     # 저쪽 서버의 실행 기록과 전달 표시는 따라오지 않는다
     assert count(conn, "crawl_runs") == 0
     assert count(conn, "normalized_jobs") > 0
@@ -179,9 +180,19 @@ def test_결과_화면에_이모지가_없다(client: TestClient) -> None:
 def _snapshot_counts() -> dict[str, int]:
     source = sqlite3.connect(f"file:{SNAPSHOT}?mode=ro", uri=True)
     try:
-        return {
+        counts = {
             table: int(source.execute(f"SELECT count(*) FROM {table}").fetchone()[0])
             for table in ("crawlers", "workflows", "normalization_rules", "raw_jobs")
         }
+        # 지워진 칸의 규칙은 들어오지 않는다. 이 파일은 0016 이전에 뜬 것이라
+        # `department` 규칙 둘이 들어 있다 (`app/api/import_data.py`)
+        placeholders = ", ".join("?" for _ in NORMALIZED_FIELDS)
+        counts["normalization_rules_kept"] = int(
+            source.execute(
+                f"SELECT count(*) FROM normalization_rules WHERE field_name IN ({placeholders})",
+                NORMALIZED_FIELDS,
+            ).fetchone()[0]
+        )
+        return counts
     finally:
         source.close()
