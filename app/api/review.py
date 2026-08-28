@@ -113,6 +113,8 @@ _COLUMNS = """
            n.preferred     AS preferred,
            n.hiring_process AS hiring_process,
            n.etc_info      AS etc_info,
+           n.job_major     AS job_major,
+           n.job_minor     AS job_minor,
            n.source_url    AS source_url,
            n.normalized_at AS normalized_at,
            n.delivered_at  AS delivered_at,
