@@ -1,12 +1,18 @@
-"""회사 화면 (6.1.V).
+"""회사 화면 (6.1.V, 6.2.V).
 
-보는 것은 셋이다. 네비게이션에 자리가 생겼는지, 그 주소가 열리면서 목록 조각을 부르는지,
-그리고 행이 없을 때 화면이 "없음" 으로 끝내지 않고 언제 생기는지 말하는지.
+보는 것은 넷이다. 네비게이션에 자리가 생겼는지, 그 주소가 열리면서 목록 조각을 부르는지,
+행이 없을 때 화면이 "없음" 으로 끝내지 않고 언제 생기는지 말하는지, 그리고 공고 수가
+많은 회사가 앞에 서는지.
+
+공고는 정규화를 지나 넣는다. 화면이 세는 값과 로고가 실제로 붙는 경로가 같은 이름이라야
+숫자가 뜻을 갖는다.
 """
 
 from __future__ import annotations
 
+import json
 import pathlib
+import re
 import sqlite3
 from collections.abc import Iterator
 
@@ -17,12 +23,39 @@ from app import companies, db
 from app.api.settings import get_connection
 from app.api.ui import NAV
 from app.main import app
+from app.normalize.engine import insert_normalized
+
+
+def add_job(conn: sqlite3.Connection, company: str, seq: int, parent: str = "") -> None:
+    """공고 한 건을 정규화까지 넣는다. 없던 회사면 행이 함께 생긴다."""
+    record = {"title": f"공고 {seq}", "body": "본문", "company": company}
+    if parent:
+        record["parent_company"] = parent
+    cursor = conn.execute(
+        """
+        INSERT INTO raw_jobs (workflow_id, source_url, raw_data_json, content_hash)
+        VALUES (1, ?, ?, ?)
+        """,
+        (f"https://x/{seq}", json.dumps(record, ensure_ascii=False), f"hash-{seq}"),
+    )
+    insert_normalized(conn, int(cursor.lastrowid or 0), [])
+
+
+def names_in_order(body: str) -> list[str]:
+    """표에 그려진 회사명을 나온 순서대로. 정렬을 보는 유일한 방법이다."""
+    return re.findall(r'<td class="cell-text font-medium text-slate-900">([^<]+)</td>', body)
 
 
 @pytest.fixture
 def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
     connection = db.connect(tmp_path / "jobs.db")
     db.migrate_up(connection)
+    # `raw_jobs.workflow_id` 가 외래키다. 공고를 넣는 테스트가 여기에 매달린다
+    connection.execute(
+        "INSERT INTO crawlers (id, name, list_url, status)"
+        " VALUES (1, '테스트', 'https://x', 'draft')"
+    )
+    connection.execute("INSERT INTO workflows (id, crawler_id, name) VALUES (1, 1, '테스트')")
     try:
         yield connection
     finally:
@@ -83,3 +116,43 @@ def test_행이_없으면_언제_생기는지_말한다(client: TestClient) -> N
     body = client.get("/ui/companies").text
 
     assert "정규화되면 그 회사명으로 행이 생긴다" in body
+
+
+def test_공고_수가_그_회사의_공고와_같다(client: TestClient, conn: sqlite3.Connection) -> None:
+    add_job(conn, "토스", 1)
+    add_job(conn, "토스", 2)
+    add_job(conn, "당근", 3)
+    conn.commit()
+
+    body = client.get("/ui/companies").text
+
+    assert "2건" in body
+    assert "1건" in body
+
+
+def test_공고가_많은_회사가_앞에_선다(client: TestClient, conn: sqlite3.Connection) -> None:
+    """이름 순이면 로고 하나가 몇 건에 붙는지를 화면에서 알 수 없다."""
+    for seq in range(1, 4):
+        add_job(conn, "카카오", seq)
+    add_job(conn, "가나다", 10)
+    companies.ensure(conn, "공고없는회사")
+    conn.commit()
+
+    assert names_in_order(client.get("/ui/companies").text) == [
+        "카카오",
+        "가나다",
+        "공고없는회사",
+    ]
+
+
+def test_공고가_하나도_없는_회사도_0건으로_남는다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """빠지면 로고를 지울 회사를 화면에서 찾을 수 없다."""
+    companies.ensure(conn, "폐업한회사")
+    conn.commit()
+
+    body = client.get("/ui/companies").text
+
+    assert "폐업한회사" in body
+    assert "0건" in body
