@@ -1,4 +1,4 @@
-"""회사 화면 (6.1.V ~ 6.7.V).
+"""회사 화면 (6.1.V ~ 6.8.V).
 
 보는 것은 넷이다. 네비게이션에 자리가 생겼는지, 그 주소가 열리면서 목록 조각을 부르는지,
 행이 없을 때 화면이 "없음" 으로 끝내지 않고 언제 생기는지 말하는지, 그리고 공고 수가
@@ -610,3 +610,73 @@ def test_붙여넣기_길이_저장소를_거치지_않는다고_화면에_적�
     body = client.get("/ui/companies").text
 
     assert "우리 저장소를 거치지 않는다" in body
+
+
+def test_모회사_이름을_사람이_고친다(client: TestClient, conn: sqlite3.Connection) -> None:
+    add_job(conn, "삼성SDS", 1)
+    conn.commit()
+
+    body = client.put(
+        "/ui/companies/parent", data={"name": "삼성SDS", "parent_name": " 삼성전자 "}
+    ).text
+
+    stored = companies.read(conn, "삼성SDS")
+    assert stored is not None and stored.parent_name == "삼성전자"
+    assert "모회사를 삼성전자 로 고쳤다" in body
+
+
+def test_고친_모회사가_다음_정규화에_덮이지_않는다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """6.8.V. 정규화는 공고마다 회사 행을 보장하는데, 있는 행을 덮으면 고친 값이 도로 돌아간다."""
+    add_job(conn, "삼성SDS", 1)
+    conn.commit()
+    client.put("/ui/companies/parent", data={"name": "삼성SDS", "parent_name": "삼성전자"})
+
+    add_job(conn, "삼성SDS", 2)
+    conn.commit()
+
+    stored = companies.read(conn, "삼성SDS")
+    assert stored is not None and stored.parent_name == "삼성전자"
+
+
+def test_모회사를_비우면_지운다(client: TestClient, conn: sqlite3.Connection) -> None:
+    companies.ensure(conn, "토스", "비바리퍼블리카")
+    conn.commit()
+
+    body = client.put("/ui/companies/parent", data={"name": "토스", "parent_name": "  "}).text
+
+    stored = companies.read(conn, "토스")
+    assert stored is not None and stored.parent_name is None
+    assert "모회사를 지웠다" in body
+
+
+def test_자기_자신을_모회사로_적지_않는다(client: TestClient, conn: sqlite3.Connection) -> None:
+    """자기 자신을 적으면 화면이 그 행을 모회사가 따로 있는 회사로 읽는다."""
+    companies.ensure(conn, "토스")
+    conn.commit()
+
+    body = client.put("/ui/companies/parent", data={"name": "토스", "parent_name": "토스"}).text
+
+    assert "이름을 받지 않았다" in body
+    stored = companies.read(conn, "토스")
+    assert stored is not None and stored.parent_name is None
+
+
+def test_없는_회사의_모회사는_고치지_않는다(client: TestClient) -> None:
+    response = client.put(
+        "/ui/companies/parent", data={"name": "없는회사", "parent_name": "삼성전자"}
+    )
+
+    assert response.status_code == 200
+    assert "회사 행이 없다" in response.text
+
+
+def test_목록에_모회사_고치는_폼이_있다(client: TestClient, conn: sqlite3.Connection) -> None:
+    add_job(conn, "토스", 1)
+    conn.commit()
+
+    body = client.get("/ui/companies").text
+
+    assert 'hx-put="/ui/companies/parent"' in body
+    assert 'name="parent_name"' in body

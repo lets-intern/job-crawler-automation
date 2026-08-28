@@ -6,7 +6,28 @@
 {% from "macros.html" import badge, blank, failure, notice_box, wait %}
 <tr>
   <td class="cell-text font-medium text-slate-900">{{ row.name }}</td>
-  <td class="cell-text">{{ row.parent_name if row.parent_name else blank() }}</td>
+  {# 모회사. 정규화가 넣는 값은 그 크롤러의 회사명이거나 크롤러 이름이라(`app/normalize/engine.py`)
+     사이트가 계열사를 말하지 않으면 맞을 이유가 없다. 여기가 사람이 덮는 자리다 #}
+  <td class="cell-text">
+    {% if parent_message %}
+    <p class="text-sm font-medium text-slate-900">{{ parent_message }}</p>
+    {% endif %}
+    {% if parent_error %}
+    {{ failure(parent_error.reason, parent_error.message, parent_error.title) }}
+    {% endif %}
+    <p>{{ row.parent_name if row.parent_name else blank() }}</p>
+    <form hx-put="/ui/companies/parent" hx-target="closest tr" hx-swap="outerHTML"
+          hx-disabled-elt="find button" hx-indicator="closest td">
+      <input type="hidden" name="name" value="{{ row.name }}">
+      <input name="parent_name" type="text" value="{{ row.parent_name or '' }}"
+             aria-label="{{ row.name }} 모회사 이름" class="w-full max-w-xs">
+      <button type="submit">모회사 저장</button>
+      {{ wait("저장하는 중") }}
+      <span class="block text-xs text-slate-500">
+        비우고 저장하면 지운다. 고친 값은 다음 정규화가 덮지 않는다
+      </span>
+    </form>
+  </td>
   <td class="num">{{ row.job_count }}건</td>
   <td class="cell-text">
     {% if message %}

@@ -239,14 +239,22 @@ def _row(
     *,
     message: str = "",
     error: Refusal | None = None,
+    parent_message: str = "",
+    parent_error: Refusal | None = None,
 ) -> HTMLResponse:
-    """줄 하나를 돌려준다. 성공도 실패도 그 자리에 남는다."""
+    """줄 하나를 돌려준다. 성공도 실패도 그 자리에 남는다.
+
+    로고와 모회사가 각자의 칸에 답한다. 하나로 합치면 모회사를 고치고 받은 문장이 로고 칸에
+    뜨고, 운영자는 방금 누른 것과 다른 자리를 보게 된다.
+    """
     return render(
         request,
         "fragments/company_row.html",
         row=row,
         message=message,
         error=error,
+        parent_message=parent_message,
+        parent_error=parent_error,
         **_row_context(store.read_config(conn)),
     )
 
@@ -288,3 +296,42 @@ def upload_logo_fragment(
     saved = read_row(conn, row.name) or row
     logger.info("회사 로고를 올렸다: %s -> %s (공고 %d건)", saved.name, public_url, saved.job_count)
     return _row(request, conn, saved, message=attach_note(saved, cleared=False))
+
+
+@router.put("/ui/companies/parent", response_class=HTMLResponse)
+def save_parent_fragment(
+    request: Request,
+    conn: Annotated[sqlite3.Connection, Depends(get_connection)],
+    name: Annotated[str, Form()],
+    parent_name: Annotated[str, Form()] = "",
+) -> HTMLResponse:
+    """모회사 이름을 사람이 정한 값으로 덮는다. 비우면 지운다.
+
+    정규화가 넣는 `parent_company` 는 그 크롤러의 `default_company` 고, 비어 있으면 크롤러
+    이름이다 (`app/normalize/engine.py`). 사이트가 계열사를 말하지 않으면 그 값은 맞을
+    이유가 없고, 여기가 그것을 사람이 고치는 자리다.
+
+    고친 값은 다음 정규화에 덮이지 않는다. 정규화는 공고마다 `companies.ensure` 를 부르는데
+    그것이 있는 행을 한 글자도 고치지 않기 때문이다 — 덮게 두면 여기서 고친 이름이 다음
+    수집에 도로 돌아간다.
+    """
+    cleaned = parent_name.strip()
+    row = read_row(conn, name)
+    if row is None:
+        return render_error(request, "not_found", f"회사 행이 없다: {name.strip()!r}")
+    if cleaned == row.name:
+        return _row(
+            request,
+            conn,
+            row,
+            parent_error=Refusal(
+                "invalid_input",
+                f"자기 자신을 모회사로 적지 않는다: {cleaned!r}. 모회사가 곧 이 회사면 비운다",
+                "이름을 받지 않았다",
+            ),
+        )
+    companies.set_parent_name(conn, row.name, cleaned)
+    saved = read_row(conn, row.name) or row
+    logger.info("회사의 모회사를 고쳤다: %s -> %r", saved.name, cleaned)
+    note = "모회사를 지웠다" if not cleaned else f"모회사를 {cleaned} 로 고쳤다"
+    return _row(request, conn, saved, parent_message=f"{note}. 다음 정규화가 덮지 않는다")
