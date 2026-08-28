@@ -372,3 +372,40 @@ def test_오늘_AI_토큰_지표가_있다(client: TestClient, conn: sqlite3.Con
     assert "오늘 AI 토큰" in body
     idx = body.index("오늘 AI 토큰")
     assert "1,000" in body[idx : idx + 200]
+
+
+def test_예상_비용이_참고_모델_단가로_계산된다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """`app.api.ui_dashboard.COST_REFERENCE_MODEL` 의 입력·출력 단가로 어림잡는다."""
+    from app.api.ui_dashboard import COST_REFERENCE_MODEL
+    from app.llm.base import Usage
+    from app.llm.log import CLASSIFY, record_call
+
+    record_call(
+        conn,
+        feature=CLASSIFY,
+        usage=Usage(
+            provider="gemini",
+            model="gemini-3.5-flash",
+            # 입력 100만 토큰 * $0.25 + 출력 100만 토큰 * $1.50 = $1.75
+            input_tokens=1_000_000,
+            output_tokens=1_000_000,
+            total_tokens=2_000_000,
+            latency_ms=100,
+        ),
+    )
+    conn.commit()
+
+    body = client.get("/ui/dashboard").text
+
+    assert COST_REFERENCE_MODEL in body
+    assert "$1.7500" in body
+    assert "2,415원" in body  # $1.75 * 1,380원/달러(app.api.ui_dashboard._KRW_PER_USD)
+
+
+def test_호출이_없으면_예상_비용은_0이다(client: TestClient) -> None:
+    body = client.get("/ui/dashboard").text
+
+    assert "$0.0000" in body
+    assert "0원" in body

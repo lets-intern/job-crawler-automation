@@ -129,6 +129,38 @@ def _daily_tokens(conn: sqlite3.Connection, modifier: str) -> dict[str, int]:
     return {str(row["day"]): int(row["n"]) for row in rows}
 
 
+# gemini-3.1-flash-lite 유료 등급 표준 가격, 2026-08-29 ai.google.dev/gemini-api/docs/pricing
+# 확인. **실제로 무슨 제공자·모델을 쓰든 이 값 하나로 어림잡는 추정치다** — 실제 호출은
+# 운영자가 화면에서 고른 제공자·모델로 나가고 그 가격은 다를 수 있다(`.claude/rules/llm.md`).
+# 가격이 바뀌면 이 상수도 다시 확인해야 한다.
+COST_REFERENCE_MODEL = "gemini-3.1-flash-lite"
+_INPUT_USD_PER_MILLION = 0.25
+_OUTPUT_USD_PER_MILLION = 1.50
+
+# 2026-08-29 확인한 원/달러 환율의 어림값(1,380원). 환율은 매일 바뀌므로 이 값도 대략적인
+# 참고치다 — 정확한 원화 청구액이 아니라 "요즘 대략 얼마 나오는지" 를 보는 용도다
+_KRW_PER_USD = 1380
+
+
+def _daily_cost_usd(conn: sqlite3.Connection, modifier: str) -> dict[str, float]:
+    """일별 예상 비용(USD). 입력·출력 단가가 달라 `total_tokens` 가 아니라 둘을 따로 곱한다."""
+    rows = conn.execute(
+        """
+        SELECT date(called_at, ?) AS day,
+               coalesce(sum(input_tokens), 0)  AS in_tokens,
+               coalesce(sum(output_tokens), 0) AS out_tokens
+          FROM llm_calls
+         GROUP BY day
+        """,
+        (modifier,),
+    ).fetchall()
+    return {
+        str(row["day"]): row["in_tokens"] / 1_000_000 * _INPUT_USD_PER_MILLION
+        + row["out_tokens"] / 1_000_000 * _OUTPUT_USD_PER_MILLION
+        for row in rows
+    }
+
+
 @dataclass(frozen=True)
 class TrendDay:
     """그래프 한 날짜. `*_pct` 는 0~100 값이다 — 추가·완성 둘은 같은 최댓값을 기준으로
@@ -140,6 +172,8 @@ class TrendDay:
     added: int
     completed: int
     tokens: int
+    cost_usd: float
+    cost_krw: int
     added_pct: int
     completed_pct: int
     tokens_pct: int
@@ -154,6 +188,7 @@ def trend(conn: sqlite3.Connection, days: int = TREND_DAYS) -> list[TrendDay]:
     added = _daily_added(conn, modifier)
     completed = _daily_completed(conn, modifier)
     tokens = _daily_tokens(conn, modifier)
+    cost = _daily_cost_usd(conn, modifier)
     day_list = _day_range(days)
     peak = max([*added.values(), *completed.values(), 1])
     token_peak = max([*tokens.values(), 1])
@@ -161,12 +196,15 @@ def trend(conn: sqlite3.Connection, days: int = TREND_DAYS) -> list[TrendDay]:
     for d in day_list:
         key = d.isoformat()
         a, c, t = added.get(key, 0), completed.get(key, 0), tokens.get(key, 0)
+        cost_usd = cost.get(key, 0.0)
         result.append(
             TrendDay(
                 label=d.strftime("%m/%d"),
                 added=a,
                 completed=c,
                 tokens=t,
+                cost_usd=cost_usd,
+                cost_krw=round(cost_usd * _KRW_PER_USD),
                 added_pct=_pct(a, peak),
                 completed_pct=_pct(c, peak),
                 tokens_pct=_pct(t, token_peak),
@@ -302,6 +340,7 @@ def dashboard_summary_fragment(
         cards=recent_completed(conn, RECENT_LIMIT),
         quick_links=QUICK_LINKS,
         token_bars=token_usage(conn),
+        cost_reference_model=COST_REFERENCE_MODEL,
     )
 
 
