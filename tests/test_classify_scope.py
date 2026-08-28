@@ -22,6 +22,7 @@ import pytest
 from app import db
 from app.classify.schema import CLASSIFY_FIELDS
 from app.classify.store import (
+    ALL,
     CLASSIFY_SCOPES,
     EMPTY_FIELDS,
     RECENT,
@@ -200,3 +201,26 @@ def test_일수가_없으면_거절된다(conn: sqlite3.Connection) -> None:
     for days in (None, 0):
         with pytest.raises(ClassifyScopeError):
             scope_ids(conn, RECENT, days=days)
+
+
+def test_전부는_이미_분류된_것도_포함한다(conn: sqlite3.Connection) -> None:
+    add_job(conn, 1)
+    add_job(conn, 2, body="", source_text="원문만 있는 건")
+    add_job(conn, 3, crawled_at=at(conn, "-400 days"))
+    classify(conn, 1, duties="업무")
+
+    assert scope_ids(conn, ALL) == [3, 2, 1]
+
+
+@pytest.mark.parametrize("scope", CLASSIFY_SCOPES)
+def test_보낼_글이_없으면_어느_범위에도_없다(conn: sqlite3.Connection, scope: str) -> None:
+    """부를 이유가 없는 호출을 만들지 않는다. 그 호출은 실패 건수만 부풀린다.
+
+    2번은 분류 행이 있고 칸이 전부 비어 있다. 글만 있었다면 `empty_fields` 의 대상이다.
+    """
+    add_job(conn, 1, body=None)
+    add_job(conn, 2, body="")
+    add_job(conn, 3, body="", source_text="")
+    classify(conn, 2)
+
+    assert scope_ids(conn, scope, days=365) == []

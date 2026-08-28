@@ -117,7 +117,15 @@ def _scope_from(scope: str, days: int | None) -> tuple[str, tuple[Any, ...]]:
             """,
             (f"-{days} days",),
         )
-    raise ClassifyScopeError(f"아직 조회를 만들지 않은 범위다: {scope!r}")
+    if scope == ALL:
+        # 보낼 글이 있는 건 전부. 이미 분류된 것도, 언제 수집했든 들어간다.
+        #
+        # **전량 재지출이다.** 640건이면 약 285만 토큰이고 돌기 시작하면 멈출 수 없어서,
+        # 이 범위를 저장할 때는 화면이 대상 건수를 확인 창에 적는다 (PRD 2절). 그 숫자가
+        # `scope_count` 이고 여기서 세는 것과 같은 문장이다
+        return (f"FROM raw_jobs r WHERE {_CLASSIFY_TEXT} <> ''", ())
+    # 위 넷이 `CLASSIFY_SCOPES` 전부다. 여기 닿았다면 범위를 더하고 조회를 만들지 않은 것이다
+    raise ClassifyScopeError(f"조회가 없는 범위다: {scope!r}")
 
 
 def scope_ids(
