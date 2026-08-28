@@ -40,7 +40,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from app.classify.batch import ClassifyProgress, classify_ids
+from app.classify.batch import ClassifyProgress, classify_ids, get_classify_run
 from app.classify.store import scope_ids
 from app.config import Settings
 from app.side import runs, store
@@ -75,11 +75,59 @@ def claim(conn: sqlite3.Connection, side_workflow_id: int, trigger: str) -> Clai
     """실행 행을 연다. 워크플로우가 없으면 `SideWorkflowNotFoundError` 다.
 
     설정을 표에서 다시 읽는 자리가 여기다. 부르는 쪽은 id 만 안다.
+
+    앞 실행이 아직 돌고 있으면 열지 않고 건너뛴 행을 남긴다. 조용히 사라지면 주기가 돌지만
+    아무것도 못 하는 상태와 주기가 아예 죽은 상태가 같아 보인다 (PRD 2절).
+
+    보는 것과 적는 것을 한 트랜잭션에 넣는다. 주기와 화면이 같은 순간에 들어오면 둘 다 "지금
+    도는 것이 없다" 를 읽고 둘 다 열 수 있고, 그 둘은 같은 공고를 두 번 분류한다.
     """
     workflow = store.read(conn, side_workflow_id)
     if workflow is None:
         raise store.SideWorkflowNotFoundError(f"부가 워크플로우가 없다: {side_workflow_id}")
-    return Claim(run_id=runs.start(conn, workflow.id, trigger), workflow=workflow, started=True)
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        blocked = _blocked(conn, workflow)
+        run_id = (
+            runs.skipped(conn, workflow.id, trigger, blocked)
+            if blocked
+            else runs.start(conn, workflow.id, trigger)
+        )
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    if blocked:
+        logger.info("부가 워크플로우 %s 의 이번 차례를 건너뛴다: %s", workflow.id, blocked)
+    return Claim(run_id=run_id, workflow=workflow, started=not blocked)
+
+
+def _blocked(conn: sqlite3.Connection, workflow: store.SideWorkflow) -> str | None:
+    """지금 시작하면 안 되는 이유. 없으면 None 이다.
+
+    두 가지를 본다. 자기 자신이 아직 돌고 있는가와, 같은 일을 다른 경로가 돌고 있는가다.
+    뒤엣것이 없으면 화면에서 건 분류와 `POST /api/classify` 로 건 분류가 같은 공고에 두 번
+    돈을 쓴다.
+    """
+    running = runs.latest(conn, workflow.id)
+    if running is not None and running.running:
+        return f"앞 실행 {running.id} 이 아직 돌고 있다"
+    if workflow.kind == store.CLASSIFY and get_classify_run().progress().running:
+        return "`POST /api/classify` 로 시작한 분류가 아직 돌고 있다"
+    return None
+
+
+def classify_running(conn: sqlite3.Connection) -> str | None:
+    """분류를 도는 부가 워크플로우가 있으면 그 사유. 없으면 None 이다.
+
+    `_blocked` 의 반대 방향이다. 부가 워크플로우 밖에서 분류를 걸려는 경로가 이것을 보고
+    물러난다 — 겹침 방지가 한쪽에만 걸리면 막으나 마나다.
+    """
+    for run in runs.open_runs(conn):
+        workflow = store.read(conn, run.side_workflow_id)
+        if workflow is not None and workflow.kind == store.CLASSIFY:
+            return f"부가 워크플로우 {workflow.id}({workflow.name}) 의 분류가 아직 돌고 있다"
+    return None
 
 
 def run_claimed(

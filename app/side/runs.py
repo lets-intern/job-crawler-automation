@@ -177,6 +177,39 @@ def skipped(conn: sqlite3.Connection, side_workflow_id: int, trigger: str, note:
     return run_id
 
 
+def latest(conn: sqlite3.Connection, side_workflow_id: int) -> SideRun | None:
+    """그 워크플로우의 마지막 실행. 한 번도 돈 적이 없으면 None 이다. 읽기 전용이다.
+
+    겹침 방지가 이 값을 본다. 열려 있는 실행이 있다면 그것이 마지막 실행이다 — 새 행은 앞
+    실행을 닫은 뒤에만 생기기 때문이고, 그렇지 않은 경우는 프로세스가 죽어 남은 행뿐이라
+    기동 시 `close_orphans` 가 닫는다.
+    """
+    row = conn.execute(
+        f"SELECT {_COLUMNS} FROM side_runs WHERE side_workflow_id = ? ORDER BY id DESC LIMIT 1",
+        (side_workflow_id,),
+    ).fetchone()
+    return None if row is None else _from_row(row)
+
+
+def open_runs(conn: sqlite3.Connection) -> list[SideRun]:
+    """지금 돌고 있는 실행 전부. 종료가 적히지 않은 행이다. 읽기 전용이다.
+
+    부가 워크플로우 밖에서 같은 일을 걸려는 경로가 이 값을 본다 — 지금은 `POST /api/classify`
+    하나다 (`app/api/classify.py`). 두 경로가 서로를 못 보면 같은 공고에 두 번 돈을 쓴다.
+
+    스키마가 아직 없는 DB 에서는 빈 목록이다. 이 값을 읽는 자리는 실행을 막을지 정하는
+    곳이고, 표가 없다는 이유로 500 을 내는 것은 그 질문의 답이 아니다 (`close_orphans` 와
+    같은 이유).
+    """
+    try:
+        rows = conn.execute(
+            f"SELECT {_COLUMNS} FROM side_runs WHERE status IS NULL ORDER BY id"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    return [_from_row(row) for row in rows]
+
+
 def read(conn: sqlite3.Connection, run_id: int) -> SideRun | None:
     """그 실행. 없으면 None 이다. 읽기는 예외를 던지지 않는다."""
     row = conn.execute(f"SELECT {_COLUMNS} FROM side_runs WHERE id = ?", (run_id,)).fetchone()

@@ -30,6 +30,7 @@ from app.classify.batch import (
     remaining,
 )
 from app.normalize.backfill import ConnectFactory
+from app.side import runner as side_runner
 
 router = APIRouter(prefix="/api/classify", tags=["classify"])
 
@@ -79,7 +80,17 @@ def start_classify(
     conn: Annotated[sqlite3.Connection, Depends(get_connection)],
     limit: Annotated[int, Query(ge=1)] = DEFAULT_LIMIT,
 ) -> ClassifyOut:
-    """본문이 있고 아직 분류되지 않은 공고를 `limit` 건까지 분류한다."""
+    """본문이 있고 아직 분류되지 않은 공고를 `limit` 건까지 분류한다.
+
+    **부가 워크플로우가 분류를 돌고 있으면 시작하지 않는다.** 이 경로와 부가 워크플로우
+    실행기(`app/side/runner.py`)는 서로 다른 진입점이고, 각자 자기 겹침만 막으면 둘이 같은
+    공고에 두 번 돈을 쓴다. 반대 방향은 실행기의 `_blocked` 가 이 경로를 본다.
+    """
+    conflict = side_runner.classify_running(conn)
+    if conflict is not None:
+        raise HTTPException(
+            status_code=409, detail={"reason": "already_running", "message": conflict}
+        )
     try:
         progress = run.start(connect, bounded(limit))
     except ClassifyRunningError as exc:

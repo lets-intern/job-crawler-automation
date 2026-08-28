@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from app import db
+from app.classify.batch import ClassifyProgress, ClassifyRun
 from app.side import runner, runs, store
 from tests.test_classify_run import GOOD, settings_with_key
 from tests.test_classify_run import _seed as seed
@@ -255,3 +256,83 @@ def test_a_deliver_workflow_says_it_sends_nothing(conn: sqlite3.Connection) -> N
 
     assert run.status == runs.FAILED
     assert run.error_message is not None and "아직 실행할 수 없다" in run.error_message
+
+
+def test_a_run_is_skipped_while_the_previous_one_is_open(
+    conn: sqlite3.Connection, workflow: store.SideWorkflow
+) -> None:
+    """앞 실행이 아직 돌고 있으면 새 실행을 시작하지 않는다 (3.3.V)."""
+    runs.start(conn, workflow.id, runner.SCHEDULE)
+
+    second = runner.run_now(conn, workflow.id, trigger=runner.SCHEDULE)
+
+    assert second.status == runs.SKIPPED
+    assert second.note is not None and "아직 돌고 있다" in second.note
+    assert second.finished_at is not None
+
+
+def test_the_second_call_during_a_run_is_recorded_not_dropped(
+    conn: sqlite3.Connection, workflow: store.SideWorkflow
+) -> None:
+    """건너뛴 차례가 조용히 사라지면 주기가 도는지 알 수 없다 (PRD 2절)."""
+    taken: list[runner.Claim] = []
+
+    def body(
+        inner: sqlite3.Connection, given: store.SideWorkflow, __: runs.SideRunCounts
+    ) -> str | None:
+        taken.append(runner.claim(inner, given.id, runner.SCHEDULE))
+        return None
+
+    first = runner.run_once(conn, workflow.id, body)
+
+    assert first.status == runs.SUCCESS
+    assert taken[0].started is False
+    blocked = runs.read(conn, taken[0].run_id)
+    assert blocked is not None and blocked.status == runs.SKIPPED
+    # 실행 두 건이 남는다 — 돈 것 하나와 건너뛴 것 하나
+    assert conn.execute("SELECT count(*) AS n FROM side_runs").fetchone()["n"] == 2
+
+
+def test_a_finished_run_does_not_block_the_next_one(
+    conn: sqlite3.Connection, workflow: store.SideWorkflow
+) -> None:
+    """막는 것은 열려 있는 실행뿐이다. 끝난 실행은 다음 차례를 막지 않는다."""
+    runner.run_now(conn, workflow.id, settings=settings_with_key())
+
+    second = runner.run_now(conn, workflow.id, settings=settings_with_key())
+
+    assert second.status == runs.SUCCESS
+
+
+def test_the_other_classify_entry_point_blocks_a_side_run(
+    conn: sqlite3.Connection, workflow: store.SideWorkflow, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`POST /api/classify` 로 시작한 분류가 돌고 있으면 부가 실행도 물러난다."""
+    running = ClassifyRun()
+    running._progress = ClassifyProgress(running=True)
+    monkeypatch.setattr(runner, "get_classify_run", lambda: running)
+
+    run = runner.run_now(conn, workflow.id)
+
+    assert run.status == runs.SKIPPED
+    assert run.note is not None and "/api/classify" in run.note
+
+
+def test_a_side_run_in_flight_is_visible_to_the_other_entry_point(
+    conn: sqlite3.Connection, workflow: store.SideWorkflow
+) -> None:
+    """반대 방향. 겹침 방지가 한쪽에만 걸리면 막으나 마나다."""
+    assert runner.classify_running(conn) is None
+
+    runs.start(conn, workflow.id, runner.MANUAL)
+
+    reason = runner.classify_running(conn)
+    assert reason is not None and str(workflow.id) in reason
+
+
+def test_a_deliver_run_does_not_block_classification(conn: sqlite3.Connection) -> None:
+    """막는 것은 같은 일을 하는 실행뿐이다. 전달은 분류와 다른 일이다."""
+    deliver = store.create(conn, kind="deliver", name="스프링 전달")
+    runs.start(conn, deliver.id, runner.MANUAL)
+
+    assert runner.classify_running(conn) is None
