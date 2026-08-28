@@ -108,6 +108,15 @@ EXPECTED_COLUMNS = {
         "created_at",
         "updated_at",
     },
+    # 0020 이 만든 회사 표. 공고와 외래키로 잇지 않고 회사명으로 잇는다
+    "companies": {
+        "id",
+        "name",
+        "parent_name",
+        "logo_url",
+        "created_at",
+        "updated_at",
+    },
     "crawl_run_failures": {
         "id",
         "run_id",
@@ -149,6 +158,7 @@ ALL_VERSIONS = [
     "0017",
     "0018",
     "0019",
+    "0020",
 ]
 
 
@@ -285,6 +295,43 @@ def test_company_down_removes_only_the_two_columns(conn: sqlite3.Connection) -> 
     assert "default_company" not in _columns(conn, "crawlers")
     assert "company_source" not in _columns(conn, "normalized_jobs")
     assert "company" in _columns(conn, "normalized_jobs")
+
+
+def test_a_new_company_row_starts_without_a_logo(conn: sqlite3.Connection) -> None:
+    """0020 이 만드는 행은 이름만 있다. 로고를 채우는 것은 운영자다."""
+    db.migrate_up(conn)
+
+    conn.execute("INSERT INTO companies (name) VALUES ('삼성SDS')")
+
+    row = conn.execute("SELECT * FROM companies WHERE name = '삼성SDS'").fetchone()
+    assert (row["parent_name"], row["logo_url"]) == (None, None)
+    assert row["created_at"] and row["updated_at"]
+
+
+def test_the_same_company_name_cannot_be_stored_twice(conn: sqlite3.Connection) -> None:
+    """로고를 공고에 잇는 값이 이름이다. 같은 이름이 두 행이면 어느 로고가 붙을지 정할 수 없다."""
+    db.migrate_up(conn)
+    conn.execute("INSERT INTO companies (name) VALUES ('삼성SDS')")
+
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO companies (name, logo_url) VALUES ('삼성SDS', 'https://cdn.test/a.png')"
+        )
+
+    conn.execute("INSERT INTO companies (name) VALUES ('삼성전기')")
+    assert conn.execute("SELECT count(*) AS n FROM companies").fetchone()["n"] == 2
+
+
+def test_companies_down_removes_only_its_own_table(conn: sqlite3.Connection) -> None:
+    """역적용은 0020 이 만든 표만 지운다. 수집 데이터는 그대로다."""
+    db.migrate_up(conn)
+    _seed_raw_job(conn)
+    conn.execute("INSERT INTO companies (name) VALUES ('삼성SDS')")
+
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0020"))
+
+    assert "companies" not in _names(conn, "table")
+    assert conn.execute("SELECT count(*) AS n FROM raw_jobs").fetchone()["n"] == 1
 
 
 def test_foreign_key_is_enforced(conn: sqlite3.Connection) -> None:
