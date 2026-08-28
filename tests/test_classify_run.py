@@ -389,3 +389,33 @@ async def test_the_run_sends_the_stored_title(conn: sqlite3.Connection) -> None:
     )
 
     assert "공고 3" in client.calls[0]["contents"]
+
+
+async def test_a_role_from_the_title_alone_is_stored(conn: sqlite3.Connection) -> None:
+    """제목에만 있는 직무가 실행 끝까지 살아 `job_classifications` 에 남는지 (2.4.V)."""
+    conn.execute(
+        """
+        INSERT INTO raw_jobs (workflow_id, source_url, raw_data_json, content_hash)
+        VALUES (1, 'https://x/8', ?, 'hash8')
+        """,
+        (
+            json.dumps(
+                {
+                    "source_url": "https://x/8",
+                    "title": "카카오비즈니스 파트너 플랫폼 PM (경력)",
+                    "body": BODY,
+                },
+                ensure_ascii=False,
+            ),
+        ),
+    )
+
+    await classify_ids(
+        conn,
+        [4],
+        ClassifyProgress(),
+        client=FakeClient(response(job_role="카카오비즈니스 파트너 플랫폼 PM")),
+        settings=settings_with_key(),
+    )
+
+    assert read_classification(conn, 4)["job_role"] == "카카오비즈니스 파트너 플랫폼 PM"

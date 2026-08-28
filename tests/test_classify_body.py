@@ -24,7 +24,7 @@ from app.classify.classifier import (
     build_prompt,
     classify_body,
 )
-from app.classify.grounding import NO_EVIDENCE, NOT_IN_BODY, NOT_IN_LIST, ground, in_body
+from app.classify.grounding import NO_EVIDENCE, NOT_IN_LIST, NOT_IN_SOURCE, ground, in_body
 from app.classify.schema import (
     CLASSIFY_FIELDS,
     EXTRACT_FIELDS,
@@ -120,7 +120,7 @@ async def test_a_value_that_is_not_in_the_body_is_thrown_away() -> None:
     )
 
     assert result.dropped == ["work_location"]
-    assert result.reasons["work_location"] == NOT_IN_BODY
+    assert result.reasons["work_location"] == NOT_IN_SOURCE
     assert result.fields["work_location"] == ""
     # 본문에 있는 값은 그대로 남는다. 한 칸이 틀렸다고 나머지를 버리지 않는다
     assert result.fields["hiring_process"].startswith("서류전형")
@@ -219,6 +219,48 @@ async def test_a_posting_whose_title_names_no_role_leaves_the_column_empty() -> 
     assert result.fields["job_role"] == ""
     assert "job_role" not in result.filled
     assert result.dropped == []
+
+
+async def test_a_role_that_is_only_in_the_title_is_not_thrown_away() -> None:
+    """열한 곳 중 여섯이 이 경우다. 본문에만 돌려 보면 맞게 뽑은 값이 통째로 버려진다 (2.4.V)."""
+    # 이 값은 제목에 있고 본문에는 없다 (`tests/test_job_role_source.py`)
+    assert not in_body("카카오비즈니스 파트너 플랫폼 PM", BODY)
+
+    result, _ = await classify(response(job_role="카카오비즈니스 파트너 플랫폼 PM"))
+
+    assert result.fields["job_role"] == "카카오비즈니스 파트너 플랫폼 PM"
+    assert result.dropped == []
+
+
+async def test_a_role_that_is_in_neither_the_title_nor_the_body_is_thrown_away() -> None:
+    """제목을 더한 것이 검사를 끄는 것이 되면 안 된다 (2.4.V)."""
+    result, _ = await classify(response(job_role="백엔드 개발자"))
+
+    assert result.dropped == ["job_role"]
+    assert result.reasons["job_role"] == NOT_IN_SOURCE
+    assert result.fields["job_role"] == ""
+
+
+async def test_a_judgement_may_take_its_evidence_from_the_title() -> None:
+    """`[채용연계형 인턴]` 은 고용형태의 근거다. 본문에 없다고 버릴 이유가 없다."""
+    result, _ = await classify(
+        response(employment_type="인턴", employment_type_evidence="[채용연계형 인턴]"),
+        title="[채용연계형 인턴] 파트너 영업 Specialist(신입)",
+    )
+
+    assert result.fields["employment_type"] == "인턴"
+    assert result.evidence["employment_type"] == "[채용연계형 인턴]"
+    assert result.dropped == []
+
+
+def test_grounding_without_a_title_still_looks_at_the_body() -> None:
+    """`title` 은 기본값이 있다. 주지 않으면 옛 동작 그대로다."""
+    grounded = ground(
+        {"duties": "제휴사 데이터 연동 구조 기획"}, "◆ 업무내용\n제휴사 데이터 연동 구조 기획"
+    )
+
+    assert grounded.dropped == []
+    assert grounded.fields["duties"] == "제휴사 데이터 연동 구조 기획"
 
 
 async def test_a_posting_without_a_title_still_classifies() -> None:

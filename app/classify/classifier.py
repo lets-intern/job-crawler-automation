@@ -19,8 +19,8 @@
 ## 지키는 것
 
 **근거가 없는 것은 빈 칸이다.** 모델이 그럴듯하게 채우면 소비 측이 그것을 사실로 노출한다.
-받은 값은 `app/classify/grounding.py` 가 그 자리에서 본문에 돌려 보고, 근거를 못 찾은 칸은
-버리고 `dropped` 에 이름을 남긴다 (`.claude/rules/llm.md`).
+받은 값은 `app/classify/grounding.py` 가 그 자리에서 제목과 본문에 돌려 보고, 근거를 못 찾은
+칸은 버리고 `dropped` 에 이름을 남긴다 (`.claude/rules/llm.md`).
 
 **보내는 것은 제목과 본문뿐이고 상한이 있다.** 원본 HTML 도 페이지도 보내지 않는다. 본문이
 상한을 넘으면 잘라 보내고 그 사실을 `notes` 에 남긴다. 자른 것으로 무엇을 놓쳤는지는 응답을
@@ -252,8 +252,9 @@ async def classify_body(
             last_error = exc
             continue
 
-        # 받은 값을 그 자리에서 본문에 돌려 본다. 못 찾은 칸은 버린다
-        grounded = ground(fields, body)
+        # 받은 값을 그 자리에서 원문에 돌려 본다. 못 찾은 칸은 버린다. 제목까지 보는 것은
+        # `job_role` 이 거기서 오기 때문이다 (`app/classify/grounding.py`)
+        grounded = ground(fields, body, title)
         if grounded.dropped:
             logger.warning(
                 "분류가 근거 없는 값을 냈다 model=%s 버린 칸=%s",
