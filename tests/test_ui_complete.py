@@ -8,7 +8,9 @@
 | 80% 이상 찬 건만 나온다 | 완성 기준이 거짓말이 된다 |
 | 80% 미만이면 빠진다 | 미완성 건이 완성으로 보인다 |
 | 20% 안쪽으로 비어도 완성이다 | 100% 를 요구해 통과하는 건이 지나치게 적어진다 |
-| 카드가 검수 모달을 그대로 연다 | 상세를 보는 다른 경로가 새로 필요해진다 |
+| 카드가 읽기 전용 미리보기를 연다 | 이 화면에서 고칠 수 있게 보인다 |
+| 로고가 있으면 카드·미리보기에 나온다 | 소비 측이 볼 모양과 다르게 보인다 |
+| 미리보기에 본문 섹션이 나온다 | 본문을 확인할 방법이 없다 |
 | 다음 커서가 마지막 id 다 | 스크롤을 내려도 다음 묶음이 안 온다 |
 | 더 가져올 것이 없으면 감지기가 없다 | 바닥에서 빈 요청을 반복한다 |
 """
@@ -141,14 +143,46 @@ def test_비율이_기준_밑이면_빠진다(client: TestClient, conn: sqlite3.
     assert "공고 1" not in body
 
 
-def test_카드가_검수_모달을_그대로_연다(client: TestClient, conn: sqlite3.Connection) -> None:
+def test_카드가_읽기_전용_미리보기를_연다(client: TestClient, conn: sqlite3.Connection) -> None:
     insert_job(conn, 1, complete=True)
 
     body = client.get("/ui/complete").text
 
     assert "data-modal-open" in body
-    assert 'hx-get="/ui/review/modal/1"' in body
+    assert 'hx-get="/ui/complete/1/preview"' in body
     assert 'hx-target="#app-modal-body"' in body
+
+
+def test_로고가_있으면_카드에_나온다(client: TestClient, conn: sqlite3.Connection) -> None:
+    conn.execute(
+        "INSERT INTO companies (name, logo_url) VALUES ('엘지전자', 'https://logo.test/lg.png')"
+    )
+    insert_job(conn, 1, complete=True)
+
+    body = client.get("/ui/complete").text
+
+    assert 'src="https://logo.test/lg.png"' in body
+
+
+def test_미리보기에_섹션과_본문이_나온다(client: TestClient, conn: sqlite3.Connection) -> None:
+    insert_job(conn, 1, complete=True)
+
+    body = client.get("/ui/complete/1/preview").text
+
+    assert "공고 1" in body
+    assert "주요 업무" in body
+    assert "값-duties" in body
+    assert "원문 본문 전체 보기" in body
+    assert "값-body" in body
+    assert "data-modal-close" in body
+
+
+def test_없는_공고를_미리보면_사유를_적는다(client: TestClient, conn: sqlite3.Connection) -> None:
+    """`/ui/*` 조각은 200으로 돌아오고 안에 사유를 적는다(다른 조각 라우트와 같은 규칙)."""
+    response = client.get("/ui/complete/999/preview")
+
+    assert response.status_code == 200
+    assert "찾을 수 없다" in response.text
 
 
 def test_다음_커서가_마지막_id다(client: TestClient, conn: sqlite3.Connection) -> None:
