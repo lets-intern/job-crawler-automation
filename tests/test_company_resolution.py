@@ -1,12 +1,14 @@
 """정규화 단계의 회사명 두 칸 테스트.
 
-칸이 갈린 뒤로 합치는 일이 없다. 확인하는 것은 다섯이다.
+칸이 갈린 뒤로 합치는 일이 없다. 확인하는 것은 일곱이다.
 
 - `parent_company` 는 `crawlers.default_company`, 없으면 크롤러 이름이다
 - `company` 는 공고에서 뽑은 값 그대로다. 모회사가 그 자리를 메우지 않는다
 - 사이트가 회사명을 주지 않으면 `company` 는 NULL 이고 `parent_company` 만 남는다
 - 둘 다 없으면 둘 다 NULL 이다. 빈 문자열로 채우지 않는다
 - 계열사 두 건이 섞인 목록에서 두 건이 서로 다른 자회사를, 같은 모회사를 받는다
+- 저장소가 싣고 나가는 `company` 규칙 넷은 그대로 자회사에 걸린다
+- `parent_company` 는 규칙을 타지 않고, 그 칸에 규칙을 만들 수도 없다
 
 픽스처로 돈다. 실사이트에 나가지 않는다.
 """
@@ -16,7 +18,8 @@ from __future__ import annotations
 import json
 import pathlib
 import sqlite3
-from typing import Any
+
+import pytest
 
 from app import db
 from app.crawler.runner import run_workflow
@@ -25,7 +28,7 @@ from app.normalize.engine import (
     normalize_fields,
     read_parent_company,
 )
-from app.normalize.rules import build_rule
+from app.normalize.rules import Rule, RuleConfigError, build_rule
 from tests.test_company_selector import (
     WITH_COMPANY,
     WITHOUT_COMPANY,
@@ -33,21 +36,18 @@ from tests.test_company_selector import (
     stub_fetcher,
 )
 
+# 저장소가 싣고 나가는 규칙 초기값. 손으로 옮겨 적으면 파일이 바뀌어도 테스트는 옛 값을 본다
+SEED_RULES = pathlib.Path(__file__).parent.parent / "seeds" / "normalization-rules.json"
 
-def add_rule(
-    conn: sqlite3.Connection,
-    field_name: str,
-    rule_type: str,
-    config: dict[str, Any],
-    priority: int = 0,
-) -> None:
-    conn.execute(
-        """
-        INSERT INTO normalization_rules (field_name, rule_type, rule_config_json, priority)
-        VALUES (?, ?, ?, ?)
-        """,
-        (field_name, rule_type, json.dumps(config), priority),
-    )
+
+def seeded_company_rules() -> list[Rule]:
+    """`seeds/normalization-rules.json` 의 `company` 규칙 그대로."""
+    data = json.loads(SEED_RULES.read_text(encoding="utf-8"))
+    return [
+        build_rule(row["field_name"], row["rule_type"], row["config"], priority=row["priority"])
+        for row in data["rules"]
+        if row["field_name"] == "company"
+    ]
 
 
 def companies(conn: sqlite3.Connection) -> list[tuple[str | None, str | None]]:
@@ -193,3 +193,44 @@ def _seeded(
         (json.dumps(_raw(parsed), ensure_ascii=False),),
     )
     return conn
+
+
+def test_the_seeded_company_rules_still_apply_to_the_subsidiary() -> None:
+    """칸을 가르면서 규칙을 옮기지 않았다. 넷은 그대로 자회사에 걸린다."""
+    rules = seeded_company_rules()
+    assert len(rules) == 4, "seeds 의 `company` 규칙이 넷이 아니다"
+
+    fields = normalize_fields({"company": "  삼성전기(주)  "}, rules, "삼성전자")
+
+    assert fields["company"] == "삼성전기"
+    assert fields[PARENT_COMPANY] == "삼성전자"
+
+
+def test_the_seeded_company_rules_do_not_touch_the_parent() -> None:
+    """`현대차` 는 mapping 규칙의 키다. 모회사가 규칙을 탔다면 `현대자동차` 가 됐을 값이다.
+
+    모회사는 운영자가 크롤러에 적어 둔 값을 옮기는 칸이다. 규칙이 거기 걸리면 크롤러 화면에
+    적힌 값과 저장된 값이 달라지고, 운영자는 자기가 적은 이름을 어디에서도 찾지 못한다.
+    """
+    fields = normalize_fields({"company": "삼성SDS"}, seeded_company_rules(), "현대차")
+
+    assert fields[PARENT_COMPANY] == "현대차"
+    assert fields["company"] == "삼성SDS"
+
+
+def test_a_rule_written_for_the_parent_column_is_refused() -> None:
+    """규칙을 태우지 않는 칸이라 `NORMALIZED_FIELDS` 에 없다. 화면도 이 예외로 거절한다."""
+    with pytest.raises(RuleConfigError) as caught:
+        build_rule(PARENT_COMPANY, "trim", {})
+
+    assert caught.value.reason == "unknown_field"
+
+
+def test_a_rule_that_empties_the_subsidiary_leaves_the_parent_alone() -> None:
+    """자회사를 비우는 규칙이 모회사까지 비우면 두 칸이 도로 하나가 된다."""
+    rule = build_rule("company", "regex", {"pattern": ".*", "replacement": ""})
+
+    fields = normalize_fields({"company": "삼성SDS"}, [rule], "삼성전자")
+
+    assert fields["company"] is None
+    assert fields[PARENT_COMPANY] == "삼성전자"
