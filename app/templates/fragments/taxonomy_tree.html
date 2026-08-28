@@ -1,0 +1,63 @@
+{# 직무 분류 트리. 대분류 아래 그 소분류가 바로 이어진다.
+
+   빈 표는 "없음" 으로 끝내지 않는다 — 완전히 비어 있을 때만 나오는 씨앗 넣기 버튼이
+   무엇을 하면 채워지는지 그 자리에서 말한다 (`.claude/rules/writing.md`). #}
+{% from "macros.html" import state, empty_row, wait, failure %}
+{% if error %}
+{{ failure(error.reason, error.message, title="저장하지 못했다") }}
+{% endif %}
+{% if message %}
+<p class="font-medium text-slate-700">{{ message }}</p>
+{% endif %}
+
+<div class="table-scroll">
+<table class="data-table">
+  <caption>대분류와 그 아래 소분류. 공고 수는 지금 그 이름으로 분류된 <code>normalized_jobs</code> 건수다</caption>
+  <thead>
+    <tr>
+      <th scope="col">이름</th>
+      <th scope="col">구분</th>
+      <th scope="col">순서</th>
+      <th scope="col">상태</th>
+      <th scope="col" class="num">공고 수</th>
+      <th scope="col">메모</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for major_row, minor_rows in tree %}
+    <tr>
+      <td class="cell-text font-semibold text-slate-900">{{ major_row.node.name }}</td>
+      <td>대분류</td>
+      <td class="num">{{ major_row.node.sort_order }}</td>
+      <td>{% if major_row.node.enabled %}{{ state("켜짐") }}{% else %}{{ state("꺼짐") }}{% endif %}</td>
+      <td class="num">{{ major_row.job_count }}건</td>
+      <td class="cell-text">{{ major_row.node.note }}</td>
+    </tr>
+    {% for minor_row in minor_rows %}
+    <tr>
+      <td class="cell-text pl-6 text-slate-700">{{ minor_row.node.name }}</td>
+      <td>소분류</td>
+      <td class="num">{{ minor_row.node.sort_order }}</td>
+      <td>{% if minor_row.node.enabled %}{{ state("켜짐") }}{% else %}{{ state("꺼짐") }}{% endif %}</td>
+      <td class="num">{{ minor_row.job_count }}건</td>
+      <td class="cell-text">{{ minor_row.node.note }}</td>
+    </tr>
+    {% endfor %}
+    {% else %}
+    {{ empty_row(6, "직무 분류가 아직 없다. 아래 씨앗 넣기로 대분류 25개·소분류 296개를 한 번에 채우거나, 손으로 하나씩 만든다") }}
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+{% if is_empty %}
+<form hx-post="/ui/taxonomy/seed" hx-target="#taxonomy-tree" hx-swap="innerHTML"
+      hx-disabled-elt="find button"
+      hx-confirm="seeds/job-taxonomy-zighang-20260828.json 의 대분류·소분류를 한 번에 넣는다. 계속할까">
+  <button type="submit">씨앗 넣기</button>
+  {{ wait("씨앗을 넣는 중") }}
+  <span class="block text-xs text-slate-500">
+    표가 완전히 비어 있을 때만 보인다. 넣고 나면 이 버튼은 사라진다
+  </span>
+</form>
+{% endif %}

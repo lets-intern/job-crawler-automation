@@ -14,7 +14,7 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 
-from app import db
+from app import db, taxonomy
 from app.api.settings import get_connection
 from app.api.ui import NAV_GROUPS
 from app.main import app
@@ -88,3 +88,50 @@ def test_화면이_열리고_네비게이션이_켜진다(client: TestClient) ->
 
     assert response.status_code == 200
     assert '<a href="/taxonomy" aria-current="page"' in response.text
+
+
+def test_표가_비어있으면_씨앗_넣기_버튼만_보인다(client: TestClient) -> None:
+    body = client.get("/ui/taxonomy").text
+
+    assert "씨앗 넣기" in body
+    assert "직무 분류가 아직 없다" in body
+
+
+def test_대분류와_소분류가_트리로_보인다(client: TestClient, conn: sqlite3.Connection) -> None:
+    major = taxonomy.create(conn, parent_id=None, name="IT·개발", sort_order=0)
+    taxonomy.create(conn, parent_id=major.id, name="서버·백엔드")
+    taxonomy.create(conn, parent_id=None, name="AI·데이터", sort_order=1)
+    conn.commit()
+
+    body = client.get("/ui/taxonomy").text
+
+    assert body.index("IT·개발") < body.index("서버·백엔드") < body.index("AI·데이터")
+    assert "씨앗 넣기" not in body
+
+
+def test_공고_수가_그_이름으로_분류된_건수와_같다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    major = taxonomy.create(conn, parent_id=None, name="IT·개발")
+    taxonomy.create(conn, parent_id=major.id, name="서버·백엔드")
+    add_classified_job(conn, 1, job_major="IT·개발", job_minor="서버·백엔드")
+    add_classified_job(conn, 2, job_major="IT·개발", job_minor="서버·백엔드")
+    add_classified_job(conn, 3, job_major="IT·개발", job_minor=None)
+    conn.commit()
+
+    body = client.get("/ui/taxonomy").text
+
+    assert "3건" in body  # 대분류: 소분류 유무와 무관하게 IT·개발 전부
+    assert "2건" in body  # 소분류: 서버·백엔드 로 소분류까지 정해진 것만
+
+
+def test_켜짐_꺼짐_상태가_보인다(client: TestClient, conn: sqlite3.Connection) -> None:
+    major = taxonomy.create(conn, parent_id=None, name="IT·개발")
+    taxonomy.set_enabled(conn, major.id, False)
+    taxonomy.create(conn, parent_id=None, name="AI·데이터")
+    conn.commit()
+
+    body = client.get("/ui/taxonomy").text
+
+    assert "꺼짐" in body
+    assert "켜짐" in body
