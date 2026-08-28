@@ -145,6 +145,21 @@ def scope_ids(
     return [int(row["id"]) for row in rows]
 
 
+def scope_count(conn: sqlite3.Connection, scope: str, *, days: int | None = None) -> int:
+    """그 범위의 대상 건수. 화면의 확인 창이 이 숫자를 적는다. 읽기 전용이다.
+
+    `scope_ids` 와 **같은 문장**을 쓴다. 세는 조회를 따로 쓰면 확인 창이 적은 건수와 실제로
+    도는 건수가 갈리고, 그때 어느 쪽이 맞는지 알 방법이 없다. `all` 에서는 그 차이가 그대로
+    토큰 값이다 (PRD 2절).
+
+    1회 상한(`side_workflows.batch_limit`)은 여기 없다. 확인 창이 묻는 것은 "이 범위가 몇
+    건이냐" 이고, 그중 몇 건씩 끊어 도는지는 실행이 정한다.
+    """
+    body, params = _scope_from(scope, days)
+    row = conn.execute(f"SELECT count(*) AS n {body}", params).fetchone()
+    return int(row["n"])
+
+
 def pending_ids(conn: sqlite3.Connection, limit: int | None = None) -> list[int]:
     """보낼 글이 있고 아직 분류되지 않은 공고. **최근 수집한 것부터다.** 읽기 전용이다.
 
@@ -168,9 +183,7 @@ def pending_count(conn: sqlite3.Connection) -> int:
     `pending_ids` 와 같은 조건이어야 한다. 갈리면 화면의 남은 건수와 실제로 도는 건수가
     다르다.
     """
-    body, params = _scope_from(UNCLASSIFIED, None)
-    row = conn.execute(f"SELECT count(*) AS n {body}", params).fetchone()
-    return int(row["n"])
+    return scope_count(conn, UNCLASSIFIED)
 
 
 def read_source(conn: sqlite3.Connection, raw_job_id: int) -> str:

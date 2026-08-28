@@ -28,7 +28,9 @@ from app.classify.store import (
     RECENT,
     UNCLASSIFIED,
     ClassifyScopeError,
+    pending_count,
     pending_ids,
+    scope_count,
     scope_ids,
 )
 
@@ -224,3 +226,47 @@ def test_보낼_글이_없으면_어느_범위에도_없다(conn: sqlite3.Connec
     classify(conn, 2)
 
     assert scope_ids(conn, scope, days=365) == []
+
+
+def populate(conn: sqlite3.Connection) -> None:
+    """범위 넷이 서로 다른 건을 집도록 섞어 넣는다."""
+    add_job(conn, 1)
+    add_job(conn, 2)
+    add_job(conn, 3)
+    add_job(conn, 4, body="", source_text="원문만 있는 건")
+    add_job(conn, 5, body=None)
+    add_job(conn, 6, crawled_at=at(conn, "-400 days"))
+    classify(conn, 2)
+    classify(conn, 3, duties="업무")
+
+
+@pytest.mark.parametrize("scope", CLASSIFY_SCOPES)
+def test_건수가_id_목록_길이와_같다(conn: sqlite3.Connection, scope: str) -> None:
+    """확인 창이 적는 숫자와 실제로 도는 건수가 갈리면 어느 쪽이 맞는지 알 수 없다."""
+    populate(conn)
+
+    ids = scope_ids(conn, scope, days=30)
+    assert ids, "범위가 아무것도 집지 못하면 검사가 헛돈다"
+    assert scope_count(conn, scope, days=30) == len(ids)
+
+
+def test_상한은_건수를_깎지_않는다(conn: sqlite3.Connection) -> None:
+    """확인 창이 묻는 것은 범위가 몇 건이냐이고, 몇 건씩 끊어 도는지는 실행이 정한다."""
+    populate(conn)
+
+    assert scope_count(conn, ALL) == 5
+    assert scope_ids(conn, ALL, limit=2) == [6, 4]
+
+
+def test_남은_건수도_같은_조회를_지난다(conn: sqlite3.Connection) -> None:
+    populate(conn)
+
+    assert pending_count(conn) == scope_count(conn, UNCLASSIFIED)
+    assert pending_count(conn) == len(pending_ids(conn))
+
+
+def test_건수도_범위를_검증한다(conn: sqlite3.Connection) -> None:
+    with pytest.raises(ClassifyScopeError):
+        scope_count(conn, "everything")
+    with pytest.raises(ClassifyScopeError):
+        scope_count(conn, RECENT)
