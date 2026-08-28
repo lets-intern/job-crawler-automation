@@ -16,13 +16,32 @@ from collections.abc import Iterator
 import pytest
 
 from app import db
+from app.crawler.api_source import build_detail
 from app.crawler.collect import Collectors
 from app.crawler.hashing import content_hash
 from app.crawler.parser import DetailParseResult, ListItem, ListParseResult
 from app.crawler.runner import SCHEDULE, RunTarget, run_once
-from app.selector.schema import DETAIL_FIELDS, validate_selectors
+from app.selector.api_schema import validate_api_config
+from app.selector.schema import DETAIL_FIELDS, SPLIT_DETAIL_FIELDS, validate_selectors
 
 LIST_URL = "https://example.test/jobs"
+
+FIXTURES = pathlib.Path(__file__).parent / "fixtures"
+SEEDS = pathlib.Path(__file__).parent.parent / "seeds" / "site-configs-20260826.json"
+
+# 원문을 뽑기 전에 `_record()` 가 만들던 키. 원문이 없는 건은 이 모양 그대로 적재된다
+RECORD_KEYS = {
+    "source_url",
+    "title",
+    "body",
+    "requirements",
+    "deadline",
+    "department",
+    "company",
+    "list_title",
+    "list_date",
+    *SPLIT_DETAIL_FIELDS,
+}
 
 SELECTORS = validate_selectors(
     {
@@ -142,3 +161,70 @@ async def test_해시는_원문을_담기_전과_같은_값이다(conn: sqlite3.
 
     without = {name: data[name] for name in ("source_url", "title", "deadline", "body")}
     assert row["content_hash"] == content_hash(without)
+
+
+class HanwhaDetail:
+    """상세가 API 인 사이트. 저장된 한화 응답을 그대로 읽어 원문 없는 상세를 만든다."""
+
+    async def collect(self, item: ListItem) -> DetailParseResult:
+        payload = json.loads((FIXTURES / "hanwha-detail-20260825.json").read_text(encoding="utf-8"))
+        entry = json.loads(SEEDS.read_text(encoding="utf-8"))["crawlers"]
+        config = next(one for one in entry if one["name"] == "한화")["api_config"]
+        return build_detail(payload, validate_api_config(config).detail_config())
+
+
+async def test_원문이_없어도_공고는_그대로_적재된다(conn: sqlite3.Connection) -> None:
+    """상세가 API 인 네 사이트가 그렇다. 원문이 없다고 공고를 버리면 이미 되는 것을 잃는다."""
+    collect = Collectors(
+        list_mode="static", detail_mode="api", list=StubList(), detail=HanwhaDetail()
+    )
+
+    result = await run_once(conn, target(), collectors=collect, limit=1)
+
+    assert (result.new_count, result.fail_count) == (1, 0)
+    assert result.status == "success"
+    data = stored(conn)
+    assert "LIFEPLUS TV" in data["body"]
+
+
+async def test_원문이_없는_건은_원문을_뽑기_전과_같은_모양이다(conn: sqlite3.Connection) -> None:
+    """키가 늘지 않는다. 소비 측과 정규화가 보던 모양 그대로다."""
+    collect = Collectors(
+        list_mode="static", detail_mode="api", list=StubList(), detail=HanwhaDetail()
+    )
+
+    await run_once(conn, target(), collectors=collect, limit=1)
+
+    assert set(stored(conn)) == RECORD_KEYS
+
+
+async def test_공백뿐인_원문은_없는_것으로_본다(conn: sqlite3.Connection) -> None:
+    """빈 컨테이너를 잡은 것이다. 빈 값을 원문이라고 넣으면 분류가 그것을 읽고 아무것도 못 낸다."""
+    await run_once(conn, target(), collectors=collectors(StubDetail(source="\n\n   ")), limit=1)
+
+    assert set(stored(conn)) == RECORD_KEYS
+
+
+async def test_원문이_없는_건도_정규화까지_간다(conn: sqlite3.Connection) -> None:
+    """적재만 되고 정규화에서 걸리면 소비 측에는 없는 것과 같다."""
+    collect = Collectors(
+        list_mode="static", detail_mode="api", list=StubList(), detail=HanwhaDetail()
+    )
+
+    await run_once(conn, target(), collectors=collect, limit=1)
+
+    rows = conn.execute("SELECT title FROM normalized_jobs").fetchall()
+    assert len(rows) == 1
+
+
+async def test_원문이_있는_건도_정규화까지_간다(conn: sqlite3.Connection) -> None:
+    """새 키 하나가 늘었다고 정규화가 걸리면, 수집이 되는 것은 아무 뜻이 없다."""
+    await run_once(
+        conn,
+        target(),
+        collectors=collectors(StubDetail(source="제목\n회사 예시\n본문이다")),
+        limit=1,
+    )
+
+    rows = conn.execute("SELECT title FROM normalized_jobs").fetchall()
+    assert len(rows) == 1
