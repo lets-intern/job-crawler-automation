@@ -33,7 +33,7 @@
 
 절대 URL 로 만드는 것은 여기서 하지 않는다. 상대경로는 그대로 돌려주고, 목록 URL 과 합치는
 것은 파서의 몫이다. 조립된 절대 URL 이든 상대경로든 마지막에는 공용 fetch 클라이언트가 다시
-http(s) 인지 본다 (`.claude/rules/crawling.md`).
+http(s) 인지 본다 (`../.claude/rules/crawling.md`).
 """
 
 from __future__ import annotations

@@ -1,7 +1,7 @@
 """알림 내용 테스트 (1.2.V).
 
 1건·5건·104건일 때 본문이 각각 어떻게 줄어드는지를 본다. 104건은 SK 한 번의 실제 건수다
-(`.claude/tasks/done/ntfy-notify/tasks-ntfy-notify.md`).
+(`../.claude/tasks/done/ntfy-notify/tasks-ntfy-notify.md`).
 """
 
 from __future__ import annotations
@@ -63,7 +63,7 @@ def test_회사가_비면_제목만_적는다() -> None:
 
 
 def test_제목이_비면_빈_줄_대신_사실을_적는다() -> None:
-    """빈 칸은 반대 뜻으로 읽힌다 (`.claude/rules/writing.md`)."""
+    """빈 칸은 반대 뜻으로 읽힌다 (`../.claude/rules/writing.md`)."""
     message = build_new_jobs_message(site_name="SK", jobs=[NewJob(company="SK", title="")])
 
     assert message.body == "- **SK** 제목 없음"

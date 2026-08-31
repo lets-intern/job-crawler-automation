@@ -1,12 +1,12 @@
 """알림 하나의 제목과 본문을 만든다.
 
 **한 실행에 알림 하나다.** 공고마다 보내지 않는다 — SK 는 한 번에 104건이 들어오고, 그러면
-알림이 104개 온다 (`.claude/tasks/done/ntfy-notify/tasks-ntfy-notify.md`).
+알림이 104개 온다 (`../.claude/tasks/done/ntfy-notify/tasks-ntfy-notify.md`).
 
 같은 이유로 본문에 104건을 다 넣지 않는다. 앞의 몇 건만 보이고 나머지는 `외 N건` 으로 줄인다.
 다 넣은 알림은 읽히지 않고, 읽히지 않는 알림은 안 보낸 것과 같다.
 
-본문은 마크다운이다. 문장에는 그림문자를 넣지 않는다 (`.claude/rules/writing.md`).
+본문은 마크다운이다. 문장에는 그림문자를 넣지 않는다 (`../.claude/rules/writing.md`).
 상태를 한눈에 보이게 하는 것은 ntfy 태그 쪽이다 (`app/notify/ntfy.py`).
 """
 

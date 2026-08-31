@@ -1,7 +1,7 @@
 """상세 원문(`source_text`)이 무엇을 담고 무엇을 담지 않는지 픽스처로 본다.
 
 무엇을 컨테이너로 잡을지는 열한 픽스처를 재고 정했다
-(`.claude/site-recipes/source-text-container.md`). 여기서는 그 결정이 실제 픽스처에서
+(`../.claude/site-recipes/source-text-container.md`). 여기서는 그 결정이 실제 픽스처에서
 그대로 나오는지를 사이트별로 확인한다. 네트워크에 나가지 않는다.
 
 셀렉터는 `seeds/site-configs-20260826.json` 에서 읽는다. 문서에 사본을 두지 않는 것과 같은

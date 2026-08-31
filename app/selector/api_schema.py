@@ -42,7 +42,7 @@
 
 `User-Agent` 는 `headers` 에 담을 수 없다. 이름을 정직하게 밝히는 것은 공용 fetch 클라이언트의
 일이고, 설정이 덮을 수 있으면 브라우저 위장이 크롤러 등록만으로 가능해진다
-(`.claude/rules/crawling.md`).
+(`../.claude/rules/crawling.md`).
 
 `date_is_deadline` 은 목록에서 읽은 `date` 가 그 공고의 마감일이라는 뜻이다. 참이면 마감이
 지난 공고는 상세를 열지 않고 건너뛴다. 게시일을 적어 두는 사이트에 참을 주면 어제 올라온 새
@@ -65,7 +65,7 @@
 
 ## 판정은 통과 아니면 실패다
 
-셀렉터 스키마와 같은 이유로 추측해서 고치지 않는다 (`.claude/rules/llm.md`). 사유는 셋 중
+셀렉터 스키마와 같은 이유로 추측해서 고치지 않는다 (`../.claude/rules/llm.md`). 사유는 셋 중
 하나이고 무엇이 문제인지 이름을 댄다.
 
 | reason | 뜻 |
@@ -94,7 +94,7 @@ LIST_FIELDS: tuple[str, ...] = ("title", "date", "company")
 # 모집인원·주요 업무·전형 절차를 항목마다 담아 주는데, 상세 문서에는 그것들이 한 덩어리로만
 # 있어 셀렉터로 갈라낼 수 없다. 여기서 읽지 않으면 그 값들은 수집 단계에서 사라지고,
 # 매핑하지 않은 값은 저장되지 않으므로 다시 얻을 길이 없다
-# (`.claude/tasks/memos/보류/split-body/prd-split-body.md`).
+# (`../.claude/tasks/memos/보류/split-body/prd-split-body.md`).
 #
 # 상세에서 읽은 값이 있으면 그쪽이 이긴다. 목록에서 읽은 값은 상세가 비었을 때만 쓰인다
 # (`app/crawler/runner.py` 의 `_record`).
@@ -458,7 +458,7 @@ def _headers(section: Mapping[str, Any], where: str) -> dict[str, str]:
 
     `User-Agent` 는 담을 수 없다. 이름과 연락처를 밝히는 것은 공용 fetch 클라이언트가 정하고,
     설정으로 덮을 수 있게 두면 브라우저 위장이 크롤러 등록만으로 가능해진다
-    (`.claude/rules/crawling.md`).
+    (`../.claude/rules/crawling.md`).
     """
     if "headers" not in section or section["headers"] is None:
         return {}

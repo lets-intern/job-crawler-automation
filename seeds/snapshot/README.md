@@ -30,7 +30,7 @@
 | 삼성 | samsungcareers.com | 렌더, 목록 전용 |
 
 한화(hanwhain.com)는 들어 있지 않다. 렌더된 DOM 어디에도 상세 파라미터가 없어 셀렉터로
-풀리지 않는다. `.claude/site-recipes/www-hanwhain-com.md` 에 이유가 있다.
+풀리지 않는다. `../.claude/site-recipes/www-hanwhain-com.md` 에 이유가 있다.
 
 ## 쓰는 법
 
@@ -42,7 +42,7 @@ DATABASE_PATH=/tmp/look.db .venv/bin/python -m uvicorn app.main:app --port 8001
 ```
 
 이 파일에 대고 크롤링을 돌리지 않는다. `raw_jobs` 는 append-only 이고 여기 쌓인 것은
-그때의 기록이다 (`.claude/rules/data-safety.md`).
+그때의 기록이다 (`../.claude/rules/data-safety.md`).
 
 ## 갱신
 

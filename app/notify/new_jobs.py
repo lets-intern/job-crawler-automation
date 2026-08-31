@@ -2,7 +2,7 @@
 
 **건너뜀이나 실패는 알리지 않는다.** 알림이 오는 이유가 하나여야 알림이 읽힌다. 실패는
 워크플로우 화면의 실패 배지와 `crawl_runs` 가 이미 들고 있고, 그것을 휴대폰으로 한 번 더
-보내면 정작 새 공고 알림이 묻힌다 (`.claude/tasks/done/ntfy-notify/tasks-ntfy-notify.md`).
+보내면 정작 새 공고 알림이 묻힌다 (`../.claude/tasks/done/ntfy-notify/tasks-ntfy-notify.md`).
 
 **여기서 예외가 나가지 않는다.** 부르는 자리가 `app/crawler/runner.py` 의 실행 끝이라,
 알림 쪽 사고 하나가 수집을 실패로 만들면 안 된다. 설정을 읽지 못하든 알림 서버가 죽어 있든

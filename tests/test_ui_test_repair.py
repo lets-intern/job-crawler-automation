@@ -267,7 +267,7 @@ def test_before_and_after_are_shown_side_by_side(
 def test_pressing_repair_does_not_touch_the_database(
     client: TestClient, conn: sqlite3.Connection
 ) -> None:
-    """저장은 운영자가 누른다 (`.claude/rules/llm.md`)."""
+    """저장은 운영자가 누른다 (`../.claude/rules/llm.md`)."""
     before = broken(date="span.does-not-exist")
     crawler_id = add_crawler(conn, before)
     use_repairer(outcome(before, SELECTORS))

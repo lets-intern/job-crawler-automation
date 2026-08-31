@@ -2,7 +2,7 @@
 
 중지·재개와 주기 변경은 `app/api/workflows.py` 의 PATCH 라우트를 그대로 부른다. 그래야 화면에서
 바꾼 값도 스케줄러 `sync()` 까지 간다 — 테이블만 고치고 잡을 두면 멈춘 워크플로우가 계속
-깨어난다 (`.claude/rules/crawling.md`).
+깨어난다 (`../.claude/rules/crawling.md`).
 
 한 번 누르면 그 행 하나만 갈린다. 목록 전체를 다시 그리면 다른 행에서 입력하던 주기 값이 같이
 날아간다.
@@ -12,12 +12,12 @@
 
 ## 화면에 무엇을 계산해서 넘기는가
 
-카드가 받는 것은 이미 판정이 끝난 값이다 (`.claude/agents/ui-worker.md`: 계산은 라우트, 렌더는
+카드가 받는 것은 이미 판정이 끝난 값이다 (`../.claude/agents/ui-worker.md`: 계산은 라우트, 렌더는
 템플릿). 연속 실패를 세는 것도, 그것을 `주의`/`점검 필요` 어느 단어로 부를지도 여기서 정한다.
 
 실패한 워크플로우는 색과 굵기만으로 구분하지 않는다. `tone` 이 테두리 색을 정하는 동안
 `attention` 이 같은 사실을 단어로 들고 간다 — 색을 못 보면 정보가 사라지는 화면을 만들지 않는다
-(`.claude/rules/writing.md`).
+(`../.claude/rules/writing.md`).
 
 최근 실행이 실패로 끝났으면 사유(`error_class` 와 `error_message`)를 카드까지 올린다. 어느
 셀렉터가 빗나갔는지를 보려고 다른 화면으로 옮겨 다니게 하지 않는다.
@@ -48,7 +48,7 @@
 끝나면 폴링이 없는 카드가 들어와 그 자리에서 멈춘다. 멈추는 것을 서버가 정하는 이유는 브라우저가
 "끝났는지" 를 알 방법이 없기 때문이다.
 
-스케줄러가 지키는 두 가지를 이 경로도 그대로 지킨다 (`.claude/rules/crawling.md`).
+스케줄러가 지키는 두 가지를 이 경로도 그대로 지킨다 (`../.claude/rules/crawling.md`).
 
 | 지키는 것 | 여기서 어떻게 |
 |---|---|
@@ -100,7 +100,7 @@ router = APIRouter(tags=["ui"], include_in_schema=False)
 # 폼에서 온 문자열을 `WorkflowUpdate` 가 받는 값으로 옮긴다. 표에 없는 값은 거절한다
 STATUSES: dict[str, Literal["active", "paused"]] = {"active": "active", "paused": "paused"}
 
-# 종료 상태를 사람이 읽는 단어로. 저장값은 그대로 영어다 (`.claude/rules/writing.md`)
+# 종료 상태를 사람이 읽는 단어로. 저장값은 그대로 영어다 (`../.claude/rules/writing.md`)
 RUN_WORDS: dict[str, str] = {SUCCESS: "성공", "timeout": "시간 초과", "failed": "실패"}
 
 # 실행 출처를 사람이 읽는 단어로. `crawl_runs.trigger` 가 NULL 인 옛 행은 `알 수 없음` 이다 —
@@ -303,7 +303,7 @@ def _finished_message(conn: sqlite3.Connection, workflow_id: int) -> str:
     """폴링하던 카드가 결과로 갈릴 때 그 자리에 적는 한 줄.
 
     실패 사유는 여기서 되풀이하지 않는다. 카드에 이미 `최근 실패 사유` 줄이 있고, 같은 내용을
-    두 번 적으면 어느 쪽이 지금 것인지 읽는 사람이 판단해야 한다 (`.claude/rules/writing.md`).
+    두 번 적으면 어느 쪽이 지금 것인지 읽는 사람이 판단해야 한다 (`../.claude/rules/writing.md`).
     """
     row = _last_run(conn, workflow_id)
     if row is None:

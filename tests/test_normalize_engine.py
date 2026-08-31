@@ -6,7 +6,7 @@
 원문은 저장된 python.org 픽스처에서 뽑는다. 실사이트에 나가지 않는다.
 
 마지막 테스트가 이 파일의 이유다. 정규화를 돌린 뒤 `raw_jobs` 가 한 바이트도 달라지지
-않았는지 본다 (`.claude/rules/data-safety.md`).
+않았는지 본다 (`../.claude/rules/data-safety.md`).
 """
 
 from __future__ import annotations

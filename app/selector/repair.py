@@ -4,7 +4,7 @@
 으로 잡았다. 사람이 브라우저로 HTML 을 열어 `ul.job-card-list` 를 찾아 손으로 넣었다. 그 일을
 모델에게 맡기는 것이 이 모듈이다.
 
-`.claude/rules/llm.md` 가 손 편집을 첫 수단으로 두고 **요청 없이 재생성하지 말라**고 못박고
+`../.claude/rules/llm.md` 가 손 편집을 첫 수단으로 두고 **요청 없이 재생성하지 말라**고 못박고
 있다. 그래서 이 경로는 자동이 아니라 운영자가 누르는 버튼으로만 들어온다. 저장도 하지 않는다 —
 고치기 전과 후를 나란히 돌려줄 뿐이고, `crawlers.selectors_json` 을 바꾸는 것은 지금까지처럼
 `PUT /api/crawlers/{id}/selectors` 하나뿐이다.
@@ -146,7 +146,7 @@ _HINT = """
 
 # 프롬프트에 실어 보낼 힌트의 상한(문자 수). 자유 입력이라 페이지를 통째로 붙여 넣는 일이
 # 생기고, 그러면 정제해서 줄여 둔 HTML 옆에서 힌트가 입력의 대부분을 차지한다
-# (`.claude/rules/llm.md`).
+# (`../.claude/rules/llm.md`).
 MAX_HINT_CHARS = 800
 
 # 프롬프트 전체의 상한. 정제 HTML 두 벌에 지시문과 힌트를 더한 값이고, 위의 두 상한이
@@ -241,9 +241,9 @@ async def repair_for_urls(
 ) -> RepairOutcome:
     """저장된 URL 을 다시 가져와 고친다.
 
-    HTML 은 어디에도 보관하지 않으므로(`.claude/rules/data-safety.md`) 고칠 때 다시 가져온다.
+    HTML 은 어디에도 보관하지 않으므로(`../.claude/rules/data-safety.md`) 고칠 때 다시 가져온다.
     가져오는 것은 공용 fetch 클라이언트이거나 렌더러다 — 어느 쪽인지는 `crawlers.render_mode`
-    를 읽는 호출부가 정한다 (`.claude/rules/crawling.md`).
+    를 읽는 호출부가 정한다 (`../.claude/rules/crawling.md`).
     """
     resolved_source = source or get_fetcher()
     list_html = (await resolved_source.fetch(list_url)).text
@@ -429,7 +429,7 @@ def normalize_hint(hint: str) -> tuple[str, list[str]]:
     """힌트를 상한 안으로 줄이고, 무엇을 했는지 설명과 함께 돌려준다.
 
     자유 입력이라 페이지를 통째로 붙여 넣는 일이 생긴다. 그러면 정제해서 줄여 둔 HTML 옆에서
-    힌트가 입력의 대부분을 차지한다 (`.claude/rules/llm.md`). 앞부분을 남기는 것은 `Copy
+    힌트가 입력의 대부분을 차지한다 (`../.claude/rules/llm.md`). 앞부분을 남기는 것은 `Copy
     selector` 경로도 설명 문장도 앞이 본론이기 때문이다.
 
     자른 사실은 결과에 남긴다. 조용히 자르면 운영자는 자기가 준 단서가 다 갔다고 여긴다.
@@ -568,7 +568,7 @@ def _overlay(
     보장이 되지 않는다 — 모델이 맞던 `list.title` 을 다른 값으로 내놓아도 여기서 버린다.
 
     빈 값도 버린다. 모델이 못 고쳤다는 뜻이고, 원래 셀렉터가 남아 있어야 운영자가 손으로 고칠
-    대상이 된다 (`.claude/rules/llm.md`).
+    대상이 된다 (`../.claude/rules/llm.md`).
     """
     data = original.model_dump()
     proposed = proposal.model_dump()
@@ -587,7 +587,7 @@ def _overlay(
 
 
 def _notes(cleaned_list: CleanedHtml, cleaned_detail: CleanedHtml | None) -> list[str]:
-    """입력을 좁혔거나 잘랐으면 결과에 남긴다 (`.claude/rules/llm.md`)."""
+    """입력을 좁혔거나 잘랐으면 결과에 남긴다 (`../.claude/rules/llm.md`)."""
     notes = [f"목록: {note}" for note in cleaned_list.notes()]
     if cleaned_detail is not None:
         notes.extend(f"상세: {note}" for note in cleaned_detail.notes())

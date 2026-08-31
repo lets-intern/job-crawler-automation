@@ -5,7 +5,7 @@
 값을 남기는가** 다.
 
 실사이트에 나가지 않는다. 저장된 python.org 픽스처를 돌려주는 스텁 fetch 클라이언트를 쓴다
-(`.claude/rules/core.md`).
+(`../.claude/rules/core.md`).
 
 | 경로 | 부르는 곳 | 남는 값 |
 |---|---|---|

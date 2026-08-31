@@ -6,7 +6,7 @@ HTML 을 셀렉터로 읽는 자리(`app/crawler/parser.py`)와 하는 일이 �
 어느 경로로 왔는지 모른다.
 
 요청은 공용 fetch 클라이언트의 `request()` 로 나간다. 이 모듈은 `httpx` 를 모른다
-(`.claude/rules/crawling.md`).
+(`../.claude/rules/crawling.md`).
 
 ## 실패는 셋으로 갈린다
 
@@ -24,7 +24,7 @@ HTML 을 셀렉터로 읽는 자리(`app/crawler/parser.py`)와 하는 일이 �
 
 LG 의 `detailContext` 처럼 HTML 조각이 그대로 들어 있는 필드가 있다. 여기서 텍스트로 펴지
 않는다. 지저분한 값은 정규화 규칙이 다루는 문제이고, 수집 단계가 손대면 원본이 사라진다
-(`CLAUDE.md`, `.claude/rules/data-safety.md`).
+(`CLAUDE.md`, `../.claude/rules/data-safety.md`).
 """
 
 from __future__ import annotations
@@ -108,7 +108,7 @@ async def _fetch_pages(
     """쪽을 넘겨 가며 전부 모은다. 한화 68건(20씩 4쪽)과 삼성 16건(2쪽)이 이 경로다.
 
     쪽 사이에도 호스트 딜레이가 그대로 걸린다. 요청이 전부 공용 fetch 클라이언트를 지나기
-    때문이고, 그래서 여기서 따로 기다리지 않는다 (`.claude/rules/crawling.md`).
+    때문이고, 그래서 여기서 따로 기다리지 않는다 (`../.claude/rules/crawling.md`).
 
     멈추는 조건은 넷이다 — 사이트가 다음 쪽이 없다고 말했거나, 항목이 0건인 쪽이 나왔거나,
     **쪽이 통째로 아는 공고였거나**, `max_pages` 에 닿았거나. 마지막 것이 없으면 끝나지 않는
@@ -347,7 +347,7 @@ def _html_id(node: Tag, spec: str, index: int) -> str:
     `|digits` 를 붙이면 숫자만 남긴다. 삼성 공고 번호가 `data-value="22,878"` 처럼 천 단위
     쉼표가 찍힌 채로 오는데, 그대로 상세 주소에 넣으면 `%2C` 로 인코딩돼 열리지 않는다.
     **숫자 표기에 기대는 자리다** — 사이트가 표기를 바꾸면 여기가 먼저 깨진다
-    (`.claude/site-recipes/www-samsungcareers-com.md`).
+    (`../.claude/site-recipes/www-samsungcareers-com.md`).
     """
     wanted, _, _ = spec.partition(DIGITS_FILTER)
     selector, mark, attribute = wanted.partition(ID_ATTRIBUTE_MARK)
@@ -542,7 +542,7 @@ def _value(payload: Any, path: FieldPath) -> str:
     | `["a.b", "a.c"]` | 여러 자리를 모은다 | 현대의 주요 업무와 조직 소개 |
 
     첫 칸만 읽으면 나머지 부문의 본문이 그대로 사라진다. 수집 단계에서 사라진 값은 정규화를
-    다시 돌려도 돌아오지 않는다 (`.claude/rules/data-safety.md`).
+    다시 돌려도 돌아오지 않는다 (`../.claude/rules/data-safety.md`).
 
     빈 자리는 건너뛴다. 자리가 하나도 값을 내놓지 않으면 빈 문자열이고, 그것을 실패로 볼지는
     부르는 쪽이 정한다.

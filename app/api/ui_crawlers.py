@@ -4,7 +4,7 @@
 
 생성된 셀렉터는 가설이다. 실패한 필드가 있어도 행은 남고, 화면은 어느 필드가 몇 개 매칭됐는지
 그대로 보여준다. 그 다음은 운영자가 손으로 고치는 것이지 다시 생성하는 것이 아니다
-(`.claude/rules/llm.md`).
+(`../.claude/rules/llm.md`).
 
 ## 실패를 200 으로 돌려주는 이유
 
@@ -67,7 +67,7 @@ def crawler_rows(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     """등록된 크롤러 전부. 테스트 실행 화면도 같은 목록을 쓴다.
 
     행마다 `path` 가 붙는다. 어떤 방식으로 도는지를 낱말로 옮긴 것이고, 판정은 여기서 끝난다 —
-    템플릿은 낱말을 그리기만 한다 (`.claude/agents/ui-worker.md`).
+    템플릿은 낱말을 그리기만 한다 (`../.claude/agents/ui-worker.md`).
     """
     return [_with_path(row) for row in conn.execute(_LIST_QUERY).fetchall()]
 
@@ -263,7 +263,7 @@ async def repair_selectors_fragment(
     지금 가져온 HTML 에 다시 돌려 판정한다 (`app/selector/repair.py`).
 
     저장하지 않는다. 고치기 전과 후를 나란히 보여주고, 고친 셀렉터를 편집기에 올려 둘 뿐이다.
-    반영하는 것은 운영자가 누르는 "셀렉터 저장" 이고, 그 버튼이 `.claude/rules/llm.md` 가
+    반영하는 것은 운영자가 누르는 "셀렉터 저장" 이고, 그 버튼이 `../.claude/rules/llm.md` 가
     말하는 "요청" 이다. 누르기 전까지 `crawlers.selectors_json` 은 그대로다.
 
     실패하면 사유가 결과 영역에 남는다. Gemini 한도 초과(429)도 메시지에 코드가 들어 있어

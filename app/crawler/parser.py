@@ -7,7 +7,7 @@
 이 모듈은 네트워크를 모른다. HTML 문자열을 받아서 결과나 예외를 돌려줄 뿐이고, 가져오는 일은
 `app/crawler/fetcher.py` 가 한다.
 
-실패는 두 가지로 나뉘고, 조치가 다르다 (`.claude/rules/crawling.md`).
+실패는 두 가지로 나뉘고, 조치가 다르다 (`../.claude/rules/crawling.md`).
 
 | 예외 | 뜻 | 조치 |
 |---|---|---|
@@ -89,7 +89,7 @@ class ListItem:
     # 카카오 목록 API 는 직군·근무지·모집인원·주요 업무·전형 절차를 항목마다 담아 주는데
     # 상세 문서에는 그것들이 한 덩어리로만 있다. 여기 싣지 않으면 그 값들은 수집 단계에서
     # 사라지고, 매핑하지 않은 값은 저장되지 않으므로 다시 얻을 길이 없다
-    # (`.claude/tasks/memos/보류/split-body/prd-split-body.md`).
+    # (`../.claude/tasks/memos/보류/split-body/prd-split-body.md`).
     #
     # 상세에서 읽은 값이 있으면 그쪽이 이긴다. 이것은 상세가 비었을 때만 쓰는 값이다
     # (`app/crawler/runner.py` 의 `_record`).
@@ -109,7 +109,7 @@ class DetailParseResult:
 
     `source_text` 는 상세 컨테이너를 가공 없이 편 글자다. 뽑지 못하면 빈 문자열이고, 그 건은
     지금까지와 같은 모양으로 적재된다 (`app/crawler/runner.py` 의 `_record`). API 상세는
-    이 값을 만들지 않는다 (`.claude/site-recipes/source-text-container.md`).
+    이 값을 만들지 않는다 (`../.claude/site-recipes/source-text-container.md`).
     """
 
     fields: dict[str, str]
@@ -308,7 +308,7 @@ def block_text(node: Tag) -> str:
 
 # 상세 컨테이너 안에 남아 있어도 이 공고의 내용이 아닌 것. 카카오 상세의 `div.aside_board`
 # 가 같은 직군의 다른 공고 열한 건을 담고 있었고, 그것이 열한 픽스처에서 이 목록이 걸린
-# 유일한 자리다 (`.claude/site-recipes/source-text-container.md`).
+# 유일한 자리다 (`../.claude/site-recipes/source-text-container.md`).
 PAGE_FURNITURE: str = "header, nav, footer, aside, [class*=aside], [class*=footer], [class*=gnb]"
 
 
@@ -318,11 +318,11 @@ def source_text(soup: BeautifulSoup, body_selector: str) -> str:
     본문만 담으면 이름표로 붙은 값(회사·마감·근무지·경력)이 원문 밖에 남고, 조상을 더
     올리면 목록 화면의 필터와 다른 공고가 섞인다 — 네이버는 조상 3단계에서 3,880자가
     6,797자가 됐다. 열한 픽스처를 재고 부모 한 단계로 정했다
-    (`.claude/site-recipes/source-text-container.md`).
+    (`../.claude/site-recipes/source-text-container.md`).
 
     페이지 부속은 뺀다. 원문은 근거 검사가 "이 글자가 있나" 로 읽는 값이라, 푸터의 회사
     주소나 옆에 붙은 다른 공고의 근무지가 이 공고의 값으로 통과하면 안 된다
-    (`.claude/tasks/todo/prd-side-workflows.md` 4절).
+    (`../.claude/tasks/todo/prd-side-workflows.md` 4절).
 
     부모가 `body` 나 `html` 이면 본문 노드를 그대로 쓴다. 페이지 전체가 원문이 되면 GNB 와
     푸터가 통째로 들어온다 — 잰 일곱 곳에서 그 글자가 730자에서 5,456자였다.

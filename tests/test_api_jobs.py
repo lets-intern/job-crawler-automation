@@ -1,4 +1,4 @@
-"""제공 API 테스트. 계약은 `.claude/docs/api-contract.md` 다.
+"""제공 API 테스트. 계약은 `docs/api-contract.md` 다.
 
 실사이트에 나가지 않는다. `normalized_jobs` 에 시드를 직접 넣고 응답만 본다.
 

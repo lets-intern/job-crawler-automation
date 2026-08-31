@@ -139,7 +139,7 @@ async def test_정적으로_목록이_잡히면_브라우저를_띄우지_않는
 
 @pytest.mark.asyncio
 async def test_모드를_고른_등록은_그대로_한_번만_만든다(modes: list[str]) -> None:
-    """고른 값을 판정이 덮어쓰지 않는다 (`.claude/rules/llm.md`)."""
+    """고른 값을 판정이 덮어쓰지 않는다 (`../.claude/rules/llm.md`)."""
     generate = crawlers_api.get_generator(None)
 
     result = await generate(LIST_URL, DETAIL_URL, STATIC)

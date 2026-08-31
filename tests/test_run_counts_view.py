@@ -104,7 +104,7 @@ def test_건너뜀은_실패에_합쳐지지_않는다(client: TestClient, conn:
 
 
 def test_실행_기록이_없으면_그렇게_적는다(client: TestClient) -> None:
-    """빈 칸은 "0건 처리했다" 로 읽힌다 (`.claude/rules/writing.md`)."""
+    """빈 칸은 "0건 처리했다" 로 읽힌다 (`../.claude/rules/writing.md`)."""
     html = client.get("/ui/workflows").text
 
     assert "끝난 실행이 없다" in html

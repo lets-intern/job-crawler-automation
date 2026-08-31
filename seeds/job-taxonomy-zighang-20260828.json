@@ -1,5 +1,5 @@
 {
-  "note": "직행(zighang.com/recruitment) 의 직무 필터에서 2026-08-28 에 읽은 분류 체계. 대분류 25, 소분류 300. 화면의 `전체` 는 조회 조건이지 분류가 아니라 뺐다. 이 파일은 씨앗이고, 운영 중에는 어드민에서 고친다 (`.claude/tasks/todo/prd-job-taxonomy.md`).",
+  "note": "직행(zighang.com/recruitment) 의 직무 필터에서 2026-08-28 에 읽은 분류 체계. 대분류 25, 소분류 300. 화면의 `전체` 는 조회 조건이지 분류가 아니라 뺐다. 이 파일은 씨앗이고, 운영 중에는 어드민에서 고친다 (`../.claude/tasks/todo/prd-job-taxonomy.md`).",
   "source": "https://zighang.com/recruitment",
   "recorded_at": "2026-08-28",
   "majors": [

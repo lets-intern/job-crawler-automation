@@ -1,6 +1,6 @@
 """셀렉터 JSON 스키마와 검증.
 
-모델이 돌려준 것은 가설이지 결과가 아니다 (`.claude/rules/llm.md`). 이 파일이 그 가설을
+모델이 돌려준 것은 가설이지 결과가 아니다 (`../.claude/rules/llm.md`). 이 파일이 그 가설을
 DB 에 넣어도 되는 모양인지 판정한다.
 
 판정은 통과 아니면 실패다. 스키마에 없는 필드명이 오면 무엇을 말하려던 것인지 추측해서 고치지
@@ -153,7 +153,7 @@ def validate_selectors_allowing_empty(data: Any) -> tuple[SelectorSet, list[str]
 
     재시도까지 해도 모델이 채우지 못한 응답을 위한 경로다. 통째로 버리면 운영자가 손으로
     고칠 대상조차 없다. 빈 채로 두고 이름을 알린다 — 무엇이었을지 추측해서 채우지 않는다
-    (`.claude/rules/llm.md`).
+    (`../.claude/rules/llm.md`).
     """
     return _build(data, allow_empty=True)
 

@@ -2,7 +2,7 @@
 --
 -- id 가 아니라 이름을 저장한다. `normalized_jobs` 는 재정규화로 다시 만들어지는 파생
 -- 표이고 소비 측이 받는 것도 이름이다 — id 를 넣으면 소비 측이 우리 표를 한 벌 더 갖게
--- 되고, 이름이 바뀌어도 소비 측은 알 방법이 없다 (`.claude/tasks/todo/prd-job-taxonomy.md`
+-- 되고, 이름이 바뀌어도 소비 측은 알 방법이 없다 (`../.claude/tasks/todo/prd-job-taxonomy.md`
 -- 1절).
 --
 -- 칸이 두 자리에 는다. `job_role`(0017)과 같은 이유다 — 분류가 낸 값이 먼저

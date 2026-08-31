@@ -35,7 +35,7 @@
 나머지가 전부 같은 페이지를 가리키는 상태가 그것이다.
 
 확인은 공용 fetch 클라이언트로 한다. 브라우저에서만 되는 주소를 저장하면 등록만 성공하고
-이후 실행이 전부 실패한다 (`.claude/rules/crawling.md`).
+이후 실행이 전부 실패한다 (`../.claude/rules/crawling.md`).
 """
 
 from __future__ import annotations

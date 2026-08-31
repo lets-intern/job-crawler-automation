@@ -1,6 +1,6 @@
 """직무가 제목에 있는지 본문에 있는지 열한 사이트 픽스처로 잰다 (2.1.V).
 
-`job_role` 은 제목에서 뽑는 자유 텍스트다 (`.claude/tasks/todo/prd-fields-and-logo.md`).
+`job_role` 은 제목에서 뽑는 자유 텍스트다 (`../.claude/tasks/todo/prd-fields-and-logo.md`).
 뽑는 칸이라 근거 검사를 지나야 하는데, 그 검사가 지금은 본문에만 값을 돌려 본다
 (`app/classify/grounding.py`). **제목에서 뽑은 값을 본문에만 돌려 보면 맞게 뽑은 값이 통째로
 버려진다.** 얼마나 버려지는지가 근거 검사에 제목을 더할지를 정하므로 그것을 여기서 잰다.

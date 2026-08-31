@@ -5,7 +5,7 @@
 Push 8 이 상세 원문을 `raw_jobs.raw_data_json.source_text` 에 넣었다. 분류는 그것을 읽고,
 없으면 본문으로 떨어진다. **폴백이 검사의 요점이다** — 원문은 2026-08-28 이후 수집분에만
 있고, 그 전에 쌓인 건에는 키가 아예 없다. 폴백이 없으면 그 공고들이 분류에서 통째로 사라진다
-(`.claude/tasks/todo/prd-side-workflows.md` 4절).
+(`../.claude/tasks/todo/prd-side-workflows.md` 4절).
 
 근거 검사도 같은 값에 돈다. 원문으로 물어 놓고 본문에 돌려 보면 본문 밖 이름표에서 옳게
 뽑은 칸이 통째로 버려진다 (`app/classify/grounding.py`).
@@ -42,7 +42,7 @@ from tests.test_source_text import HTML_DETAIL, parsed
 BODY = "◆ 업무내용\n제휴사 데이터 연동 구조 기획\n\n◆ 지원자격\n관련 경험 5년 이상이신 분\n"
 
 # 원문에만 있는 줄. 본문 셀렉터 바깥의 이름표 값이고, 실제로 SK·롯데그룹·네이버·카카오·
-# 우아한형제들의 조상 1단계가 담은 것이 이것이다 (`.claude/site-recipes/source-text-container.md`)
+# 우아한형제들의 조상 1단계가 담은 것이 이것이다 (`../.claude/site-recipes/source-text-container.md`)
 ONLY_IN_SOURCE = "근무지 성남시 분당구 판교로 235"
 
 # 판정 칸의 근거도 본문 밖에 있을 수 있다. 고용형태가 이름표에만 적힌 사이트가 그렇다
@@ -203,7 +203,7 @@ def test_상한은_잰_원문_전부를_담는다() -> None:
     """9.3 의 결정을 고정한다. 상한을 내리면 여기서 어느 사이트가 잘리는지 바로 나온다.
 
     2026-08-28 측정에서 원문이 가장 긴 곳은 토스 10,312자다
-    (`.claude/site-recipes/source-text-container.md`).
+    (`../.claude/site-recipes/source-text-container.md`).
     """
     길이 = {site: len(parsed(site).source_text) for site in HTML_DETAIL}
 

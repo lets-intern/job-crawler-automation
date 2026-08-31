@@ -5,7 +5,7 @@
 -- 있어서, 그런 사이트는 운영자가 크롤러 단위로 한 번 적어 준다.
 --
 -- 운영자가 타이핑한 값은 추출 결과가 아니라 `raw_jobs` 에 들어가지 않는다
--- (`.claude/rules/data-safety.md`). 그래서 `crawlers` 에 둔다. 파싱된 회사명은 다른 필드와
+-- (`../.claude/rules/data-safety.md`). 그래서 `crawlers` 에 둔다. 파싱된 회사명은 다른 필드와
 -- 똑같은 추출 결과라 `raw_jobs.raw_data_json` 에 그대로 들어가고, 컬럼이 필요 없다.
 --
 -- 둘을 합치는 것은 정규화 단계 하나뿐이고, 어느 쪽을 썼는지를 `company_source` 에 남긴다.

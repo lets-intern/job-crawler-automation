@@ -1,7 +1,7 @@
 """규칙 적용. `raw_jobs` 를 읽고 `normalized_jobs` 에만 쓴다.
 
 이 방향은 뒤집히지 않는다. 정규화가 raw 를 고치면 잘못된 규칙 하나가 수집 데이터를 영구히
-망가뜨리고, 크롤링은 다시 돌릴 수 없다 (`.claude/rules/data-safety.md`). 그래서 이 파일에
+망가뜨리고, 크롤링은 다시 돌릴 수 없다 (`../.claude/rules/data-safety.md`). 그래서 이 파일에
 `raw_jobs` 를 대상으로 하는 UPDATE 나 DELETE 는 없다 — SELECT 하나뿐이다.
 
 ## 한 필드에 규칙이 여럿일 때
@@ -57,7 +57,7 @@ NULL 이다 — 크롤러 이름으로 대신 채우지 않는다.
 
 빈 칸까지 덮는 것이 핵심이다. 채워진 칸만 덮으면 2026-08-26 이전에 수집된 행에 옛 매핑이 넣어
 둔 값(`Permanent`)이 남고, 그 순간 판정 칸 둘의 닫힌 목록이
-`.claude/docs/api-contract.md` 가 약속한 대로 성립하지 않는다.
+`docs/api-contract.md` 가 약속한 대로 성립하지 않는다.
 
 수집이 주는 여섯 칸은 분류가 건드리지 않는다. `deadline` 은 마감 지난 공고를 거르는 데 쓰이고
 `company` 는 계열사를 가르는 값이라 본문 판독으로 바꿀 것이 아니다.
@@ -108,7 +108,7 @@ from app.classify.store import read_classification
 
 # 어디서 줄이 바뀌어야 하는지는 HTML 이 정하고, 그 목록은 저기 하나뿐이다. 여기에 같은
 # 목록을 두 벌 두면 한쪽만 늘어나는 날이 오고 그때 어느 쪽이 진실인지 알 수 없다
-# (`.claude/rules/core.md`).
+# (`../.claude/rules/core.md`).
 from app.crawler.parser import BLOCK_TAGS
 from app.normalize.rules import (
     NORMALIZED_FIELDS,
@@ -355,7 +355,7 @@ def normalized_values(
 def insert_normalized(conn: sqlite3.Connection, raw_job_id: int, rules: Sequence[Rule]) -> int:
     """`raw_jobs` 한 행을 정규화해 `normalized_jobs` 에 넣는다. 새 행의 id 를 돌려준다.
 
-    `delivered_at` 은 쓰지 않는다. 제공 API 경로만 쓴다 (`.claude/rules/data-safety.md`).
+    `delivered_at` 은 쓰지 않는다. 제공 API 경로만 쓴다 (`../.claude/rules/data-safety.md`).
     """
     source_url, fields = normalized_values(conn, raw_job_id, rules)
     companies.register(conn, fields["company"], fields[PARENT_COMPANY])
@@ -414,7 +414,7 @@ def flatten_html(value: str) -> str:
 
     LG 상세 API 가 `detailContext` 와 `requiredItem` 을 HTML 조각으로 주고, 그것이 그대로
     `normalized_jobs.body` 에 남아 소비 측으로 나갔다. 수집에서 지우면 `raw_jobs` 가 원본이
-    아니게 되므로 (`.claude/rules/data-safety.md`) 여기서 편다.
+    아니게 되므로 (`../.claude/rules/data-safety.md`) 여기서 편다.
 
     한 번에 세 가지가 일어난다. 블록 태그는 줄바꿈이 되고, 남은 태그는 사라지고, 엔티티는
     원래 글자로 돌아온다. `<br>` 를 그냥 지우면 앞뒤 문장이 한 줄로 붙어 버리므로 순서가

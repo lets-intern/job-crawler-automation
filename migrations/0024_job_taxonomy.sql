@@ -1,6 +1,6 @@
 -- 운영자가 등록한 직무 분류 체계. LLM이 여기서 고른다.
 --
--- `.claude/tasks/todo/prd-job-taxonomy.md`. 대분류와 소분류를 한 표에 함께 둔다 —
+-- `../.claude/tasks/todo/prd-job-taxonomy.md`. 대분류와 소분류를 한 표에 함께 둔다 —
 -- `parent_id`가 NULL이면 대분류, 아니면 그 값이 가리키는 대분류의 소분류다. 표를 둘로
 -- 가르면 같은 CRUD를 두 벌 쓰게 되고, 나중에 3단계로 늘릴 때 표가 또 하나 는다.
 --

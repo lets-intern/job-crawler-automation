@@ -1,4 +1,4 @@
-# 비밀값과 수집 데이터는 이미지에 들어가지 않는다 (.claude/rules/git-safety.md)
+# 비밀값과 수집 데이터는 이미지에 들어가지 않는다 (../.claude/rules/git-safety.md)
 .env
 data/
 *.db
@@ -8,7 +8,6 @@ debug_snapshots/
 # 런타임에 필요 없는 것
 .git/
 .github/
-.claude/
 .venv/
 tests/
 .history/

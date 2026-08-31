@@ -2,7 +2,7 @@
 
 **수집과 따로 돈다.** 같은 실행에서 이어 돌리면 SK 103건일 때 실행이 9분 가까이 길어지고,
 분류가 실패하면 수집까지 실패로 보인다. 수집은 본문까지만 하고, 나누는 것은 여기가 한다
-(`.claude/tasks/memos/보류/llm-classify/prd-llm-classify.md`).
+(`../.claude/tasks/memos/보류/llm-classify/prd-llm-classify.md`).
 
 **분류 실패는 그 공고에서 끝난다.** 그 공고는 본문만 가진 채로 남고 `job_classifications` 에
 행이 생기지 않아서, 다음 실행이 다시 집어 든다. 본문이 `raw_jobs` 에 있으니 몇 번이든 다시

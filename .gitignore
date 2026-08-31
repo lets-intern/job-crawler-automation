@@ -22,9 +22,6 @@ debug_snapshots/
 .ruff_cache/
 .playwright/
 
-# Claude Code 세션 상태
-.claude/.task-running
-
 # OS
 .DS_Store
 .history

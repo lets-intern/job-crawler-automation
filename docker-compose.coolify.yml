@@ -9,7 +9,7 @@
 #   2-1. ADMIN_PASSWORD 를 환경변수로 넣는다. 공개 주소에 뜨는 화면이라 넣지 않으면
 #        기본값으로 열린다. 넣지 않은 동안은 화면과 기동 로그가 그렇다고 알린다
 #   3. CRAWL_USER_AGENT 에 실제 연락처를 넣는다. 이름과 연락처를 정직하게 적는 것은
-#      선택이 아니다 (.claude/rules/crawling.md)
+#      선택이 아니다 (../.claude/rules/crawling.md)
 #   4. jobs-data 볼륨을 백업 대상으로 잡는다. 수집한 데이터는 다시 만들 수 없다
 #
 # 로컬 개발은 docker-compose.yml 을 쓴다. 이 파일과 섞지 않는다.
@@ -53,7 +53,7 @@ services:
       CRAWL_USER_AGENT: "${CRAWL_USER_AGENT}"
 
       # 값은 보수적으로 둔다. 늦게 끝나는 워크플로우는 괜찮지만 차단당하면 사이트를
-      # 영구히 잃는다 (.claude/rules/crawling.md)
+      # 영구히 잃는다 (../.claude/rules/crawling.md)
       CRAWL_DELAY_SECONDS: "${CRAWL_DELAY_SECONDS:-3}"
       CRAWL_TIMEOUT_SECONDS: "${CRAWL_TIMEOUT_SECONDS:-20}"
       CRAWL_MAX_RETRIES: "${CRAWL_MAX_RETRIES:-3}"
@@ -68,7 +68,7 @@ services:
 
     volumes:
       # 실제 수집 데이터가 여기 남는다. 컨테이너를 지워도 이 볼륨은 남아야 한다
-      # (.claude/rules/data-safety.md)
+      # (../.claude/rules/data-safety.md)
       - jobs-data:/data
 
     # Coolify 가 이 결과를 보고 배포 성공을 판정한다. 기동 시 마이그레이션이 돌아

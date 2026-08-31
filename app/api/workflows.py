@@ -2,14 +2,14 @@
 
 승격은 크롤러를 주기 실행 대상으로 올리는 단계다. `crawlers.status=tested` 인 것만 올라간다 —
 테스트를 거치지 않은 셀렉터는 가설일 뿐이고, 가설을 주기 실행에 걸면 실패가 사이트 부하로
-쌓인다 (`.claude/rules/llm.md`, `.claude/docs/data-model.md`).
+쌓인다 (`../.claude/rules/llm.md`, `docs/data-model.md`).
 
 이미 `promoted` 인 크롤러는 다시 승격하지 않는다. 같은 크롤러에 워크플로우가 둘이면 같은
 목록 페이지를 두 배로 때린다.
 
 테이블을 바꾼 요청은 반드시 스케줄러 `sync()` 까지 간다. 여기서 멈추면 `paused` 로 바꾼
 워크플로우가 계속 깨어나고, 주기를 늘려 놓은 워크플로우가 옛 주기로 계속 사이트를 때린다.
-`.claude/rules/crawling.md` 가 말하는 "테이블이 진실" 은 테이블을 바꾼 쪽이 잡까지 맞출 때만
+`../.claude/rules/crawling.md` 가 말하는 "테이블이 진실" 은 테이블을 바꾼 쪽이 잡까지 맞출 때만
 사실이다.
 """
 

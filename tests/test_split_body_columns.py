@@ -8,7 +8,7 @@
 이름표가 붙은 DOM 요소 하나여야 한다. 본문 덩어리 안에 `■ 우대사항` 으로 섞여 있는 것은 세지
 않는다. 세면 Push 2 가 텍스트를 잘라 채우게 되고, 그것이 PRD 가 막으려는 "억지로 채우기" 다.
 
-확정한 표는 `.claude/tasks/memos/보류/split-body/tasks-split-body-push1.md` 에 있다.
+확정한 표는 `../.claude/tasks/memos/보류/split-body/tasks-split-body-push1.md` 에 있다.
 이 파일이 그 표다.
 """
 

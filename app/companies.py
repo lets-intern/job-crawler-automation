@@ -17,12 +17,12 @@
 `register` 를 부르는 자리는 `app/normalize/engine.py` 의 `insert_normalized` 하나다. 공고가
 `normalized_jobs` 에 들어갈 때 그 회사의 행이 없으면 로고가 빈 행이 생긴다. 자동으로 만들지
 않으면 운영자가 회사명을 화면에서 손으로 다시 치게 되고, 오타 하나면 그 로고는 어느 공고에도
-붙지 않는다 (`.claude/tasks/todo/prd-fields-and-logo.md` 4장).
+붙지 않는다 (`../.claude/tasks/todo/prd-fields-and-logo.md` 4장).
 
 ## 지우는 함수가 없다
 
 공고가 다 사라진 회사도 행이 남는다. 지우는 것은 운영자가 한다 —
-`.claude/tasks/todo/prd-fields-and-logo.md` 4장의 결정이다. 자동으로 지우면 목록이 잠깐 빈
+`../.claude/tasks/todo/prd-fields-and-logo.md` 4장의 결정이다. 자동으로 지우면 목록이 잠깐 빈
 사이에 운영자가 올려 둔 로고 주소가 함께 사라지고, 그 파일은 저장소에 남아 아무도 찾지 못한다.
 
 ## 로고를 여기서 검사하지 않는다

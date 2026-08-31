@@ -1,15 +1,15 @@
 """운영 화면의 베이스. 레이아웃·네비게이션과 페이지 라우트가 여기 있다.
 
 서버가 HTML 을 렌더하고 HTMX 가 조각만 갈아 끼운다. 빌드 단계도, 번들러도, 클라이언트 상태
-저장소도 없다 (`.claude/docs/tech-stack.md`).
+저장소도 없다 (`docs/tech-stack.md`).
 
 스타일은 Tailwind 를 CDN 에서 받아 클래스로만 준다 (2026-08-22 결정, Push 9 이 Push 6 의
 "CSS 없음" 결정을 대체한다). 빌드 단계를 만들지 않는 제약이 그대로라 CLI·PostCSS 파이프라인은
-두지 않는다 (`.claude/rules/core.md`). 서빙할 자산이 없으니 정적 파일 마운트도 없다 —
+두지 않는다 (`../.claude/rules/core.md`). 서빙할 자산이 없으니 정적 파일 마운트도 없다 —
 HTMX 와 Tailwind 둘 다 CDN 에서 받는다.
 
 페이지 라우트는 페이지를, 조각 라우트는 조각만 돌려준다. 한 라우트가 헤더를 보고 둘 중 무엇을
-원했는지 추측하게 만들지 않는다 (`.claude/agents/ui-worker.md`).
+원했는지 추측하게 만들지 않는다 (`../.claude/agents/ui-worker.md`).
 
 화면은 이미 있는 API 라우터를 그대로 부른다. 같은 동작을 하는 두 번째 경로를 만들지 않는다 —
 그렇게 갈라지면 화면에서 되는 일이 API 에서 안 되는 상태가 생긴다.
@@ -52,7 +52,7 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 # 두 번째 줄(`group_nav`)에서 고른다 — `SETTINGS_NAV` 가 이미 하는 일을 세 묶음에 더 쓴다.
 #
 # 묶음을 가르는 기준은 화면 개수가 아니라 파이프라인 단계다 (2026-08-29 결정,
-# `.claude/docs/architecture.md` 의 실행 흐름).
+# `docs/architecture.md` 의 실행 흐름).
 #
 # 처음에는 "수집" 하나에 부가 워크플로우까지 넣었다. 부가 워크플로우(LLM 분류·전달)는
 # 사이트를 가져오는 일이 아니라 이미 가져온 데이터를 가공하는 일이라, 그 자리는 틀렸다 —
@@ -165,7 +165,7 @@ NEXT_STEPS: dict[str, str] = {
 }
 
 
-# 실패 사유를 사람이 읽는 낱말로. 저장값은 그대로 영어다 (`.claude/rules/writing.md`).
+# 실패 사유를 사람이 읽는 낱말로. 저장값은 그대로 영어다 (`../.claude/rules/writing.md`).
 # 사유를 모르는 실패는 `분류 없음` 이다 — 모르는 실패를 아는 실패로 위장하면 그 사이트를
 # 계속 잘못 고치게 된다 (`migrations/0010_run_failures.sql`)
 REASON_WORDS: dict[str, str] = {
@@ -210,7 +210,7 @@ def format_time(value: Any) -> str:
 
     저장된 값은 UTC 그대로 둔다. 바꾸는 것은 화면에 그리는 이 순간뿐이다 —
     `normalized_at` 은 제공 API 의 폴링 커서라 값이 밀리면 소비 측의 커서가 어긋난다
-    (`.claude/docs/api-contract.md`).
+    (`docs/api-contract.md`).
 
     시간대 약칭(`KST`)을 값에 붙인다. 어느 시간대인지 적혀 있지 않으면 UTC 였던 시절의
     9시간 차이를 볼 때마다 다시 의심하게 된다.
@@ -256,7 +256,7 @@ def next_step(reason: str) -> str:
     return NEXT_STEPS.get(reason, "")
 
 
-# 사람이 읽는 자리에는 단어로 적는다. 저장값은 그대로 영어다 (`.claude/rules/writing.md`).
+# 사람이 읽는 자리에는 단어로 적는다. 저장값은 그대로 영어다 (`../.claude/rules/writing.md`).
 # 크롤러 등록 화면과 테스트 실행 화면이 같은 값을 다른 말로 적던 자리라, 매핑을 여기 하나만
 # 두고 모든 템플릿이 쓰게 한다
 MODE_WORDS: dict[str, str] = {STATIC: "정적", PLAYWRIGHT: "렌더"}
@@ -268,7 +268,7 @@ def mode_word(mode: str) -> str:
 
 
 # 크롤러 하나가 어떤 방식으로 도는지를 적는 낱말. 저장값(`static`/`api`/`playwright`)은 그대로
-# 두고 사람이 읽는 자리에만 이 말을 쓴다 (`.claude/tasks/done/fill-body/prd-fill-body.md` 5절).
+# 두고 사람이 읽는 자리에만 이 말을 쓴다 (`../.claude/tasks/done/fill-body/prd-fill-body.md` 5절).
 LIST_WORDS: dict[str, str] = {API: "목록 API", PLAYWRIGHT: "목록 렌더", STATIC: "정적 목록"}
 DETAIL_API_WORD = "상세 API"
 # 항목의 `a[href]` 를 그대로 따라간다

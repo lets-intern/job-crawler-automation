@@ -5,7 +5,7 @@ SSH 와 `docker cp` 로 파일을 밀어 넣게 되고, 그것은 이 서비스�
 
 ## 덮지 않는다. 더한다
 
-`raw_jobs` 는 append-only 다 (`.claude/rules/data-safety.md`). 올린 파일의 내용으로 기존 행을
+`raw_jobs` 는 append-only 다 (`../.claude/rules/data-safety.md`). 올린 파일의 내용으로 기존 행을
 고치지 않는다. 없는 것만 넣고, 있는 것은 건너뛴 건수로만 보고한다.
 
 같은 공고인지는 `content_hash` 가 가른다. 그 값은 `app/crawler/hashing.py` 가 만들고 여기서
@@ -35,7 +35,7 @@ SSH 와 `docker cp` 로 파일을 밀어 넣게 되고, 그것은 이 서비스�
 
 저쪽에서 이미 전달된 행이라도 이 서버의 소비 측은 그것을 받은 적이 없다. 전달 표시를 들여오면
 소비 측이 영영 못 받는 공고가 생긴다. 가져온 행은 전부 미전달로 들어간다. 이 파일에
-`delivered_at` 을 적는 문장이 없는 것이 그 보장이다 (`.claude/rules/data-safety.md`).
+`delivered_at` 을 적는 문장이 없는 것이 그 보장이다 (`../.claude/rules/data-safety.md`).
 
 ## crawl_runs 도 가져오지 않는다
 
@@ -475,7 +475,7 @@ def _merge_llm_settings(conn: sqlite3.Connection, source: sqlite3.Connection) ->
     """AI 제공자 설정을 더한다. 이미 값이 있는 항목은 건드리지 않는다.
 
     **키가 같이 옮겨지는 것은 결정된 사항이다** (2026-08-27,
-    `.claude/tasks/todo/prd-llm-providers.md`). 서버를 옮길 때 키를 다시 넣지 않아도 되는
+    `../.claude/tasks/todo/prd-llm-providers.md`). 서버를 옮길 때 키를 다시 넣지 않아도 되는
     편이 낫다는 판단이고, 그래서 내보내기 화면이
     이 파일에 키가 들어 있다고 알린다.
 
@@ -640,7 +640,7 @@ def _normalize(conn: sqlite3.Connection, raw_ids: list[int]) -> tuple[int, int, 
 
     올린 파일의 `normalized_jobs` 는 읽지 않는다. `delivered_at` 도 쓰지 않는다 — 여기서
     부르는 `insert_normalized` 가 그 컬럼을 적지 않는 것이 그 보장이다
-    (`.claude/rules/data-safety.md`).
+    (`../.claude/rules/data-safety.md`).
     """
     if not raw_ids:
         return 0, 0, []

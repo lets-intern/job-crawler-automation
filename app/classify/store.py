@@ -1,6 +1,6 @@
 """분류 결과를 읽고 쓴다. `job_classifications` 와 `job_field_suggestions` 둘을 건드린다.
 
-`raw_jobs` 는 읽기만 한다 (`.claude/rules/data-safety.md`). 분류는 본문을 읽어 만든 값이라
+`raw_jobs` 는 읽기만 한다 (`../.claude/rules/data-safety.md`). 분류는 본문을 읽어 만든 값이라
 출처를 고칠 이유가 없고, 고치면 분류가 틀렸을 때 되돌릴 원본이 사라진다.
 
 `normalized_jobs` 에도 쓰지 않는다. 그 표를 갱신하는 것은 정규화 경로 하나뿐이고, 분류 결과는
@@ -11,7 +11,7 @@
 
 ## 채우기와 제안이 가는 곳이 다르다
 
-한 번의 호출 응답이 두 갈래로 나간다 (`.claude/tasks/todo/prd-side-workflows.md` 6절).
+한 번의 호출 응답이 두 갈래로 나간다 (`../.claude/tasks/todo/prd-side-workflows.md` 6절).
 비어 있던 칸을 채운 아홉 칸은 지금까지처럼 `save_classification` 이 `job_classifications` 에
 쓰고, 값이 있는 칸(`company`·`deadline`·`start_date`)에 원문이 다른 값을 낸 것은
 `save_suggestions` 가 `job_field_suggestions` 에 쓴다. 이 표는 `app/normalize/engine.py` 의
@@ -36,11 +36,11 @@ _SOURCE_TEXT = "json_extract(r.raw_data_json, '$.source_text')"
 #
 # 폴백이 필수다. 원문은 2026-08-28 부터 수집한 건에만 있고, 그 전에 쌓인 건에는 키가 아예
 # 없다. 원문만 대상으로 삼으면 그 공고들이 분류에서 통째로 사라진다
-# (`.claude/tasks/todo/prd-side-workflows.md` 4절).
+# (`../.claude/tasks/todo/prd-side-workflows.md` 4절).
 #
 # 상세가 API 인 사이트는 앞으로 수집하는 건에도 원문이 없다. 응답 전체는 다른 공고 목록을
 # 담고 본문 경로의 부모 객체도 하나로 정해지지 않아 원문을 뽑지 않기로 했다
-# (`.claude/site-recipes/source-text-container.md`). 그 넷은 계속 본문으로 돈다
+# (`../.claude/site-recipes/source-text-container.md`). 그 넷은 계속 본문으로 돈다
 _CLASSIFY_TEXT = f"coalesce(nullif({_SOURCE_TEXT}, ''), {_BODY}, '')"
 
 
@@ -175,7 +175,7 @@ def pending_ids(conn: sqlite3.Connection, limit: int | None = None) -> list[int]
     대상에서 조용히 빠진다 — 그 건은 보낼 글이 있는데도 영영 분류되지 않는다.
 
     `limit` 은 한 번에 도는 건수의 상한이다. 640건을 한 번에 돌리면 멈출 수가 없다
-    (`.claude/tasks/memos/보류/llm-classify/prd-llm-classify.md`).
+    (`../.claude/tasks/memos/보류/llm-classify/prd-llm-classify.md`).
 
     2026-08-27 에 오래된 것부터에서 최근 것부터로 뒤집었다. 크레딧이 끊겨 313건이 밀려 있는데
     오래된 것부터 돌면 **오늘 들어온 공고가 맨 뒤에 선다.** 소비 측이 지금 필요한 것은 오늘
@@ -199,7 +199,7 @@ def read_source(conn: sqlite3.Connection, raw_job_id: int) -> str:
 
     본문만 읽던 자리다. 원문은 본문에 더해 그 공고의 이름표 값(회사·마감·근무지·경력)을
     담고 있어, 본문만 보내면 그 값들이 어느 칸에도 들어가지 못했다
-    (`.claude/site-recipes/source-text-container.md`).
+    (`../.claude/site-recipes/source-text-container.md`).
 
     둘 다 없으면 빈 문자열이고, 부르는 쪽이 그것을 `empty_body` 로 끝낸다.
     """
@@ -237,7 +237,7 @@ def read_current_values(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, 
 
     빈 문자열인 칸은 결과에 없다. 값이 없다는 것은 비교할 것이 없다는 뜻이지, 빈 문자열과
     다른 값을 제안하라는 뜻이 아니다 — 이 셋은 채우기 대상이 아니라 있는 값을 검사하는
-    대상이다 (`.claude/tasks/todo/prd-side-workflows.md` 6절).
+    대상이다 (`../.claude/tasks/todo/prd-side-workflows.md` 6절).
     """
     columns = ", ".join(f"{sql} AS {name}" for name, sql in _REVIEW_EXTRACTORS.items())
     row = conn.execute(f"SELECT {columns} FROM raw_jobs r WHERE r.id = ?", (raw_job_id,)).fetchone()

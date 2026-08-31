@@ -2,11 +2,11 @@
 
 등록은 리스트 URL 과 상세 URL 을 받아 셀렉터를 생성하고 `crawlers` 행을 `status=draft` 로
 남기는 데까지다. 여기서 워크플로우가 되지는 않는다 — 테스트 실행을 거쳐야 `tested` 가 되고,
-그 다음이 승격이다 (`.claude/docs/data-model.md`).
+그 다음이 승격이다 (`docs/data-model.md`).
 
 생성된 셀렉터는 가설이라 실패한 필드가 있어도 행은 남는다. 실패한 필드 이름을 응답에 실어
 운영자가 그 필드만 손으로 고치게 한다. 손으로 고친 셀렉터를 요청 없이 다시 생성하지 않는다
-(`.claude/rules/llm.md`).
+(`../.claude/rules/llm.md`).
 
 예외는 둘이다. 목록 필드가 전부 0개 매칭이면 정적 HTML 에 목록이 없는 것이고, 항목은 잡혔는데
 그 안의 제목·링크·날짜가 전부 0개면 항목 셀렉터가 목록이 아닌 다른 것을 잡은 것이다. 둘 다 행을
@@ -20,7 +20,7 @@
 삭제는 크롤러 정의만 지운다. 워크플로우로 승격된 크롤러는 거절한다 — 워크플로우와 그 실행
 기록이 매달려 있고, 정의만 사라지면 남은 기록이 누구 것인지 아무도 설명하지 못한다. 수집한
 데이터(`raw_jobs`, `normalized_jobs`)는 크롤러 정의와 수명이 다르므로 함께 지우지 않는다
-(`.claude/rules/data-safety.md`).
+(`../.claude/rules/data-safety.md`).
 
 상세 URL 은 선택이다. 상세를 JS 로 그려서 공고마다 주소가 따로 없는 사이트가 있고, 그런
 사이트에 없는 주소를 지어내 가져오지 않는다. 비우면 목록 페이지만 보고 생성하며, 상세
@@ -28,7 +28,7 @@
 
 `default_company` 는 **모회사 이름이다** (2026-08-29 결정 전에는 "회사명이 페이지에 없는
 사이트를 위한 선택 입력"이었다). 운영자가 타이핑한 값이라 추출 결과가 아니고, 그래서
-`crawlers` 에만 있고 `raw_jobs` 에는 가지 않는다 (`.claude/rules/data-safety.md`). 정규화의
+`crawlers` 에만 있고 `raw_jobs` 에는 가지 않는다 (`../.claude/rules/data-safety.md`). 정규화의
 `parent_company` 가 이 값을 그대로 옮긴다(`app/normalize/engine.py` 의 `read_parent_company`) —
 비어 있으면 크롤러 이름을 대신 쓰던 옛 동작은 더 이상 없다.
 
@@ -277,7 +277,7 @@ class RepairOut(BaseModel):
     `saved` 가 늘 거짓인 것은 자리를 채우려는 필드가 아니다. 이 응답을 읽는 쪽이 "고쳤으니
     반영됐겠지"로 넘어가지 않게 하려는 것이다. `crawlers.selectors_json` 을 바꾸는 경로는
     지금까지처럼 `PUT /api/crawlers/{id}/selectors` 하나뿐이고, 운영자가 전/후를 보고 저장을
-    누른다 (`.claude/rules/llm.md`).
+    누른다 (`../.claude/rules/llm.md`).
 
     `before_matches` 와 `after_matches` 는 **같은 HTML** 에 돌린 판정이다. 그래야 매칭
     개수의 차이가 셀렉터 변화 때문이라고 말할 수 있다.
@@ -374,7 +374,7 @@ def get_generator(
     `render_mode` 가 비어 있으면 등록이 스스로 정한다. 정적으로 먼저 만들어 보고, 정적
     HTML 에 목록이 아예 없으면 렌더한 HTML 로 한 번 더 만든다. **운영자에게 모드를 묻지
     않는다** — 목록 URL 하나로 등록이 끝나야 하고, 정적으로 되는 사이트에 브라우저 값을
-    붙이지도 않는다 (`.claude/rules/crawling.md` 의 "정적이 먼저").
+    붙이지도 않는다 (`../.claude/rules/crawling.md` 의 "정적이 먼저").
 
     값을 주면 그 모드로만 만든다. 운영자가 고른 것을 판정이 덮어쓰지 않는다.
     """
@@ -439,7 +439,7 @@ def get_repairer(
 
     가져오기는 생성과 같은 경로다. HTML 은 어디에도 보관하지 않으므로 고칠 때 다시 가져오고,
     그 요청도 공용 fetch 클라이언트의 딜레이와 robots 아래에서 돈다
-    (`.claude/rules/crawling.md`).
+    (`../.claude/rules/crawling.md`).
 
     제공자는 생성과 따로 고른다. 연결에서 읽는 이유는 생성 쪽과 같다.
     """
@@ -466,7 +466,7 @@ def get_discoverer() -> DiscoverFn:
 
     브라우저는 필요한 순간에만 뜬다. 목록을 정적으로 받아 항목에 상세 주소까지 있으면
     `discover_detail_path()` 가 `open_probe` 를 한 번도 부르지 않고, 그때 Chromium 은
-    실행되지 않는다 (`.claude/rules/crawling.md`).
+    실행되지 않는다 (`../.claude/rules/crawling.md`).
     """
 
     async def discover(list_url: str, selectors: SelectorSet) -> Discovery:
@@ -516,7 +516,7 @@ async def create_crawler(
     try:
         result = await generate(payload.list_url, payload.detail_url, requested)
     except RobotsDisallowedError as exc:
-        # robots 가 막은 URL 은 등록 자체를 거절한다 (`.claude/rules/crawling.md`).
+        # robots 가 막은 URL 은 등록 자체를 거절한다 (`../.claude/rules/crawling.md`).
         raise HTTPException(
             status_code=400, detail={"reason": "robots", "message": str(exc)}
         ) from exc
@@ -581,7 +581,7 @@ async def create_crawler(
     #
     # 운영자가 렌더를 고른 등록은 렌더로 남는다. 정적으로도 목록이 잡히더라도 판정이 그 선택을
     # 내려앉히지 않는다 — 고른 값을 자동 판정이 덮어쓰지 않는다는 규칙이 등록 순간에도 같다
-    # (`.claude/tasks/done/fill-body/prd-fill-body.md` 5절).
+    # (`../.claude/tasks/done/fill-body/prd-fill-body.md` 5절).
     #
     # 목록 API 는 상세 판정이 실패해도 살린다. 그것은 이미 `httpx` 로 다시 불러 확인한
     # 사실이고, 상세로 가는 길을 못 찾았다는 것과 별개다 (`app/selector/list_api.py`).
@@ -717,7 +717,7 @@ async def _fill_detail(
     """알아낸 상세 페이지로 상세 셀렉터만 다시 만든다. 목록 쪽은 이미 만든 것을 쓴다.
 
     실패해도 등록은 계속된다. 상세 셀렉터가 비어 있는 크롤러는 쓸모가 적지만, 목록까지
-    버리면 운영자가 손으로 고칠 대상마저 없어진다 (`.claude/rules/llm.md`).
+    버리면 운영자가 손으로 고칠 대상마저 없어진다 (`../.claude/rules/llm.md`).
     """
     try:
         second = await generate(list_url, detail_url, render_mode)
@@ -843,7 +843,7 @@ def update_render_mode(
 
     바꾼다고 셀렉터가 다시 생성되지는 않는다. 정적으로 만든 셀렉터는 렌더된 DOM 과 다를 수
     있으므로, 올린 뒤에는 테스트 실행으로 다시 확인하는 것이 순서다
-    (`.claude/skills/crawl-test/SKILL.md`).
+    (`../.claude/skills/crawl-test/SKILL.md`).
     """
     row = conn.execute("SELECT id FROM crawlers WHERE id = ?", (crawler_id,)).fetchone()
     if row is None:
@@ -951,7 +951,7 @@ def update_company(
     흐름까지 막는다 (`app/api/ui_crawlers.py` 가 등록 시점에 이미 걸러낸다).
 
     이 값은 `normalized_jobs` 에 즉시 반영되지 않는다. 고친 뒤 재정규화를 돌려야 새 값이
-    반영된 행이 나온다 (`.claude/tasks/done/job-crawler/tasks-job-crawler-push7.md`).
+    반영된 행이 나온다 (`../.claude/tasks/done/job-crawler/tasks-job-crawler-push7.md`).
     """
     row = conn.execute("SELECT id FROM crawlers WHERE id = ?", (crawler_id,)).fetchone()
     if row is None:
@@ -977,7 +977,7 @@ def delete_crawler(
 
     함께 지우는 것은 승격 전 테스트 실행 기록뿐이다. 그 행은 이 크롤러 하나만 가리키고 있어
     정의가 없으면 읽을 수 없다. 수집한 공고(`raw_jobs`, `normalized_jobs`)는 워크플로우에
-    매달려 있고 크롤러 정의와 수명이 다르므로 건드리지 않는다 (`.claude/rules/data-safety.md`).
+    매달려 있고 크롤러 정의와 수명이 다르므로 건드리지 않는다 (`../.claude/rules/data-safety.md`).
     """
     row = conn.execute(
         "SELECT id, name, status FROM crawlers WHERE id = ?", (crawler_id,)
@@ -1093,7 +1093,7 @@ async def repair_selectors(
     같은 HTML 에서 나온 숫자여야 차이가 셀렉터 때문이라고 말할 수 있다.
 
     결과는 응답으로만 나간다. `crawlers.selectors_json` 은 이 호출로 바뀌지 않는다. 운영자가
-    전/후를 보고 "셀렉터 저장" 을 누르는 것이 `.claude/rules/llm.md` 가 말하는 그 요청이고,
+    전/후를 보고 "셀렉터 저장" 을 누르는 것이 `../.claude/rules/llm.md` 가 말하는 그 요청이고,
     누르기 전까지 DB 는 그대로다.
 
     고친 뒤에도 실패가 남으면 `unresolved` 에 그대로 적는다. 억지로 성공으로 만들지 않는다.
@@ -1192,7 +1192,7 @@ async def test_run(
     """저장된 셀렉터로 실제 페이지를 1회 크롤링한다.
 
     `limit` 은 상세를 몇 건까지 따라갈지다. 테스트는 3건이면 충분하고, 전체를 도는 것은
-    테스트가 아니라 그냥 크롤링이다 (`.claude/skills/crawl-test/SKILL.md`).
+    테스트가 아니라 그냥 크롤링이다 (`../.claude/skills/crawl-test/SKILL.md`).
 
     `render_mode` 는 이번 한 번만 다른 경로로 시험하는 값이다. 비우면 저장된 모드로 돈다.
     값을 줘도 저장된 모드(`crawlers.list_mode` 와 `detail_mode`)는 바뀌지 않는다 — 정적으로

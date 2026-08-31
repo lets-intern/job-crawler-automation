@@ -12,7 +12,7 @@ DB 가 이긴다 (`app/settings.py` 와 같은 규칙). 읽기는 예외를 던�
 하나가 분류를 통째로 멈추게 둘 수 없다. 쓰기는 반대로 깐깐하다.
 
 **키가 없는 제공자를 기능에 지정하면 거절한다.** 조용히 다른 제공자로 넘어가지 않는다
-(`.claude/rules/llm.md`).
+(`../.claude/rules/llm.md`).
 
 값을 화면에 다시 그리지 않는다. 내보내는 것은 있음·없음과 끝 네 자리뿐이다.
 """
@@ -36,7 +36,7 @@ PROVIDER_PREFIX = "llm_provider_"
 MODEL_PREFIX = "llm_model_"
 
 # 화면에 보이는 자릿수. 이보다 짧거나 같은 값은 전부 가린다 — 네 자리 키의 끝 네 자리는
-# 그 키 전체다 (`.claude/tasks/todo/prd-llm-providers.md` 4번)
+# 그 키 전체다 (`../.claude/tasks/todo/prd-llm-providers.md` 4번)
 TAIL = 4
 
 # 기능을 사람이 읽는 이름으로. 화면이 이 낱말을 그대로 쓴다
@@ -217,7 +217,7 @@ async def list_models(
 
     **목록을 못 받는 것이 저장을 막지 않는다.** 사유만 적고 빈 목록을 돌려준다 — 운영자는
     모델 이름을 손으로 적으면 되고, 목록은 편의다. 모델 ID 를 소스에 적지 않으려고 물어보는
-    것이라 (`.claude/rules/llm.md`) 못 받았다고 적어 둔 값으로 대신하지 않는다.
+    것이라 (`../.claude/rules/llm.md`) 못 받았다고 적어 둔 값으로 대신하지 않는다.
     """
     entry = _entry(provider)
     if entry.list_models is None:

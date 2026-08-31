@@ -107,7 +107,7 @@ def import_upload_fragment(
     병합도 파일을 여러 번 연다.
 
     새 워크플로우가 들어왔으면 스케줄러에 알린다. `workflows` 테이블이 진실이고 잡은 그것을
-    따라간다 (`.claude/rules/crawling.md`). 다음 기동까지 기다리면 방금 가져온 워크플로우가
+    따라간다 (`../.claude/rules/crawling.md`). 다음 기동까지 기다리면 방금 가져온 워크플로우가
     도는지 화면에서 확인할 방법이 없다.
     """
     with tempfile.TemporaryDirectory(prefix="import-") as workspace:

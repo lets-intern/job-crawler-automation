@@ -2,10 +2,10 @@
 
 주소 형식을 우리가 만들지 않는다. `endpoint_url` 이 있으면 `엔드포인트/버킷/키` 로,
 비어 있으면 SDK 가 지역으로 `버킷.s3.지역.amazonaws.com/키` 를 만든다. 운영자가 고를 값이
-아니다 (`.claude/tasks/todo/prd-fields-and-logo.md` 5장).
+아니다 (`../.claude/tasks/todo/prd-fields-and-logo.md` 5장).
 
 공용 fetch 클라이언트를 지나지 않는 두 번째 자리다. 우리가 올린 객체만 만지므로 robots 를
-물을 상대가 아니고 지킬 딜레이도 없다 (`.claude/rules/crawling.md`, 2026-08-28).
+물을 상대가 아니고 지킬 딜레이도 없다 (`../.claude/rules/crawling.md`, 2026-08-28).
 
 받는 것은 이미지뿐이고 크기 상한이 있다. 어느 형식인지는 파일 이름이 아니라 앞 몇 바이트로
 정한다 — `.png` 로 이름만 바꾼 실행 파일이 우리 도메인에서 서비스되게 두지 않는다.

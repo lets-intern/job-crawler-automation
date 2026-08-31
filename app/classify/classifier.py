@@ -1,7 +1,7 @@
 """공고 하나를 아홉 칸으로 나눈다.
 
 수집은 어느 사이트나 확실히 주는 여섯 칸만 한다. 나머지를 나누는 것은 공고를 읽는 이쪽 일이다
-(`.claude/tasks/memos/보류/llm-classify/prd-llm-classify.md`).
+(`../.claude/tasks/memos/보류/llm-classify/prd-llm-classify.md`).
 
 ## 칸이 두 가지다
 
@@ -20,7 +20,7 @@
 
 **근거가 없는 것은 빈 칸이다.** 모델이 그럴듯하게 채우면 소비 측이 그것을 사실로 노출한다.
 받은 값은 `app/classify/grounding.py` 가 그 자리에서 제목과 본문에 돌려 보고, 근거를 못 찾은
-칸은 버리고 `dropped` 에 이름을 남긴다 (`.claude/rules/llm.md`).
+칸은 버리고 `dropped` 에 이름을 남긴다 (`../.claude/rules/llm.md`).
 
 **보내는 것은 제목과 상세 원문뿐이고 상한이 있다.** 원본 HTML 도 페이지도 보내지 않는다.
 원문이 없는 건은 본문으로 떨어진다 (`app/classify/store.py`). 상한을 넘으면 잘라 보내고 그
@@ -32,7 +32,7 @@
 **이미 값이 있는 칸은 채우지 않고 제안한다.** 수집이 채우는 여섯 칸 중 `company`·`deadline`·
 `start_date` 셋은 값이 있으면 아무리 근거가 있어도 그 자리에서 덮지 않는다 — `deadline` 은
 마감 지난 공고를 거르고 `company` 는 계열사를 가르는 값이라 모델 판단 하나로 바뀌면 안 된다
-(`.claude/tasks/todo/prd-side-workflows.md` 6절). 대신 `ClassificationResult.suggestions` 로
+(`../.claude/tasks/todo/prd-side-workflows.md` 6절). 대신 `ClassificationResult.suggestions` 로
 나가고, 저장은 `job_field_suggestions` 하나뿐이다 — 사람이 검수 화면에서 수락해야 값이
 바뀐다.
 
@@ -72,7 +72,7 @@ logger = logging.getLogger(__name__)
 # `llm_calls.feature` 와 로그에 같이 쓰는 이름
 FEATURE = "classify"
 
-# 깨진 응답에 한해 한 번 더. 2회를 넘기지 않는다 (`.claude/rules/llm.md`).
+# 깨진 응답에 한해 한 번 더. 2회를 넘기지 않는다 (`../.claude/rules/llm.md`).
 MAX_ATTEMPTS = 2
 
 # 한 번에 보내는 글의 상한. 상한이 없으면 사이트 하나가 페이지 전체를 담기 시작한 날 그것이
@@ -81,7 +81,7 @@ MAX_ATTEMPTS = 2
 # 보내는 값이 본문에서 상세 원문으로 바뀌어(Push 9) 2026-08-28 에 다시 쟀고, **그대로 둔다.**
 # 열한 픽스처에서 원문이 가장 긴 곳이 토스 10,312자이고 그다음이 네이버 3,872자다. 일곱 곳
 # 전부 지금 상한 안이라 원문 때문에 잘리는 건이 없다 — 올릴 근거가 측정에 없다
-# (`.claude/site-recipes/source-text-container.md`).
+# (`../.claude/site-recipes/source-text-container.md`).
 #
 # 상한을 넘는 것은 원문이 아니라 LG 의 본문 38,019자다. LG 는 상세가 API 라 원문을 뽑지
 # 않아 이 값은 Push 9 로 달라지지 않았고, 그 하나를 위해 상한을 세 배로 올리는 것은 그 뒤가
@@ -158,7 +158,7 @@ class ClassifyError(RuntimeError):
     | `empty_body` | 나눌 본문이 없다. 모델을 부르지 않는다 |
 
     어느 것도 수집을 실패로 만들지 않는다. 본문은 `raw_jobs` 에 그대로 있고 나중에 다시
-    돌릴 수 있다 (`.claude/tasks/memos/보류/llm-classify/prd-llm-classify.md`).
+    돌릴 수 있다 (`../.claude/tasks/memos/보류/llm-classify/prd-llm-classify.md`).
     """
 
     def __init__(self, reason: str, message: str) -> None:
@@ -199,7 +199,7 @@ def build_client(settings: Settings | None = None) -> Any:
     """분류가 고른 제공자의 클라이언트. API 키는 설정에서만 온다.
 
     **키가 없으면 여기서 선다.** 다른 제공자로 넘어가지 않는다 — 조용히 넘어가면 비용
-    기록이 거짓말이 된다 (`.claude/rules/llm.md`).
+    기록이 거짓말이 된다 (`../.claude/rules/llm.md`).
     """
     resolved = settings or get_settings()
     try:
@@ -342,7 +342,7 @@ def _extract_suggestions(
             continue
         if missing_lines(value, source):
             # 근거 검사를 제안에도 그대로 건다. 원문에서 찾지 못한 값은 제안이 되지 않는다
-            # (`.claude/rules/llm.md`)
+            # (`../.claude/rules/llm.md`)
             continue
         suggestions[name] = value
         reasons[name] = fields.get(suggestion_reason_field(name), "").strip()

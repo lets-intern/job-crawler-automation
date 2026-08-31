@@ -211,7 +211,7 @@ def test_상세_URL_을_주면_건너뛰지_않는다(
 def test_화면_결과에_건너뜀_이_단어로_나온다(
     client: TestClient, conn: sqlite3.Connection, called_with: list[tuple[str, str]]
 ) -> None:
-    """실패로 적으면 운영자는 고칠 곳으로 읽는다 (`.claude/rules/writing.md`)."""
+    """실패로 적으면 운영자는 고칠 곳으로 읽는다 (`../.claude/rules/writing.md`)."""
     stub_discoverer(found=False)
     html = client.post(
         "/ui/crawlers", data={"list_url": LIST_URL, "default_company": "테스트"}
@@ -273,7 +273,7 @@ def stub_discoverer(found: bool = True) -> None:
 
     등록은 셀렉터 생성 다음에 상세로 가는 길을 알아본다 (`app/api/crawlers.py` 의
     `create_crawler`). 여기서 갈아끼우지 않으면 이 테스트가 네트워크에 매달린다
-    (`.claude/rules/core.md`).
+    (`../.claude/rules/core.md`).
 
     `found` 가 거짓이면 상세로 가는 길을 못 찾은 사이트다. 그때는 볼 페이지가 없어 상세
     셀렉터가 판정되지 않는다.

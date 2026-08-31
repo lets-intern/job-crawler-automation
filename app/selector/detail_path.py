@@ -12,13 +12,13 @@
 
 그래서 항목에서 번호가 될 만한 값을 먼저 모은다 — 링크의 마지막 경로 조각, 링크의 쿼리 값,
 항목의 `data-` 속성. 삼성은 `a[data-value="22,878"]` 이고 쉼표를 뺀 `22878` 이 실제 번호다
-(`.claude/site-recipes/www-samsungcareers-com.md`).
+(`../.claude/site-recipes/www-samsungcareers-com.md`).
 
 ## 만드는 것은 제안이다
 
 필드 경로는 응답에 실제로 있는 자리 중에서 이름이 비슷한 것을 고른 것이다. 맞는지는 운영자가
 본다. **응답에 없는 경로를 지어내지 않는다** — 못 찾은 필드는 비운 채로 두고 이름을 적는다
-(`.claude/rules/llm.md` 의 "제안자이지 권위가 아니다" 와 같은 자리다).
+(`../.claude/rules/llm.md` 의 "제안자이지 권위가 아니다" 와 같은 자리다).
 
 만든 설정은 돌려주기 전에 `validate_api_config()` 를 지난다. 검증을 통과하지 못하는 설정을
 제안으로 내놓으면 운영자가 저장 버튼을 누를 때 처음 알게 된다.
@@ -459,7 +459,7 @@ async def confirm_document_path(client: FetchPolicy, url: str, marker: str) -> C
 
     같으면 상세를 `static` 으로 둘 수 있다는 뜻이다. 없으면 그 페이지가 JS 로 그려지는
     것이므로 채택하지 않고, 상세를 렌더로 둘지는 운영자가 정한다
-    (`.claude/rules/crawling.md` 의 "정적이 먼저, 렌더는 사이트별 승격").
+    (`../.claude/rules/crawling.md` 의 "정적이 먼저, 렌더는 사이트별 승격").
     """
     if not marker.strip():
         return Confirmation(adopted=False, reason="대조할 제목이 없다. 확인할 것이 없다")

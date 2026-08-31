@@ -1,8 +1,8 @@
 """제공 API 계약 문서와 실제 응답 키의 대조 (5.4.V).
 
-`.claude/docs/api-contract.md` 는 응답 예시를 JSON 코드 블록으로 싣는다. 구현이 필드를
+`docs/api-contract.md` 는 응답 예시를 JSON 코드 블록으로 싣는다. 구현이 필드를
 더하거나 뺄 때 이 파일을 고치지 않으면 문서와 실제 응답이 조용히 갈린다
-(`.claude/rules/data-safety.md`, `.claude/docs/api-contract.md` 1절 "한 커밋에서 같이 고친다").
+(`../.claude/rules/data-safety.md`, `docs/api-contract.md` 1절 "한 커밋에서 같이 고친다").
 
 실사이트에 나가지 않는다. 문서를 읽고, 시드 하나를 넣어 실제 응답과 견준다.
 
@@ -27,7 +27,7 @@ from app import db
 from app.api import jobs as jobs_api
 from app.main import app
 
-DOC_PATH = pathlib.Path(__file__).resolve().parent.parent / ".claude" / "docs" / "api-contract.md"
+DOC_PATH = pathlib.Path(__file__).resolve().parent.parent / "docs" / "api-contract.md"
 
 # "## 조회" 절 아래, 응답 예시로 실린 첫 JSON 코드 블록
 RESPONSE_EXAMPLE = re.compile(r"## 조회.*?```json\s*(\{.*?\})\s*```", re.DOTALL)

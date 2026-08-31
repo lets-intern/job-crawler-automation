@@ -1,17 +1,17 @@
 """받은 값에 원문의 근거가 있는지 그 자리에서 본다.
 
-`.claude/rules/llm.md` 는 모델이 낸 것을 그 자리에서 돌려 보라고 한다. 셀렉터는 HTML 에
+`../.claude/rules/llm.md` 는 모델이 낸 것을 그 자리에서 돌려 보라고 한다. 셀렉터는 HTML 에
 돌려 보면 되지만 분류에는 돌릴 것이 없다 — 대신 **원문에 근거가 있는지** 를 본다.
 
 근거가 없는 칸은 버린다. 지어낸 값은 소비 측이 그대로 사실로 노출하고, 빈 칸보다 나쁘다
-(`.claude/tasks/memos/보류/llm-classify/prd-llm-classify.md`).
+(`../.claude/tasks/memos/보류/llm-classify/prd-llm-classify.md`).
 
 ## 돌려 보는 곳은 제목과 모델에게 보낸 글이다
 
 **분류에 보낸 그 값에 그대로 돌려 본다.** 보낸 것은 상세 원문이고, 원문이 없는 건에서만
 본문이다 (`app/classify/store.py`). 둘이 어긋나면 — 원문을 보내 놓고 본문에 돌려 보면 —
 본문 밖의 이름표 값에서 옳게 뽑은 칸이 통째로 버려진다. 근무지와 고용형태가 그 자리다
-(`.claude/site-recipes/source-text-container.md`).
+(`../.claude/site-recipes/source-text-container.md`).
 
 제목은 별도로 더한다. 본문만이었다가 직무가 들어오면서 더해졌다 — `job_role` 은 제목에서
 옮기는 값이라 본문에만 돌려 보면 **맞게 뽑은 값이 통째로 버려진다.** 2026-08-28 에 열한

@@ -1,7 +1,7 @@
 -- 직무 칸을 더한다.
 --
 -- 0016 이 지운 부서·직군·모집인원 자리에 들어가는 칸이다
--- (`.claude/tasks/todo/prd-fields-and-logo.md`). **뽑는 칸이지 판정 칸이 아니다** — 직군은
+-- (`../.claude/tasks/todo/prd-fields-and-logo.md`). **뽑는 칸이지 판정 칸이 아니다** — 직군은
 -- 닫힌 목록 열다섯 개였고, 직무는 제목에 적힌 글자를 그대로 옮기는 자유 텍스트다. 목록을
 -- 만들지 않는다. 소비 측이 이 칸으로 거를 수 없다는 것은 PRD 가 아는 값이다.
 --
@@ -36,7 +36,7 @@
 -- 되돌리기: `migrate down` 이 컬럼 둘을 지우고 CHECK 를 0012 의 열여섯으로 되돌린다.
 -- **사라지는 것은 직무 값과 직무에 걸린 보정 행뿐이다.** `raw_jobs` 는 어느 방향으로도
 -- 건드리지 않으므로, 되돌린 뒤 값이 다시 필요하면 재크롤링 없이 다시 분류하면 된다 —
--- 공고당 모델 호출 하나다 (`.claude/rules/data-safety.md`). 역적용 전에 사람이 고친 직무가
+-- 공고당 모델 호출 하나다 (`../.claude/rules/data-safety.md`). 역적용 전에 사람이 고친 직무가
 -- 필요하면 뽑아 둔다:
 --
 --     SELECT * FROM job_field_overrides WHERE field_name = 'job_role';

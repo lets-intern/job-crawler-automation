@@ -2,7 +2,7 @@
 --
 -- LG 상세 API 가 `detailContext`, `requiredItem` 을 HTML 조각으로 준다. 수집 단계에서
 -- 태그를 지우면 `raw_jobs` 가 원본이 아니게 되므로 정규화가 편다
--- (`.claude/rules/data-safety.md`). `rule_type` 의 CHECK 가 네 가지만 허용하고 있어서
+-- (`../.claude/rules/data-safety.md`). `rule_type` 의 CHECK 가 네 가지만 허용하고 있어서
 -- 새 타입의 규칙은 저장 자체가 되지 않는다.
 --
 -- SQLite 는 CHECK 제약만 따로 고치지 못한다. 테이블을 지웠다 다시 만드는 대신 0008 과

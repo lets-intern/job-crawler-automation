@@ -1,6 +1,6 @@
 """제공 API. 채용공고 사이트(별도 서비스)가 정규화된 데이터를 가져가는 경계면이다.
 
-응답의 필드·타입·모양은 `.claude/docs/api-contract.md` 가 정한다. 이 파일과 그 문서는 같은
+응답의 필드·타입·모양은 `docs/api-contract.md` 가 정한다. 이 파일과 그 문서는 같은
 커밋에서 바뀐다 — 어긋나면 소비 측이 조용히 데이터를 못 받는다.
 
 커서 기반이다. 오프셋으로 만들면 폴링 사이에 삽입된 행이 앞 페이지를 밀어내서, 소비 측이
@@ -52,7 +52,7 @@ class JobOut(BaseModel):
     `headcount` 를 뺐다. 0017 이 `job_role` 을 더했다 — 지운 직군과 달리 닫힌 목록이 아니라
     제목에서 옮기는 자유 텍스트라 **소비 측이 이 필드로 거를 수 없다.** 셋을 지운 것도 이
     필드를 더한 것도 소비 측이 아직 붙지 않은 동안에만 할 수 있는 일이다
-    (`.claude/docs/api-contract.md`).
+    (`docs/api-contract.md`).
 
     0018 이 회사명을 두 칸으로 갈랐다. `parent_company` 는 그 채용 사이트를 운영하는 기업이고
     거의 언제나 값이 있다. `company` 는 그 공고가 말한 계열사이고, 계열사를 말하지 않는
@@ -62,7 +62,7 @@ class JobOut(BaseModel):
     0025 가 `job_major`/`job_minor` 를 더했다 — `job_role` 과 달리 셀렉터가 뽑는 자유
     텍스트가 아니라 분류가 `job_taxonomy`(운영자가 어드민에서 바꾸는 표)에서 골라 채우는
     닫힌 값이다. 아직 분류를 돌리지 않았거나 본문으로 판단이 갈리지 않으면 `null` 이다
-    (`.claude/docs/api-contract.md`).
+    (`docs/api-contract.md`).
 
     사이트가 그 값을 주지 않으면 `null` 이다. 없는 값을 다른 값으로 채우지 않는다.
     """
@@ -243,7 +243,7 @@ def mark_delivered(
 ) -> DeliveredOut:
     """소비 측이 가져간 건에 `delivered_at` 을 찍는다.
 
-    **이 경로만 `delivered_at` 을 쓴다** (`.claude/rules/data-safety.md`). 크롤링·재정규화·수동
+    **이 경로만 `delivered_at` 을 쓴다** (`../.claude/rules/data-safety.md`). 크롤링·재정규화·수동
     수정은 이 컬럼을 건드리지 않는다.
 
     이미 찍힌 건은 덮어쓰지 않는다. 시각을 다시 쓰면 "언제 넘어갔는가" 가 마지막 폴링 시각으로

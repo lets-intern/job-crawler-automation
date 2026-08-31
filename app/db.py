@@ -1,7 +1,7 @@
 """SQLite 연결과 마이그레이션 러너.
 
 스키마는 `migrations/` 의 파일로만 바뀐다. DB 파일을 지우고 새로 만드는 경로는 두지 않는다
-(`.claude/rules/data-safety.md`).
+(`../.claude/rules/data-safety.md`).
 """
 
 from __future__ import annotations

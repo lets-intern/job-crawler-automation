@@ -1,6 +1,6 @@
 """Gemini API 로 셀렉터를 생성한다.
 
-`.claude/rules/llm.md` 가 정한 것을 그대로 담는다.
+`../.claude/rules/llm.md` 가 정한 것을 그대로 담는다.
 
 - 보내는 것은 정제·샘플링된 HTML 뿐이다. 원본 페이지를 그대로 싣지 않는다
 - 응답은 셀렉터 JSON 스키마로 강제하고, 받은 뒤에도 다시 검증한다
@@ -12,7 +12,7 @@
 프롬프트, 응답 스키마, 자체 검증 — 만 갖고, **어느 제공자인지 모른다.** 기능마다 다른
 제공자를 고를 수 있고 그 선택은 설정이 정한다 (`app/llm/providers.py`).
 
-페이지를 가져오는 것은 공용 fetch 클라이언트다 (`.claude/rules/crawling.md`).
+페이지를 가져오는 것은 공용 fetch 클라이언트다 (`../.claude/rules/crawling.md`).
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ from app.selector.verify import VerificationReport, verify_selectors
 
 logger = logging.getLogger(__name__)
 
-# 깨진 응답에 한해 한 번 더. 2회를 넘기지 않는다 (`.claude/rules/llm.md`).
+# 깨진 응답에 한해 한 번 더. 2회를 넘기지 않는다 (`../.claude/rules/llm.md`).
 MAX_ATTEMPTS = 2
 
 _SYSTEM_INSTRUCTION = (
@@ -110,7 +110,7 @@ class GenerationResult:
 
     0개 매칭 필드가 있어도 예외를 던지지 않는다. 셀렉터 전체를 버리는 대신 실패한 필드 이름을
     운영자에게 보여 주는 편이 낫다 — 손으로 그 필드만 고치는 것이 첫 수단이다
-    (`.claude/rules/llm.md`).
+    (`../.claude/rules/llm.md`).
     """
 
     selectors: SelectorSet
@@ -192,7 +192,7 @@ async def generate_from_html(
                 # 스키마에 없는 필드를 지어냈다. 무엇이었을지 추측하지 않는다.
                 raise SelectorGenerationError(exc.reason, str(exc)) from exc
             # `unparsable` 은 모양이 깨진 것, `missing_field` 는 내용이 모자란 것이다.
-            # 둘 다 한 번 더 물어본다 (`.claude/rules/llm.md` 의 "깨진 응답만 1회").
+            # 둘 다 한 번 더 물어본다 (`../.claude/rules/llm.md` 의 "깨진 응답만 1회").
             last_error = exc
             continue
 
@@ -220,7 +220,7 @@ async def generate_from_html(
 
     if last_error.reason == "missing_field" and last_text is not None:
         # 모양은 맞는데 필드가 비어 있다. 통째로 버리면 운영자가 손으로 고칠 대상조차 없다.
-        # 빈 채로 draft 에 저장하고 어느 자리가 비었는지 알린다 (`.claude/rules/llm.md`).
+        # 빈 채로 draft 에 저장하고 어느 자리가 비었는지 알린다 (`../.claude/rules/llm.md`).
         selectors, empty_fields = parse_selectors_allowing_empty(last_text)
         narrowing = narrow_item_selector(selectors, list_html)
         selectors = narrowing.selectors
@@ -320,7 +320,7 @@ async def call_model(
 def _notes(
     cleaned_list: CleanedHtml, cleaned_detail: CleanedHtml, narrowing: Narrowing | None = None
 ) -> list[str]:
-    """입력을 좁혔거나 잘랐으면 응답에 남긴다 (`.claude/rules/llm.md`).
+    """입력을 좁혔거나 잘랐으면 응답에 남긴다 (`../.claude/rules/llm.md`).
 
     항목 셀렉터를 좁힌 것도 같이 적는다. 모델이 낸 것과 저장되는 것이 다르면 그 사실이
     운영자에게 보여야 한다.

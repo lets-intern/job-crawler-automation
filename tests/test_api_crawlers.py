@@ -668,7 +668,7 @@ def stub_discoverer() -> None:
 
     등록은 셀렉터 생성 다음에 상세로 가는 길을 알아본다 (`app/api/crawlers.py` 의
     `create_crawler`). 여기서 갈아끼우지 않으면 이 테스트가 네트워크에 매달린다
-    (`.claude/rules/core.md`).
+    (`../.claude/rules/core.md`).
     """
 
     async def discover(list_url: str, selectors: SelectorSet) -> Discovery:

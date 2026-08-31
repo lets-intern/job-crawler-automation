@@ -1,13 +1,15 @@
-@.claude/rules/core.md
+@../.claude/rules/core.md
 
 # Repository Guide
 
 A crawling automation backend. LLM generates the CSS selectors, a test run proves them, a workflow
 runs them on a schedule, and the normalized result is served to a separate job board over REST.
 
-Not a job board. `.claude/rules/core.md` states what follows from that.
+Not a job board. `../.claude/rules/core.md` states what follows from that.
 
-Everything Claude Code needs lives under `.claude/`. The rules that constrain behaviour are imported
+`.claude/` is shared across the `ogonggo/` workspace and lives one level up, at `../.claude/`
+(`ogonggo/.claude/`). Run Claude Code from the workspace root so it is picked up. Only this
+project's own documentation, `docs/`, stays local — the rules that constrain behaviour are imported
 above; this file is the map that says where to look for the rest.
 
 ## The pipeline
@@ -18,13 +20,21 @@ URL 입력 → 셀렉터 생성(LLM) → 테스트 실행 → 워크플로우 �
                                         raw_jobs → 정규화 → normalized_jobs → 제공 API
 ```
 
-Each stage fails independently and says which one failed. `.claude/docs/architecture.md` has the
+Each stage fails independently and says which one failed. `docs/architecture.md` has the
 detail.
 
 ## Layout
 
 ```
-.claude/
+docs/                          Project documentation (Korean), local to this repo
+├── README.md                  Index
+├── architecture.md            Structure, pipeline stages, folder layout
+├── data-model.md              Tables, content hash, state transitions
+├── api-contract.md             The delivery API the job board consumes
+├── tech-stack.md               What is used, and what is deliberately not
+└── ocr-benchmark.md            Measured cost of the four collection paths
+
+../.claude/                    Shared across the ogonggo/ workspace (ogonggo/.claude/)
 ├── rules/                    Constraints. One owner per rule; agents reference by path
 │   ├── core.md               Main constraints, imported by this file
 │   ├── crawling.md           One fetch client, politeness, failure classes, scheduling
@@ -64,14 +74,6 @@ detail.
 │   ├── check-tasks.sh        Keeps a task-runner session going
 │   └── inject-task-context.sh Restores task progress after compaction
 │
-├── docs/                     Project documentation (Korean)
-│   ├── README.md             Index
-│   ├── architecture.md       Structure, pipeline stages, folder layout
-│   ├── data-model.md         Tables, content hash, state transitions
-│   ├── api-contract.md       The delivery API the job board consumes
-│   ├── tech-stack.md         What is used, and what is deliberately not
-│   └── ocr-benchmark.md      Measured cost of the four collection paths
-│
 ├── site-recipes/             One file per site: rendering, pagination, past failures
 ├── troubleshooting/          Open or unexplained issues
 ├── dev-records/              Handover records
@@ -104,7 +106,8 @@ detail.
 | Something learned about one site | `skills/site-recipe/SKILL.md` |
 | Unexplained or open issue | `troubleshooting/README.md` |
 
-All paths above are relative to `.claude/`.
+`docs/` is relative to this project's root. Everything else in the tree above is relative to the
+shared `../.claude/` (`ogonggo/.claude/`).
 
 ## Two things that are easy to get wrong
 

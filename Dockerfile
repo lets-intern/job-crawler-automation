@@ -1,4 +1,4 @@
-# 컨테이너 하나, 프로세스 하나 (.claude/docs/architecture.md "프로세스 구성").
+# 컨테이너 하나, 프로세스 하나 (docs/architecture.md "프로세스 구성").
 # Node 나 프런트엔드 빌드 단계는 넣지 않는다. Chromium 은 render_mode=playwright 인
 # 크롤러만 쓰고, 그 사이트들은 정적 fetch 로 목록이 오지 않는 것이 실측으로 확인됐다
 # (seeds/sample-sites.json).
@@ -22,7 +22,7 @@ RUN python -c "import tomllib, pathlib; deps = tomllib.loads(pathlib.Path('pypro
     && rm requirements.txt
 
 # Chromium 과 그것이 필요로 하는 시스템 라이브러리. 이미지가 크게 무거워지는 단계라 따로
-# 둔다 (측정값은 .claude/tasks/todo/tasks-job-crawler-push11.md).
+# 둔다 (측정값은 ../.claude/tasks/todo/tasks-job-crawler-push11.md).
 RUN playwright install --with-deps chromium \
     && rm -rf /var/lib/apt/lists/*
 

@@ -32,7 +32,7 @@ CLICK_BASE = "ntfy_click_base"
 KEYS: tuple[str, ...] = (ENABLED, SERVER_URL, TOPIC, PRIORITY, MIN_NEW_COUNT, CLICK_BASE)
 
 # 2026-08-25 에 200 을 주는 것을 확인한 주소다
-# (`.claude/tasks/done/ntfy-notify/tasks-ntfy-notify.md`).
+# (`../.claude/tasks/done/ntfy-notify/tasks-ntfy-notify.md`).
 # 기본값으로 넣어 두되 `enabled` 는 꺼진 채로 둔다 — 주소가 맞다는 것과 보내도 된다는 것은
 # 다른 이야기라서, 켜는 것은 운영자가 화면에서 한다
 DEFAULT_SERVER_URL = "https://ntfy.supabin.com"

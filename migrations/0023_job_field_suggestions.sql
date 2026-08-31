@@ -3,7 +3,7 @@
 -- PRD 6절이 세 상황을 가른다 — 칸이 비어 있고 원문에 값이 있으면 채우고(`job_classifications`
 -- 로, 지금 경로 그대로), 칸에 값이 있는데 원문과 다르면 이 표에 제안으로 남기고, 원문에도
 -- 없으면 빈 칸으로 둔다. 값이 있는 칸을 모델 판단 하나로 덮지 않는 이유는
--- `.claude/tasks/todo/prd-side-workflows.md` 6절에 있다 — `deadline` 은 마감 지난 공고를
+-- `../.claude/tasks/todo/prd-side-workflows.md` 6절에 있다 — `deadline` 은 마감 지난 공고를
 -- 거르는 데 쓰이고 `company` 는 계열사를 가르는 값이라, 이 둘이 본문 판독 하나로 바뀌면 안
 -- 된다.
 --
@@ -38,7 +38,7 @@
 --
 -- `app/normalize/engine.py` 의 어느 경로도 이 표를 참조하지 않는다. 제안은 사람이 검수 화면에서
 -- 수락해야만 `job_field_overrides` 로 옮겨 가고, 그 전까지는 `raw_jobs` 도 `normalized_jobs` 도
--- 이 표의 존재를 모른다 (PRD 6절, `.claude/rules/llm.md` — 모델은 제안자이지 권위가 아니다).
+-- 이 표의 존재를 모른다 (PRD 6절, `../.claude/rules/llm.md` — 모델은 제안자이지 권위가 아니다).
 --
 -- 되돌리기: 테이블을 지운다. 사라지는 것은 아직 수락하지 않은 제안뿐이다. 수락된 제안은 이미
 -- `job_field_overrides` 에 옮겨져 있으므로 영향받지 않는다.

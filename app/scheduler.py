@@ -1,7 +1,7 @@
 """APScheduler 등록과 갱신.
 
 `workflows` 테이블이 진실이다. 스케줄러가 들고 있는 잡 목록은 테이블의 사본일 뿐이고, 둘이
-어긋나면 테이블 쪽으로 맞춘다 (`.claude/rules/crawling.md`).
+어긋나면 테이블 쪽으로 맞춘다 (`../.claude/rules/crawling.md`).
 
 그래서 등록도 갱신도 `sync()` 하나로 한다. 기동 시에도, 주기나 상태가 바뀐 뒤에도 같은 함수를
 부른다 — "이 워크플로우만 다시 등록" 같은 부분 갱신 경로를 따로 두면 그 경로가 빠뜨린 변경이
@@ -17,7 +17,7 @@ URL 과 셀렉터는 실행 시점에 `app/crawler/runner.py` 가 다시 읽는�
 
 동시 실행 상한도 여기 있다. 상한은 `app_settings` 에 저장되고 어드민에서 바뀌므로 고정 크기
 세마포어를 쓸 수 없다 — `RunGate` 가 획득할 때마다 현재 값을 다시 읽는다
-(`.claude/docs/architecture.md` 의 "동시 실행 상한").
+(`docs/architecture.md` 의 "동시 실행 상한").
 """
 
 from __future__ import annotations

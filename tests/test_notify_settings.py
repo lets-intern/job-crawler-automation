@@ -70,7 +70,7 @@ def test_저장한_적이_없으면_기본값이고_꺼져_있다(conn: sqlite3.
 
 
 def test_값은_app_settings_에_들어간다(conn: sqlite3.Connection) -> None:
-    """새 표를 만들지 않는다 (`.claude/tasks/done/ntfy-notify/tasks-ntfy-notify.md`)."""
+    """새 표를 만들지 않는다 (`../.claude/tasks/done/ntfy-notify/tasks-ntfy-notify.md`)."""
     store.write_config(
         conn,
         store.NotifyConfig(

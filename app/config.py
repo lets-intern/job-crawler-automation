@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     )
 
     # 모델 제공자. 키가 없어도 임포트와 서버 기동은 성공한다 — 그 제공자를 쓰는 기능만
-    # 실패하고, 조용히 다른 제공자로 넘어가지 않는다 (`.claude/rules/llm.md`)
+    # 실패하고, 조용히 다른 제공자로 넘어가지 않는다 (`../.claude/rules/llm.md`)
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.5-flash"
 
@@ -66,7 +66,7 @@ class Settings(BaseSettings):
 
     # Ollama Cloud 도 OpenAI 호환 엔드포인트로 부른다. 기본 모델을 두는 것은 `models.list()`
     # 로 지금 있는 것을 확인했기 때문이고, 클라우드 모델 목록은 자주 바뀌므로 화면에서
-    # 고르는 것이 정상 경로다 (`.claude/tasks/memos/llm-provider-조사.md`)
+    # 고르는 것이 정상 경로다 (`../.claude/tasks/memos/llm-provider-조사.md`)
     ollama_api_key: str = ""
     ollama_model: str = "gpt-oss:120b"
     ollama_base_url: str = "https://ollama.com/v1"
@@ -94,7 +94,7 @@ class Settings(BaseSettings):
 
     # 화면
     # 저장은 UTC 그대로 두고, 화면에 그릴 때만 이 시간대로 옮긴다 (`app/api/ui.py`).
-    # 제공 API 는 계약대로 UTC 다 — `.claude/docs/api-contract.md`
+    # 제공 API 는 계약대로 UTC 다 — `docs/api-contract.md`
     display_timezone: str = "Asia/Seoul"
 
     # 운영 화면 잠금

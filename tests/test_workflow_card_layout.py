@@ -131,7 +131,7 @@ def test_한_카드에_상태와_최근_결과와_누적과_임계치가_같이_
 def test_쌓인_실패는_색이_아니라_단어로도_구분된다(
     client: TestClient, conn: sqlite3.Connection
 ) -> None:
-    """색만으로 구분하면 색을 못 보는 경우 정보가 사라진다 (`.claude/rules/writing.md`)."""
+    """색만으로 구분하면 색을 못 보는 경우 정보가 사라진다 (`../.claude/rules/writing.md`)."""
     workflow_id = add_workflow(conn, fail_count=2)
     add_run(conn, workflow_id, status="failed", error_class="selector_miss", error_message="0개")
     add_run(conn, workflow_id, status="failed", error_class="selector_miss", error_message="0개")

@@ -115,7 +115,7 @@ def test_지운_키는_환경변수로_돌아간다(conn: sqlite3.Connection) ->
 
 
 def test_키_없는_제공자를_기능에_지정하면_거절한다(conn: sqlite3.Connection) -> None:
-    """조용히 다른 제공자로 넘어가지 않는다 (`.claude/rules/llm.md`)."""
+    """조용히 다른 제공자로 넘어가지 않는다 (`../.claude/rules/llm.md`)."""
     base = env(claude_api_key="")
 
     with pytest.raises(store.LlmSettingError) as caught:

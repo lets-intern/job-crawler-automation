@@ -1,6 +1,6 @@
 """실행 실패를 `crawl_runs.error_class` 로 옮기는 한 곳.
 
-여러 값으로 나뉘어 있는 이유는 조치가 각각 다르기 때문이다 (`.claude/rules/crawling.md`).
+여러 값으로 나뉘어 있는 이유는 조치가 각각 다르기 때문이다 (`../.claude/rules/crawling.md`).
 
 | error_class | 무슨 일이 있었나 | 조치 |
 |---|---|---|

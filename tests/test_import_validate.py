@@ -7,7 +7,7 @@
 알 수 없다. 그래서 이 파일은 `reason` 값을 하나씩 단언한다.
 
 검증만으로 이 서버의 DB 가 바뀌지 않는 것도 여기서 본다. 거절된 파일이 절반쯤 들어가 있는
-상태를 만들지 않는다 (`.claude/rules/data-safety.md`).
+상태를 만들지 않는다 (`../.claude/rules/data-safety.md`).
 """
 
 from __future__ import annotations

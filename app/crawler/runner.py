@@ -1,10 +1,10 @@
 """실행 1회. `crawl_runs` 행 하나가 실행 하나다.
 
 행은 시작할 때 만들고, 어떤 종료 경로에서도 종료 상태와 카운트로 갱신한다. 기록이 없는 실행은
-아무도 디버깅하지 못한다 (`.claude/rules/crawling.md`).
+아무도 디버깅하지 못한다 (`../.claude/rules/crawling.md`).
 
 흐름은 목록 파싱 → 신규 판정 → 신규 건만 상세 → `raw_jobs` append → 정규화다
-(`.claude/docs/architecture.md` 실행 흐름).
+(`docs/architecture.md` 실행 흐름).
 
 마감이 지난 공고와 이미 아는 공고는 상세를 열지 않고 건너뛴다. 건너뛴 수는 `skipped_count` 로
 따로 세고 `fail_count` 와 섞지 않는다 — 건너뜀은 정상이고 실패는 고칠 것이다.
@@ -22,7 +22,7 @@
 `body` 가 빈 행이 쌓이고, 그것을 소비 측이 본문 없는 공고로 받는다. 대신 어느 공고를 왜 놓쳤는지가
 `crawl_run_failures` 에 제목과 함께 남는다.
 
-`raw_jobs` 는 append-only 다. 기존 행을 갱신하지 않는다 (`.claude/rules/data-safety.md`).
+`raw_jobs` 는 append-only 다. 기존 행을 갱신하지 않는다 (`../.claude/rules/data-safety.md`).
 
 워크플로우가 없는 테스트 실행은 `raw_jobs` 에 적재하지 않는다. 적재할 워크플로우가 없기
 때문이고, 테스트 실행이 원하는 것은 화면에 보여줄 미리보기이지 수집 데이터가 아니다.
@@ -160,7 +160,7 @@ async def run_workflow(
     """스케줄러가 부르는 진입점. 무엇을 실행할지는 매번 테이블에서 다시 읽는다.
 
     `workflows` 와 `crawlers` 가 진실이다. 잡을 등록할 때의 값을 스케줄러가 들고 있다가
-    쓰지 않는다 (`.claude/rules/crawling.md`). 정적으로 가져올지 렌더할지도 매번
+    쓰지 않는다 (`../.claude/rules/crawling.md`). 정적으로 가져올지 렌더할지도 매번
     `crawlers.list_mode` 를 다시 읽어서 정한다.
 
     실행은 `RUN_TIMEOUT_SECONDS` 로 감싼다. 끝나지 않는 실행 하나가 동시 실행 자리를 영원히
@@ -395,7 +395,7 @@ async def run_once(
     None 이면 시간 제한을 걸지 않는다 — 항목 수를 정해 놓고 도는 테스트 실행이 그렇다.
 
     시간 제한에 걸려도 그때까지 적재한 `raw_jobs` 는 지우지 않는다. append-only 라 되돌리지
-    않고, 다음 실행이 같은 공고를 다시 넣지도 않는다 (`.claude/rules/data-safety.md`).
+    않고, 다음 실행이 같은 공고를 다시 넣지도 않는다 (`../.claude/rules/data-safety.md`).
     """
     active = collectors or html_collectors(
         fetcher or get_fetcher(), target.list_url, target.selectors
@@ -495,7 +495,7 @@ async def _collect(
 
     본문을 얻지 못한 공고는 적재하지 않고 실패로 낸다. 목록에서 읽은 값만 넣고 성공으로
     넘기면 `body` 가 빈 행이 쌓이고, 소비 측은 그것을 본문이 없는 공고로 받는다
-    (`.claude/tasks/done/fill-body/prd-fill-body.md`).
+    (`../.claude/tasks/done/fill-body/prd-fill-body.md`).
 
     실패는 둘로 갈린다. 상세로 갈 길이 없는 것은 `detail_unreachable` 이고 상세를 열었는데
     읽을 것이 없는 것은 `detail_empty` 다 — 앞은 경로를 다시 찾아야 하고 뒤는 본문 셀렉터만
@@ -595,7 +595,7 @@ def _record(item: ListItem, detail: dict[str, str], source_text: str = "") -> di
     문자열이고, 그 자리를 무엇으로 채울지는 정규화 단계가 정한다.
 
     운영자가 적어 둔 `crawlers.default_company` 는 여기 들어오지 않는다. 추출한 것만 담는
-    테이블이다 (`.claude/rules/data-safety.md`).
+    테이블이다 (`../.claude/rules/data-safety.md`).
 
     상세가 없는 사이트에서는 `title` 과 `deadline` 이 목록에서 온다. 상세를 따라가지 않으니
     그쪽에서 올 값이 없고, 목록에 있는 것을 두고 빈 칸으로 남기면 공고를 알아볼 수 없다.
@@ -604,7 +604,7 @@ def _record(item: ListItem, detail: dict[str, str], source_text: str = "") -> di
     있어서다 — 카카오 목록 API 는 직군·근무지·모집인원·주요 업무·전형 절차를 항목마다 담아
     주는데 상세 문서에는 그것들이 한 덩어리로만 있다. 읽지 않으면 그 값들은 여기서 사라지고,
     매핑하지 않은 값은 저장되지 않으므로 다시 얻을 길이 없다
-    (`.claude/tasks/memos/보류/split-body/prd-split-body.md`).
+    (`../.claude/tasks/memos/보류/split-body/prd-split-body.md`).
 
     **순서가 규칙이다.** 상세에서 읽은 값이 늘 이긴다. 목록 값은 상세가 비었을 때만 쓰이고,
     목록도 그 값을 안 주면 빈 칸이다. 빈 칸을 채우려고 뜻이 다른 값을 옮겨 오지 않는다.
@@ -650,7 +650,7 @@ def close_orphan_runs(conn: sqlite3.Connection) -> int:
     코드가 받아 적지만, SIGKILL 이나 컨테이너 재시작은 받을 기회조차 주지 않는다.
 
     행이 영원히 미완으로 남으면 누적 카운트가 그 실행을 세지 못하고, 화면은 끝나지 않는
-    실행을 계속 진행 중으로 읽는다. `.claude/rules/crawling.md` 는 어떤 종료 경로에서도
+    실행을 계속 진행 중으로 읽는다. `../.claude/rules/crawling.md` 는 어떤 종료 경로에서도
     행이 기록되기를 요구한다 — 여기가 마지막 경로다.
 
     `timeout` 으로 적는다. 얼마나 돌았는지 모르는 채 끝난 실행이고, 성공이 아닌 것은 실패로

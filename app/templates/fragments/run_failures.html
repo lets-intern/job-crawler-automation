@@ -41,6 +41,6 @@
 </table>
 </div>
 {% else %}
-{# "없음" 으로 끝내지 않는다. 무엇이 정상인지 적는다 (`.claude/rules/writing.md`) #}
+{# "없음" 으로 끝내지 않는다. 무엇이 정상인지 적는다 (`../.claude/rules/writing.md`) #}
 {{ empty("실행 " ~ failures.run_id ~ " 이 놓친 공고는 없다. 목록에서 잡은 공고가 모두 본문까지 왔다는 뜻이다") }}
 {% endif %}

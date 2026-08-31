@@ -2,7 +2,7 @@
 
 `transport` 만 재시도한다. `selector_miss` 는 재시도하지 않는다 — 페이지는 이미 정상으로
 왔고, 4초 뒤에 다시 물어도 같은 HTML 이 온다. 재시도해봐야 이미 답한 사이트의 부하만 두 배가
-된다 (`.claude/rules/crawling.md`).
+된다 (`../.claude/rules/crawling.md`).
 
 응답은 전부 `httpx.MockTransport` 스텁이고 시간은 가짜라 실제로 기다리는 구간이 없다. 목록
 HTML 은 저장된 python.org 픽스처를 그대로 돌려준다.

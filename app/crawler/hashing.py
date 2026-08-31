@@ -1,6 +1,6 @@
 """중복 감지용 content hash.
 
-해시에 들어가는 필드는 `.claude/docs/data-model.md` 의 "중복 감지 hash" 절이 정한다.
+해시에 들어가는 필드는 `docs/data-model.md` 의 "중복 감지 hash" 절이 정한다.
 `source_url`, `title`, `deadline`, `body` 넷뿐이고, 그 밖의 키는 무엇이 들어오든 무시한다.
 
 조회수, "3일 전" 같은 상대 날짜, 광고 문구, 정렬 순서, 크롤링 시각이 하나라도 섞이면 매 크롤마다

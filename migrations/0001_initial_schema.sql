@@ -1,4 +1,4 @@
--- 초기 스키마. 컬럼은 .claude/docs/data-model.md 를 따른다.
+-- 초기 스키마. 컬럼은 docs/data-model.md 를 따른다.
 
 -- migrate:up
 CREATE TABLE crawlers (

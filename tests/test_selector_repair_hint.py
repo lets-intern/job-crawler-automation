@@ -177,7 +177,7 @@ def test_a_hint_within_the_cap_is_untouched() -> None:
 
 def test_a_hint_over_the_cap_is_cut() -> None:
     """페이지를 통째로 붙여 넣는 일이 생긴다. 정제해 줄여 둔 HTML 옆에서 힌트가 입력의
-    대부분을 차지하면 안 된다 (`.claude/rules/llm.md`)."""
+    대부분을 차지하면 안 된다 (`../.claude/rules/llm.md`)."""
     text, notes = normalize_hint("가" * 5_000)
 
     assert len(text) == MAX_HINT_CHARS
@@ -299,7 +299,7 @@ async def test_a_stable_answer_is_not_flagged() -> None:
 
 
 async def test_the_hint_length_is_logged(caplog: pytest.LogCaptureFixture) -> None:
-    """무엇이 실려 나갔는지는 로그로 답한다 (`.claude/rules/llm.md`)."""
+    """무엇이 실려 나갔는지는 로그로 답한다 (`../.claude/rules/llm.md`)."""
     with caplog.at_level(logging.INFO, logger="app.selector.repair"):
         await repair(hint=HINT_PATH)
 

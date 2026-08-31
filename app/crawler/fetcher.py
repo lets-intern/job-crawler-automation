@@ -1,6 +1,6 @@
 """공용 fetch 클라이언트. 이 레포에서 밖으로 나가는 요청은 전부 여기를 지난다.
 
-`.claude/rules/crawling.md` 가 정한 것을 그대로 담는다.
+`../.claude/rules/crawling.md` 가 정한 것을 그대로 담는다.
 
 - User-Agent 는 설정값 그대로 쓴다. 브라우저 위장은 하지 않는다
 - 같은 호스트로 가는 요청 사이에 최소 딜레이를 실제로 기다린다
@@ -83,7 +83,7 @@ class FetchPolicy(PageSource, Protocol):
 
     `request()` 도 여기 있다. JSON API 는 본문을 실은 POST 로 물어보는데, 그것도 밖으로 나가는
     요청이라 같은 robots·딜레이·User-Agent 아래에서 돌아야 한다. API 경로가 `httpx` 를 직접
-    부르면 이 레포의 어떤 rate limit 도 사실이 아니게 된다 (`.claude/rules/crawling.md`).
+    부르면 이 레포의 어떤 rate limit 도 사실이 아니게 된다 (`../.claude/rules/crawling.md`).
     """
 
     @property
@@ -120,7 +120,7 @@ class Fetcher:
         resolved = settings or get_settings()
         # 빈 값은 설정하지 않은 것으로 본다. compose 는 변수를 넣지 않아도 `""` 를 채워
         # 넘기는데, 그대로 두면 이름 없이 요청이 나간다 — 정직하게 밝히라는 규칙과 정반대다
-        # (`.claude/rules/crawling.md`). `app/api/auth.py` 가 비밀번호에 쓴 것과 같은 방식이다
+        # (`../.claude/rules/crawling.md`). `app/api/auth.py` 가 비밀번호에 쓴 것과 같은 방식이다
         self._user_agent = resolved.crawl_user_agent.strip() or UNSET_USER_AGENT
         self._delay_seconds = resolved.crawl_delay_seconds
         self._max_retries = resolved.crawl_max_retries
@@ -162,7 +162,7 @@ class Fetcher:
 
         `headers` 는 사이트가 요구하는 기능성 헤더다. 현대는 `x-hkmc-service` 가 없으면 400 을
         준다. **브라우저 위장에 쓰지 않는다** — User-Agent 는 이 클라이언트가 정하고 여기서
-        덮을 수 없다 (`.claude/rules/crawling.md`, `app/selector/api_schema.py`).
+        덮을 수 없다 (`../.claude/rules/crawling.md`, `app/selector/api_schema.py`).
         """
         await self._ensure_allowed(url)
         return await self._send(

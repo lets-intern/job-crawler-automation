@@ -1,7 +1,7 @@
 """어느 제공자를 쓸지 고르는 자리. 고르는 일만 하고 부르지는 않는다.
 
 이름 하나를 항목 하나로 바꾸는 것이 전부다. 여기가 얇아야 "제공자로 분기하는 코드는 항목
-안에만 있다" 가 참이 된다 (`.claude/rules/llm.md`).
+안에만 있다" 가 참이 된다 (`../.claude/rules/llm.md`).
 
 **기능에 따라 다른 제공자를 쓴다.** 셀렉터 생성은 등록할 때 한 번이고 분류는 공고마다 한 번이라
 성격이 다르다. 싼 제공자를 분류에 두고 정확한 제공자를 생성에 두는 선택이 가능해야 한다.
@@ -54,7 +54,7 @@ def resolve(feature: str, name: str, model: str) -> Provider:
     """기능·제공자 이름·모델로 항목을 고른다. 못 고르면 세운다.
 
     **다른 제공자로 넘어가지 않는다.** 조용히 넘어가면 비용 기록이 거짓말이 되고, 크레딧이
-    떨어진 것을 아무도 모르는 채로 다른 계정에서 돈이 나간다 (`.claude/rules/llm.md`).
+    떨어진 것을 아무도 모르는 채로 다른 계정에서 돈이 나간다 (`../.claude/rules/llm.md`).
     """
     provider = _named(name)
     if feature in NEEDS_SCHEMA and not provider.forces_schema(model):

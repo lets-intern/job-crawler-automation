@@ -15,7 +15,7 @@ Push 30 이전에는 조회(`/jobs`)와 검수(`/review`)가 따로 있었고, �
 고치기는 행의 `수정` 이 여는 모달 안에만 둔다. 표 안에서 값을 고치는 입구는 없다.
 
 `delivered_at` 은 읽어서 보여주기만 한다. 지우는 경로도 그 값을 고치지 않는다 — 행이 통째로
-사라질 뿐이다 (`.claude/rules/data-safety.md`).
+사라질 뿐이다 (`../.claude/rules/data-safety.md`).
 
 ## 조건은 화면에서 온 문자열로 조립하지 않는다
 
@@ -595,7 +595,7 @@ def empty_counts(conn: sqlite3.Connection, picked: JobFilter) -> list[dict[str, 
             "label": FIELD_LABELS[field],
             "count": counted(field),
             "note": EMPTY_NOTES.get(field, ""),
-            # 색이 아니라 낱말이 판정이다 (`.claude/rules/writing.md`)
+            # 색이 아니라 낱말이 판정이다 (`../.claude/rules/writing.md`)
             "normal": "있을 수 있음" if field in EMPTY_NOTES else "아니오",
         }
         for field in OVERRIDABLE_FIELDS
@@ -614,7 +614,7 @@ def empty_counts(conn: sqlite3.Connection, picked: JobFilter) -> list[dict[str, 
                 " 칸이 많아 대부분이 걸린다 — 고칠 자리는 위 줄에서 하나씩 고른다"
             ),
             # 칸마다 답이 달라서 한 낱말로 답할 수 없다. 빈 칸으로 두지 않는다
-            # (`.claude/rules/writing.md`)
+            # (`../.claude/rules/writing.md`)
             "normal": "칸마다 다름",
         }
     )

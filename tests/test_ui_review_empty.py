@@ -207,7 +207,7 @@ def test_보정으로_비운_필드는_빈_것이다(client: TestClient, conn: s
     )
     conn.commit()
 
-    # 값 칸은 빈 값을 낱말로 적는다. 빈 칸은 반대 뜻으로 읽힌다 (`.claude/rules/writing.md`)
+    # 값 칸은 빈 값을 낱말로 적는다. 빈 칸은 반대 뜻으로 읽힌다 (`../.claude/rules/writing.md`)
     assert titles(client, empty="title") == ["값 없음"]
     assert counts(client)["제목"] == 1
 
@@ -261,7 +261,7 @@ def test_아무_필드나_메모가_실제로_보는_칸_수를_적는다(client
     html = client.get("/ui/review").text
 
     assert f"위 {len(NORMALIZED_FIELDS)}칸 중 하나라도 빈 공고" in html
-    # 판정 칸을 빈 칸으로 두지 않는다 (`.claude/rules/writing.md`)
+    # 판정 칸을 빈 칸으로 두지 않는다 (`../.claude/rules/writing.md`)
     assert "칸마다 다름" in html
 
 

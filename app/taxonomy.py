@@ -1,7 +1,7 @@
 """직무 분류 체계. `job_taxonomy` 하나만 건드린다.
 
 LLM이 공고를 나눌 때 고르는 목록은 코드가 아니라 이 표에 있다
-(`.claude/tasks/todo/prd-job-taxonomy.md`). 읽기는 예외를 던지지 않는다 — 손으로 넣은 값
+(`../.claude/tasks/todo/prd-job-taxonomy.md`). 읽기는 예외를 던지지 않는다 — 손으로 넣은 값
 하나가 분류를 통째로 멈추게 둘 수 없다. 쓰기는 반대로 깐깐하다
 (`app/notify/settings.py` 와 같은 규칙).
 
@@ -227,7 +227,7 @@ def load_seed(conn: sqlite3.Connection, path: pathlib.Path) -> tuple[int, int]:
     """씨앗 파일을 넣는다. 표가 완전히 비어 있을 때만 동작한다.
 
     이미 운영자가 고친 표 위에 씨앗을 다시 부으면 손으로 넣은 값이 씨앗과 뒤섞인다
-    (`.claude/tasks/todo/prd-job-taxonomy.md` 3절). 비어 있지 않으면 아무 일도 하지 않고
+    (`../.claude/tasks/todo/prd-job-taxonomy.md` 3절). 비어 있지 않으면 아무 일도 하지 않고
     `(0, 0)` 을 돌려준다.
     """
     if not is_empty(conn):

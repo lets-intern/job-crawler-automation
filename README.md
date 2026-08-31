@@ -24,14 +24,14 @@ URL 입력 → 셀렉터 생성(LLM) → 테스트 실행 → 워크플로우 �
 ```
 
 `raw_jobs` 는 append-only 다. 정규화 규칙이 잘못돼도 원본은 그대로 남아 있어 규칙만 고쳐
-다시 돌리면 된다. 자세한 구조는 [`.claude/docs/architecture.md`](.claude/docs/architecture.md)에
+다시 돌리면 된다. 자세한 구조는 [`docs/architecture.md`](docs/architecture.md)에
 있다.
 
 ## 스택
 
 FastAPI 프로세스 하나, SQLite 파일 하나, APScheduler 인프로세스 스케줄러, Jinja2 + HTMX 서버
 렌더링 화면. 빌드 단계가 없다. Celery·Redis·별도 web 컨테이너는 두지 않는다 — 이유는
-[`.claude/docs/tech-stack.md`](.claude/docs/tech-stack.md)에 있다.
+[`docs/tech-stack.md`](docs/tech-stack.md)에 있다.
 
 회사 로고 파일은 MinIO(S3 호환) 컨테이너 하나에 둔다. SQLite 한 파일로는 이미지를 감당할 수
 없어서 둔 유일한 예외다.
@@ -72,8 +72,8 @@ pytest -q -m "not live"   # 테스트. 실사이트를 때리는 live 테스트�
 
 ## 문서
 
-- [`.claude/docs/architecture.md`](.claude/docs/architecture.md) — 전체 구조, 파이프라인 단계
-- [`.claude/docs/data-model.md`](.claude/docs/data-model.md) — 테이블 정의, 상태 전이
-- [`.claude/docs/api-contract.md`](.claude/docs/api-contract.md) — 소비 측이 받는 제공 API
-- [`.claude/docs/tech-stack.md`](.claude/docs/tech-stack.md) — 기술 선택과 그 이유
-- [`.claude/rules/`](.claude/rules) — 이 저장소를 건드릴 때 지키는 제약
+- [`docs/architecture.md`](docs/architecture.md) — 전체 구조, 파이프라인 단계
+- [`docs/data-model.md`](docs/data-model.md) — 테이블 정의, 상태 전이
+- [`docs/api-contract.md`](docs/api-contract.md) — 소비 측이 받는 제공 API
+- [`docs/tech-stack.md`](docs/tech-stack.md) — 기술 선택과 그 이유
+- [`../.claude/rules/`](../.claude/rules) — 이 저장소를 건드릴 때 지키는 제약

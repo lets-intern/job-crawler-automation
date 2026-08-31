@@ -1,6 +1,6 @@
 -- 부서·직군·모집인원 세 칸을 지운다.
 --
--- 소비 측이 실제로 쓰는 칸만 남긴다 (`.claude/tasks/todo/prd-fields-and-logo.md`). 세 칸은
+-- 소비 측이 실제로 쓰는 칸만 남긴다 (`../.claude/tasks/todo/prd-fields-and-logo.md`). 세 칸은
 -- 값이 자리에 맞게 들어오지 않는다 — 2026-08-26 기록에 한화는 부서에 근무지가, SK 는 부서에
 -- 직무가, 네이버는 회사에 부서가 들어가 있었다
 -- (`seeds/site-configs-20260826.json` 의 `why_the_mappings_were_removed`). 모집인원은 적지
@@ -12,7 +12,7 @@
 --
 -- 지우는 것은 `normalized_jobs` 의 컬럼 셋과 그 칸에 걸린 규칙 행이다. `raw_jobs` 는
 -- 건드리지 않는다 — 셀렉터가 뽑아 둔 값은 그대로 남고 정규화가 그것을 읽지 않게 될 뿐이다
--- (`.claude/rules/data-safety.md`). `job_classifications` 의 지난 판정도 그대로 둔다.
+-- (`../.claude/rules/data-safety.md`). `job_classifications` 의 지난 판정도 그대로 둔다.
 --
 -- **`job_field_overrides` 의 행은 지우지 않는다.** 지운 칸에 사람이 고쳐 둔 값이 남아 있어도
 -- `apply_overrides` 가 `OVERRIDABLE_FIELDS` 밖의 필드를 건너뛰므로 읽히지 않는다

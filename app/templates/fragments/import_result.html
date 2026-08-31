@@ -3,7 +3,7 @@
    숫자를 항목별로 적는다. 뭉뚱그린 하나로는 무엇이 들어왔는지 알 수 없고, 크롤러가 안 들어와서
    0건인 것과 이미 있어서 0건인 것은 다음에 할 일이 서로 다르다.
 
-   상태는 단어로 적고 픽토그램은 쓰지 않는다 (`.claude/rules/writing.md`). #}
+   상태는 단어로 적고 픽토그램은 쓰지 않는다 (`../.claude/rules/writing.md`). #}
 {% from "macros.html" import failure, state %}
 {% if error %}
 {{ failure(error.reason, error.message ~ " — 아무것도 들어가지 않았다", title="거절") }}

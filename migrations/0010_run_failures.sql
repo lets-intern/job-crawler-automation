@@ -23,7 +23,7 @@
 --
 -- `crawl_runs.error_class` 의 CHECK 도 같은 여섯 값으로 넓힌다. 0001 이 만든 세 가지 그대로면
 -- `detail_empty` 로 끝난 실행은 기록되는 순간 거절되고, 기록이 없는 실행은 아무도 디버깅하지
--- 못한다 (`.claude/rules/crawling.md`). SQLite 는 CHECK 제약만 따로 고치지 못하므로 0009 와
+-- 못한다 (`../.claude/rules/crawling.md`). SQLite 는 CHECK 제약만 따로 고치지 못하므로 0009 와
 -- 같은 방법을 쓴다 — 새 CHECK 를 단 컬럼을 더하고, 값을 옮기고, 옛 컬럼을 지우고, 이름을
 -- 되돌린다. 표를 지웠다 다시 만들지 않으므로 행도 id 도 그대로 남는다.
 --

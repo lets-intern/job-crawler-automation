@@ -199,7 +199,7 @@ async def test_an_empty_body_never_reaches_the_model() -> None:
 
 
 async def test_only_the_title_and_the_body_are_sent() -> None:
-    """원본 HTML 도 페이지도 보내지 않는다 (`.claude/rules/llm.md`).
+    """원본 HTML 도 페이지도 보내지 않는다 (`../.claude/rules/llm.md`).
 
     제목이 하나 늘었다. `job_role` 의 출처라 보내지 않으면 그 칸이 영원히 빈다.
     """

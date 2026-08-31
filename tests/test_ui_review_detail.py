@@ -142,4 +142,4 @@ def test_옛_조회_주소는_검수로_보낸다(client: TestClient) -> None:
     assert moved.status_code == 307
     assert moved.headers["location"] == "/review"
     # 화면 주소만 옮겼다. 제공 API `/api/jobs` 는 소비 측 계약이라 그대로다
-    # (`.claude/docs/api-contract.md`, `tests/test_api_jobs.py`)
+    # (`docs/api-contract.md`, `tests/test_api_jobs.py`)

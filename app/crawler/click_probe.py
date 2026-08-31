@@ -5,7 +5,7 @@
 눌러 본다.
 
 **클릭은 등록할 때 한 번이다.** 주기 실행은 여기를 지나지 않는다 — 알아낸 경로를 공용 fetch
-클라이언트로 부를 뿐이다 (`.claude/rules/crawling.md`).
+클라이언트로 부를 뿐이다 (`../.claude/rules/crawling.md`).
 
 ## 성공 판정이 "주소가 바뀌었나" 가 아니다
 
@@ -26,7 +26,7 @@
 현대는 항목의 첫 `a` 들이 SNS 공유 버튼이다 — `href="javascript:;"`,
 `onclick="shareSns('facebook', ...)"`. 눌러도 아무 데도 가지 않고, 그것을 실패로 읽으면
 사이트가 등록 불가로 판정된다. 실제로는 항목의 `data-recuyy`·`data-recutype`·`data-recucls`
-로 상세 주소를 만들 수 있다 (`.claude/site-recipes/talent-hyundai-com.md`).
+로 상세 주소를 만들 수 있다 (`../.claude/site-recipes/talent-hyundai-com.md`).
 
 ## 목록이 채워진 뒤에 누른다
 

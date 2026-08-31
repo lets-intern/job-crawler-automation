@@ -4,7 +4,7 @@
 않아 판정 칸의 닫힌 목록을 보장하지 못한다. 둘, 셀렉터 생성과 AI 수정에는 쓸 수 있다.
 셋, 키가 없으면 `no_api_key` 로 서고 다른 제공자로 넘어가지 않는다.
 
-근거는 `.claude/tasks/memos/llm-provider-조사.md` 의 "Ollama Cloud" 절이다.
+근거는 `../.claude/tasks/memos/llm-provider-조사.md` 의 "Ollama Cloud" 절이다.
 """
 
 from __future__ import annotations

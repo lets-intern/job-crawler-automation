@@ -51,9 +51,9 @@
 보이는 마크업도 같은 매크로다(`app/templates/fragments/selector_repair_macro.html`).
 
 AI 수정은 저장하지 않는다. 전/후를 보여주고, 반영하는 것은 운영자가 누르는 "셀렉터 저장"
-이다 (`.claude/rules/llm.md`).
+이다 (`../.claude/rules/llm.md`).
 
-상태는 단어로만 적는다. 아이콘·이모지를 쓰지 않는다 (`.claude/rules/writing.md`).
+상태는 단어로만 적는다. 아이콘·이모지를 쓰지 않는다 (`../.claude/rules/writing.md`).
 """
 
 from __future__ import annotations

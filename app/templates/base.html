@@ -2,10 +2,10 @@
 
    Tailwind 를 CDN 에서 받는다 (2026-08-22 결정, Push 9). 빌드 단계를 만들지 않는 것이
    제약이라 CLI·PostCSS 파이프라인 대신 브라우저에서 직접 받는 방식을 쓴다
-   (`.claude/rules/core.md`). HTMX 와 같은 방식이고 컨테이너는 그대로 하나다.
+   (`../.claude/rules/core.md`). HTMX 와 같은 방식이고 컨테이너는 그대로 하나다.
 
    상태는 색과 굵기로 구분하되 단어를 지우지 않는다. 아이콘·이모지는 넣지 않는다
-   (`.claude/rules/writing.md`).
+   (`../.claude/rules/writing.md`).
 
    여러 화면이 같이 쓰는 모양은 아래 `@layer components` 가 정하고, 그 모양을 어떤 낱말과
    함께 쓰는지는 `macros.html` 이 정한다. 화면이 같은 클래스 문자열을 각자 들고 있지 않게
@@ -35,7 +35,7 @@
 
     @layer components {
       /* 요청이 도는 동안만 보이는 대기 문구. HTMX 가 hx-indicator 대상에 htmx-request 를 붙인다.
-         아이콘을 쓰지 않는다 — 문구와 점멸로만 만든다 (`.claude/rules/writing.md`) */
+         아이콘을 쓰지 않는다 — 문구와 점멸로만 만든다 (`../.claude/rules/writing.md`) */
       /* 본문과 같은 색·크기면 상태로 읽히지 않는다. 테두리를 둘러 "지금 도는 중" 이라는
          것이 한 눈에 보이게 하고, 화면 어디서든 같은 모양으로 나온다 */
       /* 자리를 미리 잡아 두지 않는다. 테두리가 생긴 뒤로는 안 보이는 상자가 제 폭을 차지해,
@@ -96,7 +96,7 @@
       .num { @apply text-right tabular-nums; }
 
       /* 상태. 색과 굵기로 갈리되 단어는 그대로 둔다 — 색을 못 봐도 단어가 남아야 한다
-         (`.claude/rules/writing.md`). 픽토그램은 쓰지 않는다 */
+         (`../.claude/rules/writing.md`). 픽토그램은 쓰지 않는다 */
       .state-ok { @apply font-semibold text-emerald-700; }
       .state-bad { @apply font-semibold text-red-700; }
       .state-warn { @apply font-semibold text-amber-700; }
@@ -154,7 +154,7 @@
       progress::-webkit-progress-value { @apply rounded-full bg-slate-700; }
 
       /* 모달. 브라우저 기본 <dialog> 다 — 여는·닫는 스크립트 몇 줄 말고는 아무것도 붙이지
-         않는다 (`.claude/rules/core.md`). Esc 로 닫히는 것과 바깥 클릭 차단은 브라우저가 한다 */
+         않는다 (`../.claude/rules/core.md`). Esc 로 닫히는 것과 바깥 클릭 차단은 브라우저가 한다 */
       dialog { @apply w-[min(60rem,92vw)] rounded-lg border border-slate-200 bg-white p-0 text-slate-800 shadow-xl; }
       dialog::backdrop { @apply bg-slate-900/50; }
       /* 모달 안이 길면 이 자리에서 스크롤한다. 페이지는 움직이지 않는다 */

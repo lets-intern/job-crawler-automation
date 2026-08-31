@@ -1,7 +1,7 @@
 """JS 로 그려지는 페이지를 브라우저로 렌더해 HTML 을 돌려준다.
 
 정적 fetch 가 껍데기만 돌려주는 것이 측정으로 확인된 사이트에만 쓴다 (`seeds/sample-sites.json`).
-기본 경로는 계속 정적이고, 렌더는 사이트별 승격이다 (`.claude/rules/crawling.md`).
+기본 경로는 계속 정적이고, 렌더는 사이트별 승격이다 (`../.claude/rules/crawling.md`).
 
 ## 정책은 여기서 다시 만들지 않는다
 
@@ -30,11 +30,11 @@ PRD 비목표다 — 여기서 하는 것은 렌더링뿐이다.
 `RequestLog` 는 렌더 중에 **페이지가 스스로 내는** 요청을 받아 적는다. 상세가 어느 endpoint
 에서 오는지는 등록할 때 이것으로 알아낸다 — 삼성은 클릭해도 주소가 바뀌지 않고
 `recruit/detail.data?seqno=...` 가 나갈 뿐이라, 요청을 보지 않으면 상세 경로를 찾을 길이 없다
-(`.claude/site-recipes/www-samsungcareers-com.md`).
+(`../.claude/site-recipes/www-samsungcareers-com.md`).
 
 **이것은 관찰이지 두 번째 요청 경로가 아니다.** 여기서 새로 무엇을 보내지 않는다. 브라우저가
 이미 낸 요청의 응답을 읽을 뿐이고, 그 브라우저는 `Fetcher.guard()` 안에서 돈다. 관찰로 알아낸
-경로를 실제로 부르는 것은 공용 fetch 클라이언트다 (`.claude/rules/crawling.md`).
+경로를 실제로 부르는 것은 공용 fetch 클라이언트다 (`../.claude/rules/crawling.md`).
 
 거르는 것과 상한이 있다. 정적 자산(`.js`, `.css`, 이미지, 폰트)과 분석 도구는 상세 경로가 될
 수 없으므로 기록하지 않고, 응답 본문은 `OBSERVED_BODY_LIMIT` 까지만 들고 있는다. 페이지 하나가

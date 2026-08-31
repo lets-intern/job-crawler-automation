@@ -2,7 +2,7 @@
 
 문서에 적는 필드명은 설정에서 복사한다. 기억으로 다시 쓰면 사이트를 고칠 때 문서가 가리키는
 자리와 실제로 도는 자리가 갈리고, 그 차이는 크롤링이 깨진 뒤에야 드러난다
-(`.claude/rules/writing.md`).
+(`../.claude/rules/writing.md`).
 
 여기서 보는 것은 둘이다 — 열한 레시피에 매핑 절이 다 있는가, 그 절의 자리가
 `seeds/site-configs-20260826.json` 의 값과 글자까지 같은가.
@@ -24,7 +24,7 @@ from app.selector.api_schema import LIST_FIELDS
 from app.selector.schema import DETAIL_FIELDS
 
 ROOT = pathlib.Path(__file__).parent.parent
-RECIPES = ROOT / ".claude" / "site-recipes"
+RECIPES = ROOT.parent / ".claude" / "site-recipes"
 SEEDS = ROOT / "seeds" / "site-configs-20260826.json"
 
 CONFIGS: dict[str, dict[str, Any]] = {

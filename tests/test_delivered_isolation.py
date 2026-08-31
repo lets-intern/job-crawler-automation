@@ -1,6 +1,6 @@
 """`delivered_at` 쓰기 경로 격리.
 
-이 컬럼을 쓰는 곳은 `POST /api/jobs/delivered` 하나뿐이다 (`.claude/rules/data-safety.md`).
+이 컬럼을 쓰는 곳은 `POST /api/jobs/delivered` 하나뿐이다 (`../.claude/rules/data-safety.md`).
 값이 지워지거나 뒤로 밀리면 소비 측이 이미 받은 공고를 다시 받는다.
 
 여기서 보는 것은 둘이다. 전달 표시된 행을 재정규화하고 같은 워크플로우를 한 번 더 돌려도

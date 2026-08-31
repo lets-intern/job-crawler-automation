@@ -8,7 +8,7 @@
 #     docker compose -f docker-compose.yml up -d --build
 #
 # 주의: --reload 는 파일이 바뀔 때마다 프로세스를 다시 띄우고 APScheduler 도 같이 재등록된다.
-# 스케줄 동작을 확인할 때는 배포 구성으로 띄운다 (.claude/skills/local-env/SKILL.md).
+# 스케줄 동작을 확인할 때는 배포 구성으로 띄운다 (../.claude/skills/local-env/SKILL.md).
 services:
   api:
     volumes:

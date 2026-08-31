@@ -19,7 +19,7 @@
 집계에 필요한 시각 값이 이미 `raw_jobs.crawled_at` / `job_classifications.classified_at` /
 `normalized_jobs.normalized_at` 에 있어, 읽기 전용 집계 쿼리로 전부 계산한다. 로그·분석
 전용 DB 파일을 따로 두는 안을 검토했지만 새 파일이 더할 수 있는 것이 없고,
-`.claude/rules/core.md` 의 "SQLite in one file" 을 벗어날 이유가 없다(2026-08-29, 운영자
+`../.claude/rules/core.md` 의 "SQLite in one file" 을 벗어날 이유가 없다(2026-08-29, 운영자
 확인).
 
 ## 로그는 이 프로세스가 방금 낸 것만이다
@@ -131,7 +131,7 @@ def _daily_tokens(conn: sqlite3.Connection, modifier: str) -> dict[str, int]:
 
 # gemini-3.1-flash-lite 유료 등급 표준 가격, 2026-08-29 ai.google.dev/gemini-api/docs/pricing
 # 확인. **실제로 무슨 제공자·모델을 쓰든 이 값 하나로 어림잡는 추정치다** — 실제 호출은
-# 운영자가 화면에서 고른 제공자·모델로 나가고 그 가격은 다를 수 있다(`.claude/rules/llm.md`).
+# 운영자가 화면에서 고른 제공자·모델로 나가고 그 가격은 다를 수 있다(`../.claude/rules/llm.md`).
 # 가격이 바뀌면 이 상수도 다시 확인해야 한다.
 COST_REFERENCE_MODEL = "gemini-3.1-flash-lite"
 _INPUT_USD_PER_MILLION = 0.25
@@ -302,7 +302,7 @@ def _bar_pct(count: int, peak: int) -> int:
 
 
 def token_usage(conn: sqlite3.Connection) -> list[FeatureBar]:
-    """기능별(셀렉터 생성·수정, 분류) 누적 토큰 사용량. `.claude/rules/llm.md` 가 모든 호출을
+    """기능별(셀렉터 생성·수정, 분류) 누적 토큰 사용량. `../.claude/rules/llm.md` 가 모든 호출을
     `llm_calls` 에 남기라고 정한 것이 이 그래프가 가능한 이유다."""
     usage = by_feature(conn)
     peak = max([u.total_tokens for u in usage] + [1])

@@ -33,6 +33,6 @@ jobs:
 
       # 실사이트를 때리는 테스트는 CI 에서 돌리지 않는다. 남의 서버에 우리 CI 빈도로
       # 요청이 나가고, 사이트가 바뀌면 우리 잘못이 아닌 이유로 빌드가 빨개진다
-      # (.claude/rules/crawling.md).
+      # (../.claude/rules/crawling.md).
       - name: 테스트
         run: pytest -q -m "not live"

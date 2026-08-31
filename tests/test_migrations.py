@@ -12,7 +12,7 @@ from app import db
 from app.normalize.engine import load_rules
 from app.normalize.rules import NORMALIZED_FIELDS
 
-# .claude/docs/data-model.md 의 컬럼. 문서에 없는 컬럼은 늘리지 않는다
+# docs/data-model.md 의 컬럼. 문서에 없는 컬럼은 늘리지 않는다
 EXPECTED_COLUMNS = {
     "crawlers": {
         "id",

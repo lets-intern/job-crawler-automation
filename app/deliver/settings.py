@@ -2,13 +2,13 @@
 
 `app/notify/settings.py` 와 같은 자리의 모듈이다. 다른 점은 이 값을 실제로 쓰는 코드가 아직
 없다는 것뿐이다 — 이 Push 는 자리를 만드는 데까지고, 실제 전송은 다음 일이다
-(`.claude/tasks/todo/prd-side-workflows.md` 3절).
+(`../.claude/tasks/todo/prd-side-workflows.md` 3절).
 
 읽기는 예외를 던지지 않는다. 손으로 넣은 깨진 값 하나가 화면을 죽이면 안 된다. 읽지 못한
 값은 기본값으로 떨어지고 로그에 남는다. 쓰기는 반대로 깐깐하다 — 저장되는 값은 전부 검증을
 지난다.
 
-**자격증명을 어떻게 줄지는 아직 정하지 않았다** (`.claude/docs/api-contract.md`). 여기 있는
+**자격증명을 어떻게 줄지는 아직 정하지 않았다** (`docs/api-contract.md`). 여기 있는
 `auth_header` 는 그 값을 넣어 둘 자리일 뿐이고, 계약이 정해지면 이 파일과 그 문서를 같은
 커밋에서 고친다.
 """

@@ -1,6 +1,6 @@
 """분류 응답의 스키마와 검증.
 
-모델이 돌려준 것은 가설이지 결과가 아니다 (`.claude/rules/llm.md`). 이 파일은 받은 것이
+모델이 돌려준 것은 가설이지 결과가 아니다 (`../.claude/rules/llm.md`). 이 파일은 받은 것이
 읽어도 되는 모양인지만 판정하고, 그 값이 본문에 근거가 있는지는 `app/classify/grounding.py`
 가 본다.
 
@@ -116,7 +116,7 @@ JUDGE_FIELDS: tuple[str, ...] = ("employment_type", "career_level")
 #
 # `deadline` 은 마감 지난 공고를 거르는 데 쓰이고 `company` 는 계열사를 가르는 값이라, 이
 # 셋은 값이 있으면 아무리 근거가 있어도 자동으로 덮지 않고 제안으로만 낸다
-# (`.claude/tasks/todo/prd-side-workflows.md` 6절).
+# (`../.claude/tasks/todo/prd-side-workflows.md` 6절).
 COLLECTED_REVIEW_FIELDS: tuple[str, ...] = ("company", "deadline", "start_date")
 
 # 화면에 보일 이름. 프롬프트에 값을 적을 때도 같은 이름을 쓴다

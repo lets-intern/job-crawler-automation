@@ -171,7 +171,7 @@ def test_거절_사유는_무엇이_틀렸는지_이름을_댄다(
 
 
 def test_결과_화면에_이모지가_없다(client: TestClient) -> None:
-    """상태는 단어로 적는다 (`.claude/rules/writing.md`)."""
+    """상태는 단어로 적는다 (`../.claude/rules/writing.md`)."""
     body = upload(client, SNAPSHOT) + client.get("/settings/import").text
 
     assert not any(character in body for character in "✅❌⚠\U0001f4dd⭐")

@@ -49,7 +49,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
 # 규칙이 값을 바꿀 수 있는 컬럼. `normalized_jobs` 에서 규칙이 만드는 것만 골라 적었다.
 # `source_url`, `raw_job_id`, `normalized_at` 은 파이프라인이 채우고, `delivered_at` 은
-# 제공 API 만 쓴다 (`.claude/rules/data-safety.md`).
+# 제공 API 만 쓴다 (`../.claude/rules/data-safety.md`).
 #
 # 뒤의 일곱은 0011 이 더한 칸이다. 사이트가 이미 나눠서 주는 값을 도로 합치지 않으려고
 # 늘렸고, 넷 이상의 사이트가 주는 것만 골랐다

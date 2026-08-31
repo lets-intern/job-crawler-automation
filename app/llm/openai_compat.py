@@ -2,7 +2,7 @@
 
 Qwen(DashScope)과 Ollama Cloud 가 OpenAI 호환 엔드포인트를 준다. `openai` SDK 에 `base_url`
 만 바꿔 붙기 때문에 SDK 를 하나 더 들이지 않아도 된다
-(`.claude/tasks/memos/llm-provider-조사.md`).
+(`../.claude/tasks/memos/llm-provider-조사.md`).
 
 **호환은 같은 제공자라는 뜻이 아니다.** 항목은 따로다 — 키도 모델 ID 도 요금도 다르고,
 `llm_calls.provider` 에 남아야 하는 이름도 다르다. 공유하는 것은 호출하는 코드뿐이다.

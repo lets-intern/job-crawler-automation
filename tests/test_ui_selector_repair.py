@@ -186,7 +186,7 @@ def test_the_save_button_is_what_writes_it(client: TestClient, conn: sqlite3.Con
 
 
 def test_no_icons_or_emoji_in_the_result(client: TestClient, conn: sqlite3.Connection) -> None:
-    """판정은 단어로 적는다 (`.claude/rules/writing.md`)."""
+    """판정은 단어로 적는다 (`../.claude/rules/writing.md`)."""
     crawler_id = insert_crawler(conn)
     use_repairer(outcome_for)
 

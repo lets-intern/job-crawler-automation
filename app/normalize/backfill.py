@@ -9,7 +9,7 @@
 ## 건드리지 않는 것
 
 `raw_jobs` 는 읽기만 한다. `delivered_at` 도 그대로 둔다 — 소비 측이 이미 가져간 표시를
-지우면 같은 데이터가 다시 넘어간다 (`.claude/rules/data-safety.md`). 아래 UPDATE 문이
+지우면 같은 데이터가 다시 넘어간다 (`../.claude/rules/data-safety.md`). 아래 UPDATE 문이
 규칙이 만드는 컬럼과 `parent_company`, `normalized_at` 만 적는 것이 그 보장이다.
 
 `job_field_overrides` 도 읽기만 한다. 재정규화는 규칙을 다시 태우는 동작이지 사람이 검수한

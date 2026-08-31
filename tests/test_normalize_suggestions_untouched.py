@@ -1,7 +1,7 @@
 """정규화는 `job_field_suggestions` 를 읽지 않는다 (11.5.V).
 
 제안은 값이 있는 칸(`company`·`deadline`·`start_date`)을 자동으로 덮지 않는다 — 사람이 검수
-화면에서 수락해야 `job_field_overrides` 로 옮겨 간다 (`.claude/tasks/todo/prd-side-workflows.md`
+화면에서 수락해야 `job_field_overrides` 로 옮겨 간다 (`../.claude/tasks/todo/prd-side-workflows.md`
 6절). 이 표를 `app/normalize/engine.py` 의 어느 경로가 읽기 시작하면 그 경계가 조용히
 사라지므로, 여기서는 동작과 소스 둘 다로 못박는다.
 """

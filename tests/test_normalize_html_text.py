@@ -1,7 +1,7 @@
 """`html_text` 규칙 테스트.
 
 LG 상세 API 가 본문과 자격요건을 HTML 조각으로 준다. 수집은 그것을 그대로 `raw_jobs` 에
-남기고 (`.claude/rules/data-safety.md`), 소비 측이 읽는 평문으로 펴는 것은 이 규칙이다.
+남기고 (`../.claude/rules/data-safety.md`), 소비 측이 읽는 평문으로 펴는 것은 이 규칙이다.
 
 네트워크를 타지 않는다. 실제 값은 `tests/fixtures/lg-detail-api-20260824.json` 에 저장된
 LG 응답 한 건이고, 그 안의 `detailContext`·`requiredItem` 이 소비 측에 태그째 나갔던 값이다.

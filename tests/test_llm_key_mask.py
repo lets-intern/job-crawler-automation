@@ -4,7 +4,7 @@
 끝 네 자리가 곧 전체라서 아무것도 보여주지 않는다.
 
 네 경우를 다 넣어 본다 — 빈 값, 세 자, 네 자, 긴 값. 확인하는 것은 하나다. **어느 경우에도
-돌려준 것 안에 키 전체가 없다** (`.claude/tasks/todo/prd-llm-providers.md` 4번).
+돌려준 것 안에 키 전체가 없다** (`../.claude/tasks/todo/prd-llm-providers.md` 4번).
 """
 
 from __future__ import annotations

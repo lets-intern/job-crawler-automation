@@ -2,7 +2,7 @@
 --
 -- 로고는 공고 단위가 아니라 회사 단위 값이다. `normalized_jobs` 에 칸을 더하면 같은 주소가
 -- 그 회사의 공고 수만큼 복사되고, 로고를 한 번 바꾸는 일이 100행을 고치는 일이 된다
--- (`.claude/tasks/todo/prd-fields-and-logo.md` 4장).
+-- (`../.claude/tasks/todo/prd-fields-and-logo.md` 4장).
 --
 -- | 칸 | 무엇이 들어오나 |
 -- |---|---|

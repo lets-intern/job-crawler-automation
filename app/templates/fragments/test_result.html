@@ -99,7 +99,7 @@
       </td>
       {% for key, path in fields %}
       {% set value = item.fields.get(key, "") %}
-      {# 빈 칸은 반대 뜻으로 읽힌다. 값이 없으면 없다고 적는다 (`.claude/rules/writing.md`) #}
+      {# 빈 칸은 반대 뜻으로 읽힌다. 값이 없으면 없다고 적는다 (`../.claude/rules/writing.md`) #}
       <td class="cell-text">{% if value %}{{ value[:preview_limit] }}{% if value|length > preview_limit %} ... (이하 생략){% endif %}{% else %}{{ blank("값 없음") }}{% endif %}</td>
       {% endfor %}
     </tr>

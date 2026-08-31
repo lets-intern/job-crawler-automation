@@ -4,7 +4,7 @@
 
 **저장한 키가 화면에 다시 나오지 않는다.** 끝 네 자리와 있음·없음까지다.
 **키 없는 제공자를 고르면 거절 사유가 화면에 그대로 나온다.** 조용히 다른 제공자로 넘어가지
-않는다 (`.claude/rules/llm.md`).
+않는다 (`../.claude/rules/llm.md`).
 **저장하면 다음 호출부터 그 값을 쓴다.** 서버를 다시 띄우지 않는다.
 """
 
@@ -133,7 +133,7 @@ def test_기능마다_다른_제공자와_모델을_저장한다(
 
 
 def test_조각에_이모지가_없다(client: TestClient) -> None:
-    """상태는 낱말로 적는다 (`.claude/rules/writing.md`)."""
+    """상태는 낱말로 적는다 (`../.claude/rules/writing.md`)."""
     body = client.get("/ui/llm").text
 
     assert not any(character in body for character in "✅❌⚠\U0001f4dd⭐")

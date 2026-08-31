@@ -198,7 +198,7 @@ def test_the_batch_limit_cuts_the_target(jobs: sqlite3.Connection) -> None:
 def test_a_failed_posting_is_counted_and_the_rest_go_on(jobs: sqlite3.Connection) -> None:
     """한 건이 실패해도 나머지는 간다. 실패 건수는 행에 남는다.
 
-    깨진 응답에는 한 번 더 묻는다 (`.claude/rules/llm.md`). 그래서 첫 공고를 실패시키려면
+    깨진 응답에는 한 번 더 묻는다 (`../.claude/rules/llm.md`). 그래서 첫 공고를 실패시키려면
     나쁜 응답이 둘 필요하다.
     """
     workflow = store.create(jobs, kind="classify", name="분류")

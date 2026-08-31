@@ -1,7 +1,7 @@
 # 마이그레이션
 
 스키마는 이 디렉터리의 파일로만 바뀐다. 라이브 테이블을 손으로 고치거나 DB 파일을 지워서 새
-스키마를 얻지 않는다 (`.claude/rules/data-safety.md`).
+스키마를 얻지 않는다 (`../.claude/rules/data-safety.md`).
 
 ## 파일 형식
 

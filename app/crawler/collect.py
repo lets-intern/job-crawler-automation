@@ -15,7 +15,7 @@
 
 `open_collectors()` 가 브라우저의 수명을 들고 있다. 목록이 `api` 면 목록 때문에 브라우저가
 뜨지 않고, 상세만 `playwright` 면 상세를 가져올 때 하나가 뜬다. 양쪽이 다 `playwright` 면
-브라우저 하나를 나눠 쓴다 — 인스턴스 하나가 150~300MB 다 (`.claude/rules/crawling.md`).
+브라우저 하나를 나눠 쓴다 — 인스턴스 하나가 150~300MB 다 (`../.claude/rules/crawling.md`).
 
 셀렉터 생성과 AI 수정은 아직 `app/crawler/playwright.py` 의 `open_source()` 를 쓴다. 그쪽은
 HTML 한 장을 가져오는 일이라 목록·상세를 나눌 자리가 없다.

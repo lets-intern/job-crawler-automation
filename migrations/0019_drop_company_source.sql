@@ -16,7 +16,7 @@
 --
 -- 지우는 것은 `normalized_jobs` 의 컬럼 하나뿐이다. `raw_jobs` 도 `job_field_overrides` 도
 -- 건드리지 않는다 — 출처는 규칙 단계가 정하던 값이라 보정 행이 있을 수 없고, 그래서 0016 처럼
--- 남겨 둘 것을 따질 일도 없다 (`.claude/rules/data-safety.md`).
+-- 남겨 둘 것을 따질 일도 없다 (`../.claude/rules/data-safety.md`).
 --
 -- `crawlers.default_company` 는 그대로 둔다. 0004 가 더한 둘 중 그쪽은 운영자가 적어 둔 값이고
 -- 지금은 `parent_company` 의 출처다. 이 파일이 지우면 모회사 칸이 크롤러 이름으로만 채워진다.

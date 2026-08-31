@@ -6,7 +6,7 @@
 이 파일은 하루 사이에 뜻이 뒤집혔다. 아침에는 "설정에 적힌 자리가 그 칸을 채우는가" 를
 물었고, 지금은 **"여섯 칸 말고는 수집이 채우지 않는가"** 를 묻는다. 매핑 방식이 640건에서
 절반도 못 채웠고 176번의 판단 중 다섯 곳이 뜻이 다른 칸에 들어가 있었기 때문이다
-(`.claude/tasks/memos/보류/llm-classify/prd-llm-classify.md`, `seeds/site-configs-20260826.json` 의
+(`../.claude/tasks/memos/보류/llm-classify/prd-llm-classify.md`, `seeds/site-configs-20260826.json` 의
 `why_the_mappings_were_removed`).
 
 빈 칸도 단언한다. 매핑이 하나라도 되살아나면 그 값이 분류 결과를 이기고 (정규화는 규칙이

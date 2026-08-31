@@ -19,7 +19,7 @@
 -- 받는 필드는 `app/normalize/rules.py` 의 `NORMALIZED_FIELDS` 열여섯 개 중 열여섯 개다.
 -- `source_url` 은 공고의 신원이라 여전히 받지 않고, `normalized_at` 과 `delivered_at` 도
 -- 그대로 받지 않는다 — 수동 수정이 전달 표시를 되돌리면 소비 측에 같은 데이터가 다시 간다
--- (`.claude/rules/data-safety.md`).
+-- (`../.claude/rules/data-safety.md`).
 --
 -- `app/normalize/engine.py` 의 `OVERRIDABLE_FIELDS` 를 같은 커밋에서 열여섯 개로 넓힌다.
 -- 코드 쪽만 넓히면 DB 가 거절하고, DB 쪽만 넓히면 코드가 보정을 읽고도 버린다.

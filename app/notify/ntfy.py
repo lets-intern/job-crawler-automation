@@ -4,10 +4,10 @@
 사이트를 지키는 장치다 — robots.txt 를 묻고, 호스트별로 딜레이를 기다리고, 우리 이름을
 User-Agent 로 밝힌다. 알림 서버는 크롤링 대상이 아니라 우리가 우리에게 보내는 자리라 셋 다
 뜻이 없고, 딜레이는 실행이 끝나는 시각을 밀기만 한다. 이 예외는
-`.claude/rules/crawling.md` 에 적혀 있다.
+`../.claude/rules/crawling.md` 에 적혀 있다.
 
 **보내기는 실패해도 예외를 밖으로 내지 않는다.** 알림이 안 갔다고 수집이 실패한 것은 아니다
-(`.claude/tasks/done/ntfy-notify/tasks-ntfy-notify.md`). 사유는 `SendResult` 와 로그에 남는다.
+(`../.claude/tasks/done/ntfy-notify/tasks-ntfy-notify.md`). 사유는 `SendResult` 와 로그에 남는다.
 
 한글은 헤더에 UTF-8 바이트로 직접 넣는다. httpx 에 `dict[str, str]` 을 넘기면 헤더 값을
 **ascii 로** 인코딩해서 한글 제목이 `UnicodeEncodeError` 로 죽는다 (`Headers.__init__` 은
@@ -69,7 +69,7 @@ class NtfyTarget:
 class NtfyMessage:
     """알림 하나의 내용. 본문은 마크다운으로 나간다.
 
-    `tags` 는 ntfy 의 이모지 단축이름이다. `.claude/rules/writing.md` 의 그림문자 금지는
+    `tags` 는 ntfy 의 이모지 단축이름이다. `../.claude/rules/writing.md` 의 그림문자 금지는
     문서에 대한 것이고 휴대폰 알림은 문서가 아니다 — 태그는 상태를 한눈에 보이게 하는
     자리라 쓰되, `title` 과 `body` 의 문장에는 넣지 않는다.
 

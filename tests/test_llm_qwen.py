@@ -6,7 +6,7 @@
 
 마지막이 이 항목을 붙이는 이유의 절반이다. Qwen 은 일부 모델에서만 응답을 스키마로 강제하고,
 `qwen-plus` 같은 별칭은 그 목록에 없다. 별칭으로 분류를 돌리면 판정 칸의 닫힌 목록이 부탁으로
-내려앉는데, 그 사실이 조용하면 아무도 모른다 (`.claude/rules/llm.md`).
+내려앉는데, 그 사실이 조용하면 아무도 모른다 (`../.claude/rules/llm.md`).
 """
 
 from __future__ import annotations

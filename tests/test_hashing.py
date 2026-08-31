@@ -18,7 +18,7 @@ def sample() -> dict[str, Any]:
 
 
 def test_hash_fields_match_the_data_model() -> None:
-    """`.claude/docs/data-model.md` 가 정한 네 필드다. 늘리거나 줄이면 여기서 걸린다."""
+    """`docs/data-model.md` 가 정한 네 필드다. 늘리거나 줄이면 여기서 걸린다."""
     assert HASH_FIELDS == ("source_url", "title", "deadline", "body")
 
 

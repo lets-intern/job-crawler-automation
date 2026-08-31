@@ -3,7 +3,7 @@
 실사이트에 나가지 않는다. 응답을 일부러 늦추는 스텁 fetch 클라이언트로 시간 제한을 넘긴다.
 
 확인하는 것은 하나다. 실행이 제한을 넘겨 끊겨도 `crawl_runs` 행이 `status=timeout` 으로
-남는가. 행이 없는 실행은 아무도 디버깅하지 못한다 (`.claude/rules/crawling.md`).
+남는가. 행이 없는 실행은 아무도 디버깅하지 못한다 (`../.claude/rules/crawling.md`).
 """
 
 from __future__ import annotations

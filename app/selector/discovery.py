@@ -10,14 +10,14 @@
 | 4 | 알아낸 요청을 `httpx` 로 다시 부른다 | 같은 응답이 오면 채택 |
 
 **정적으로 되면 브라우저를 띄우지 않는다.** 렌더 한 번이 정적 fetch 의 몇십 배를 쓴다
-(`.claude/rules/crawling.md`). 그래서 브라우저를 여는 것은 이 함수가 직접 하지 않고, 필요한
+(`../.claude/rules/crawling.md`). 그래서 브라우저를 여는 것은 이 함수가 직접 하지 않고, 필요한
 순간에 부르는 `open_probe` 로 받는다 — 1번에서 끝나면 그것을 한 번도 부르지 않는다.
 
 ## 판정은 제안이다
 
 여기서 나오는 것은 `Discovery` 한 개이고, 어디에도 저장하지 않는다. 무엇을 저장할지는 운영자가
 정한다. 여섯 사이트는 사람이 이미 확인해 설정해 뒀고, 그것을 이 판정으로 덮어쓰지 않는다
-(`.claude/rules/llm.md` 의 "모델은 제안자이지 권위가 아니다" 와 같은 자리다).
+(`../.claude/rules/llm.md` 의 "모델은 제안자이지 권위가 아니다" 와 같은 자리다).
 
 ## 근거를 문장으로 남긴다
 
@@ -293,7 +293,7 @@ async def _judge(
     if link is not None:
         # 주소 형식을 알고 나면 정적 HTML 로도 목록이 읽히는 사이트가 있다. 두산과 네이버가
         # 그렇다 — 항목은 정적으로 다 있고 상세 주소만 `onclick` 에 있었다. 그때는 목록을
-        # 정적으로 둔다. 렌더 한 번이 정적 fetch 의 몇십 배다 (`.claude/rules/crawling.md`)
+        # 정적으로 둔다. 렌더 한 번이 정적 fetch 의 몇십 배다 (`../.claude/rules/crawling.md`)
         if list_path is None and _static_list_works(static_html, selectors, link, probed.url):
             list_mode = STATIC
             link_note = (
@@ -400,7 +400,7 @@ async def _adopt_list_api(
 
     `referer` 하나로 갈리는 API 가 있어 한 번은 그것을 넣고 다시 확인한다. 담는 헤더는
     사이트가 요구하는 기능성 헤더뿐이고, 이름은 공용 클라이언트가 정한다
-    (`.claude/rules/crawling.md`).
+    (`../.claude/rules/crawling.md`).
     """
     proposed = propose_list_config(probed.requests, items, _links(probed.html, probed.url))
     if not proposed.ok:

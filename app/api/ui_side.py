@@ -2,7 +2,7 @@
 
 크롤 워크플로우 화면(`app/api/ui_workflows.py`)과 같은 자리이지만 대상이 다르다. 저기는
 `workflows`·`crawl_runs` 를, 여기는 `side_workflows`·`side_runs` 를 본다
-(`.claude/tasks/todo/prd-side-workflows.md` 1절).
+(`../.claude/tasks/todo/prd-side-workflows.md` 1절).
 
 ## 저장은 반드시 `scheduler.sync()` 까지 간다
 
@@ -66,7 +66,7 @@ SCOPE_LABELS: dict[str, str] = {
 }
 
 # `all` 이 한 건에 쓰는 토큰의 대략치. 640건에 약 285만 토큰이 나간 실측에서 뽑았다
-# (`.claude/tasks/todo/prd-side-workflows.md` 2절: "640건이면 약 285만 토큰"). 어림값이고
+# (`../.claude/tasks/todo/prd-side-workflows.md` 2절: "640건이면 약 285만 토큰"). 어림값이고
 # 확인 창의 뜻은 "0 이 아니다" 를 보여주는 것이지 정산이 아니다
 _TOKENS_PER_JOB_ESTIMATE = 4500
 

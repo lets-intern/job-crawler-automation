@@ -2,7 +2,7 @@
 
 삼성 목록은 `POST /hr/list.data` 에 `application/x-www-form-urlencoded` 로 여덟 파라미터를
 보내야 하고, 돌아오는 것은 JSON 이 아니라 HTML 조각이다. 파라미터가 하나라도 빠지면
-`{"code":500}` 이 온다 (`.claude/site-recipes/www-samsungcareers-com.md`).
+`{"code":500}` 이 온다 (`../.claude/site-recipes/www-samsungcareers-com.md`).
 
 공고 번호는 `a[data-value="22,878"]` 에서 쉼표를 뺀 값이다. 숫자 표기에 기대는 자리라서
 여기서 그 사실을 못으로 박아 둔다.

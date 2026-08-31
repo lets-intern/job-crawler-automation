@@ -3,7 +3,7 @@
 확인하는 것은 둘이다. 헤더가 ntfy 가 읽는 이름과 값으로 실리는지, 그리고 어떤 실패에서도
 예외가 밖으로 새지 않는지.
 
-망은 테스트 의존이 아니다 (`.claude/rules/core.md`). `httpx.MockTransport` 로 요청을 받아
+망은 테스트 의존이 아니다 (`../.claude/rules/core.md`). `httpx.MockTransport` 로 요청을 받아
 본다 — 실제 알림 서버를 때리지 않는다.
 """
 

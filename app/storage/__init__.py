@@ -1,6 +1,6 @@
 """로고 파일 저장소. S3 호환 엔드포인트 하나에 넣고 공개 주소로 읽는다.
 
-2026-08-28 에 예외로 들인 두 번째 컨테이너다 (`.claude/rules/core.md`). 공용 fetch
+2026-08-28 에 예외로 들인 두 번째 컨테이너다 (`../.claude/rules/core.md`). 공용 fetch
 클라이언트를 지나지 않는 두 번째 자리이기도 하다 — 우리가 올린 객체만 만진다
-(`.claude/rules/crawling.md`).
+(`../.claude/rules/crawling.md`).
 """

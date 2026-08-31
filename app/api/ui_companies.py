@@ -17,7 +17,7 @@
 
 이름 순이 아니다. 로고 하나가 몇 건에 붙는지가 무엇을 먼저 등록할지를 정한다. 공고 한
 건짜리 회사를 먼저 등록하느라 백 건짜리가 뒤에 서면 이 화면은 일을 늘리기만 한다
-(`.claude/tasks/todo/prd-fields-and-logo.md` 4장).
+(`../.claude/tasks/todo/prd-fields-and-logo.md` 4장).
 
 잇는 값이 이름이므로 세는 것도 이름으로 잇는다. 외래키가 없어서가 아니라, 로고가 실제로
 붙는 경로가 그것이라 그 경로로 세야 화면의 숫자와 붙는 건수가 같다.
@@ -133,7 +133,7 @@ def _row_context(config: store.StorageConfig) -> dict[str, object]:
 
     `public_base` 로 시작하지 않는 로고는 화면에 `옛 저장소` 로 적힌다. 엔드포인트를 바꾸면
     이미 올린 파일은 따라가지 않고 주소만 옛 저장소를 가리킨 채 남는데
-    (`.claude/tasks/todo/prd-fields-and-logo.md` 5장), 표시가 없으면 무엇을 다시 올려야
+    (`../.claude/tasks/todo/prd-fields-and-logo.md` 5장), 표시가 없으면 무엇을 다시 올려야
     하는지 알 방법이 없다. 밖에 올려 둔 주소를 붙여넣은 행도 같은 표시를 받는다 — 어디서 온
     주소인지는 저장하지 않아 둘을 가릴 수 없고, 그 사실을 화면에 적는다.
 

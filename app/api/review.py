@@ -16,7 +16,7 @@
 ## 기본 정렬은 미전달 우선이다
 
 이미 전달된 행을 고쳐도 소비 측이 가진 값은 바뀌지 않는다. 수동 수정은 `delivered_at` 을
-지우거나 되돌리지 않기 때문이다 (`.claude/rules/data-safety.md`). 그래서 검수는 전달 전에
+지우거나 되돌리지 않기 때문이다 (`../.claude/rules/data-safety.md`). 그래서 검수는 전달 전에
 하는 것이 정상 경로고, 고르지 않으면 화면이 그 순서로 행을 내놓는다.
 
 ## 이 파일은 `normalized_jobs` 를 쓰지 않는다
@@ -216,7 +216,7 @@ def _read_source(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, Any]:
     크롤러의 상세 경로를 함께 낸다. 원문이 없는 이유가 둘이고, 화면이 그 둘을 갈라 적어야
     하기 때문이다. 상세가 API 인 사이트는 앞으로도 원문을 뽑지 않는다 — 응답 전체가 다른
     공고까지 담고 본문의 부모 객체가 하나로 정해지지 않는다
-    (`.claude/site-recipes/source-text-container.md`). 나머지는 원문을 뽑기 전에 모은 건이라
+    (`../.claude/site-recipes/source-text-container.md`). 나머지는 원문을 뽑기 전에 모은 건이라
     다시 수집하면 붙는다. 갈라 적지 않으면 기다리면 되는 건과 기다려도 안 되는 건이 화면에서
     같아 보인다.
     """
@@ -525,7 +525,7 @@ async def save_review_job_fragment(
     `normalized_jobs` 에는 쓰지 않는다. 확정 값은 규칙과 보정에서 매번 다시 만들어지는
     파생값이고, 파생값에 손으로 쓰면 다음 재정규화가 그것을 덮어쓴다. `delivered_at` 도
     건드리지 않는다 — 수동 수정이 전달 표시를 되돌리면 소비 측에 같은 데이터가 다시 간다
-    (`.claude/rules/data-safety.md`).
+    (`../.claude/rules/data-safety.md`).
     """
     # 폼을 직접 읽는다. `Form()` 파라미터로 받으면 빈 칸이 기본값으로 바뀌어, 값을 지운
     # 필드와 아예 오지 않은 필드가 같아진다 — 그러면 틀린 값을 비우는 수정이 저장되지 않는다
