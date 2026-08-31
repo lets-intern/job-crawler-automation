@@ -1,6 +1,6 @@
 [project]
 name = "job-crawler-automation"
-version = "0.1.0"
+version = "0.2.0"
 description = "채용공고 크롤링 자동화 백엔드. 정규화된 데이터를 별도 채용공고 사이트에 REST 로 제공한다"
 requires-python = ">=3.12"
 dependencies = [
